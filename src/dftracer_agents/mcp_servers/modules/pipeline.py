@@ -81,12 +81,31 @@ def execute_pipeline_stage(
     trace = pathlib.Path(trace_dir).expanduser().resolve() if trace_dir else (ws / "traces")
     install = pathlib.Path(install_prefix).expanduser().resolve() if install_prefix else (ws / ".venv")
 
+    guarded_paths = {
+        "repo_dir": repo,
+        "trace_dir": trace,
+        "install_prefix": install,
+    }
+    for name, path in guarded_paths.items():
+        try:
+            path.relative_to(ws)
+        except ValueError:
+            return {
+                "stage": stage_key,
+                "ok": False,
+                "error": f"{name} must stay inside workspace_root: {path}",
+                "workspace_root": str(ws),
+                "docs_context": ctx,
+            }
+
     if stage_key in {"test_default_build_setup", "build_with_dftracer"}:
         stage_key = "build_app"
     elif stage_key in {"test_default_run", "run_with_dftracer"}:
         stage_key = "run_app"
 
     env = os.environ.copy()
+    env["DFTRACER_WORKSPACE_ROOT"] = str(ws)
+    env["DFTRACER_ALLOW_ONLY_WORKSPACE"] = "1"
     compiler_info = select_compilers(uses_mpi=uses_mpi)
     if not compiler_info["ok"]:
         return {

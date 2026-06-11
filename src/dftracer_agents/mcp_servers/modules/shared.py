@@ -9,6 +9,9 @@ import subprocess
 from typing import Any
 
 
+DEFAULT_SYSTEM_PATH = "/usr/local/bin:/usr/bin:/bin"
+
+
 def docs_context() -> dict[str, Any]:
     return {
         "primary_examples": "https://dftracer.readthedocs.io/en/latest/examples.html",
@@ -42,12 +45,59 @@ def parse_module_tokens(text: str) -> list[str]:
     return sorted(modules)
 
 
+def _path_is_within(path: pathlib.Path, root: pathlib.Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _normalize_shell_env(env: dict[str, str]) -> dict[str, str]:
+    normalized = dict(env)
+    current_path = normalized.get("PATH", "")
+    extras = [segment for segment in DEFAULT_SYSTEM_PATH.split(":") if segment and segment not in current_path.split(":")]
+    normalized["PATH"] = ":".join([part for part in [current_path, *extras] if part]) or DEFAULT_SYSTEM_PATH
+    return normalized
+
+
+def _extract_absolute_paths(command: str) -> list[pathlib.Path]:
+    candidates: list[pathlib.Path] = []
+    for match in re.finditer(r"(?<![A-Za-z0-9_./-])(/[^\s'\";|&]+)", command):
+        candidates.append(pathlib.Path(match.group(1)))
+    return candidates
+
+
+def _workspace_violation(command: str, cwd: str | None, env: dict[str, str]) -> str:
+    workspace_root = (env.get("DFTRACER_WORKSPACE_ROOT") or "").strip()
+    if not workspace_root or env.get("DFTRACER_ALLOW_ONLY_WORKSPACE") != "1":
+        return ""
+    root = pathlib.Path(workspace_root).expanduser().resolve()
+    if cwd and not _path_is_within(pathlib.Path(cwd).expanduser().resolve(), root):
+        return f"cwd must stay inside workspace_root: {cwd}"
+    for path in _extract_absolute_paths(command):
+        if not _path_is_within(path.expanduser().resolve(), root):
+            return f"command references path outside workspace_root: {path}"
+    return ""
+
+
 def run_shell_command(command: str, cwd: str | None, env: dict[str, str]) -> dict[str, Any]:
+    normalized_env = _normalize_shell_env(env)
+    violation = _workspace_violation(command, cwd, normalized_env)
+    if violation:
+        return {
+            "command": command,
+            "cwd": cwd,
+            "returncode": 1,
+            "stdout": "",
+            "stderr": violation,
+            "ok": False,
+        }
     result = subprocess.run(
         command,
         shell=True,
         cwd=cwd,
-        env=env,
+        env=normalized_env,
         text=True,
         capture_output=True,
     )

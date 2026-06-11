@@ -125,32 +125,87 @@ def create_venv(venv_dir: str | Path) -> dict[str, str | int]:
     return {"action": "created", "returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
 
 
-def detect_repo_attributes(repo_dir: str | Path) -> dict[str, bool | str]:
+def detect_repo_attributes(repo_dir: str | Path) -> dict[str, bool | str | list[str]]:
     root = Path(repo_dir)
     files = [str(p.relative_to(root)) for p in root.rglob("*") if p.is_file()]
-    sample_text = []
-    for pattern in ["CMakeLists.txt", "*.py", "*.cpp", "*.cxx", "*.cc", "pyproject.toml", "setup.py", "requirements.txt"]:
-        for path in root.rglob(pattern):
-            try:
-                sample_text.append(path.read_text(errors="ignore")[:5000])
-            except Exception:
-                pass
-            if len(sample_text) >= 10:
-                break
-        if len(sample_text) >= 10:
-            break
+    language_map = {
+        ".c": "c",
+        ".cc": "cpp",
+        ".cpp": "cpp",
+        ".cxx": "cpp",
+        ".cu": "cuda",
+        ".f": "fortran",
+        ".f90": "fortran",
+        ".f95": "fortran",
+        ".go": "go",
+        ".h": "c",
+        ".hip": "hip",
+        ".hpp": "cpp",
+        ".hxx": "cpp",
+        ".java": "java",
+        ".jl": "julia",
+        ".js": "javascript",
+        ".m": "objective-c",
+        ".mlx": "objective-c",
+        ".py": "python",
+        ".r": "r",
+        ".rb": "ruby",
+        ".rs": "rust",
+        ".sh": "shell",
+        ".swift": "swift",
+        ".ts": "typescript",
+    }
+    languages_used: set[str] = set()
+    sample_text: list[str] = []
+    sample_limit = 200
+    sampled_names = {
+        "CMakeLists.txt",
+        "configure",
+        "configure.ac",
+        "Makefile",
+        "Makefile.am",
+        "Makefile.in",
+        "pyproject.toml",
+        "requirements.txt",
+        "setup.py",
+    }
+
+    for file_name in files:
+        path = root / file_name
+        suffix = path.suffix.lower()
+        mapped = language_map.get(suffix)
+        if mapped:
+            languages_used.add(mapped)
+        name = path.name
+        if name == "CMakeLists.txt":
+            languages_used.add("cmake")
+        if name in {"configure", "configure.ac", "Makefile", "Makefile.am", "Makefile.in"}:
+            languages_used.add("build")
+        if name == "pyproject.toml":
+            languages_used.add("python")
+
+        if len(sample_text) >= sample_limit:
+            continue
+        if not (mapped or name in sampled_names):
+            continue
+        try:
+            sample_text.append(path.read_text(errors="ignore")[:5000])
+        except Exception:
+            pass
+
     blob = "\n".join(sample_text)
 
-    has_cpp = any(file_name.endswith((".cpp", ".cxx", ".cc", ".c", ".cu", ".hip")) for file_name in files)
-    has_python = any(file_name.endswith(".py") for file_name in files)
+    has_cpp = any(language in languages_used for language in {"c", "cpp", "cuda", "hip", "objective-c"})
+    has_python = "python" in languages_used
     has_cmake = any(file_name == "CMakeLists.txt" or file_name.endswith("/CMakeLists.txt") for file_name in files)
     has_pyproject = "pyproject.toml" in files
     has_mpi = bool(re.search(r"\bMPI\b|mpi", blob))
-    has_hip = bool(re.search(r"\bHIP\b|rocm|hip", blob, re.IGNORECASE))
-    language = "cpp" if has_cpp else "python" if has_python else "unknown"
+    has_hip = bool(re.search(r"\bHIP\b|rocm|hip", blob, re.IGNORECASE)) or "hip" in languages_used
+    language = "cpp" if has_cpp else "python" if has_python else (sorted(languages_used)[0] if languages_used else "unknown")
 
     return {
         "language": language,
+        "languages_used": sorted(languages_used),
         "has_cpp": has_cpp,
         "has_python": has_python,
         "has_cmake": has_cmake,

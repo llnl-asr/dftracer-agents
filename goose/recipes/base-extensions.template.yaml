@@ -1,12 +1,21 @@
-# Copy this into ~/.config/goose/config.yaml and merge under `extensions`.
-
 extensions:
-  dftracer-agent:
-    name: DFTracer Agent Toolkit
+  - type: platform
+    name: summon
+    display_name: Summon
+    timeout: 300
+    bundled: true
+  - type: builtin
+    name: developer
+    display_name: Developer
+    timeout: 300
+    bundled: true
+  - type: stdio
+    name: dftracer-agent
+    display_name: DFTracer Agent Toolkit
     cmd: bash
     args:
-      - -lc
+      - --noprofile
+      - --norc
+      - -c
       - "ROOT=\"${PROJECT_ROOT:-$PWD}\"; if [[ -x \"$ROOT/scripts/run_mcp_server.sh\" ]]; then exec \"$ROOT/scripts/run_mcp_server.sh\"; elif [[ -x \"./scripts/run_mcp_server.sh\" ]]; then exec ./scripts/run_mcp_server.sh; else echo \"run_mcp_server.sh not found from $ROOT\" >&2; exit 1; fi"
-    enabled: true
-    type: stdio
     timeout: 300

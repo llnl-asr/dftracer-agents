@@ -104,6 +104,8 @@ def goose_pipeline(
     post_dir: str = typer.Option("", help="Postprocess directory override"),
     compacted_trace_dir: str = typer.Option("", help="Compacted trace directory override"),
     analysis_dir: str = typer.Option("", help="Analysis directory override"),
+    feedback_db: str = typer.Option("", help="Feedback database JSON path override"),
+    feedback_prompt: Optional[bool] = typer.Option(None, "--feedback-prompt/--no-feedback-prompt", help="Prompt for per-stage feedback and persist it for future runs"),
     quiet: bool = typer.Option(False, "--quiet-progress", help="Suppress stage progress on stderr"),
 ) -> None:
     """Run the Goose DFTracer pipeline recipe directly from the terminal."""
@@ -121,6 +123,8 @@ def goose_pipeline(
         compacted_trace_dir=compacted_trace_dir,
         analysis_dir=analysis_dir,
         progress=not quiet,
+        feedback_db_path=feedback_db,
+        feedback_prompt=feedback_prompt,
     )
     typer.echo(json.dumps(result, indent=2))
 

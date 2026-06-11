@@ -127,4 +127,4 @@ response:
       - summary
       - stages
 
-{% extends "base-extensions.yaml" %}
+{% extends "base-extensions.template.yaml" %}

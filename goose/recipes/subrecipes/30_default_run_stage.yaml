@@ -1,11 +1,6 @@
 version: "1.0.0"
 title: "DFTracer Default Run Stage"
 description: "Plan a minimal baseline run command for the uninstrumented application."
-extensions:
-  - type: builtin
-    name: developer
-    bundled: true
-    timeout: 300
 parameters:
   - key: repo_dir
     input_type: string
@@ -43,6 +38,8 @@ prompt: |
   Preferred install prefix: {{ venv_dir }}
   Application name hint: {{ name }}
   Canonical Stage Input JSON: {{ stage_input_json }}
+  Use feedback_context inside the canonical stage input as strong guidance from prior runs. Repeat approaches that worked and avoid approaches marked as missing or incorrect.
+  Stay inside context.workspace_root for all reads, writes, commands, and generated files. Do not access files outside that workspace, and do not use sed; prefer the provided summaries, MCP tools, cat, or python-based file reads when needed.
   Repository Tree Summary JSON: {{ repo_summary_json }}
   Heuristic Repo Attributes JSON: {{ repo_attrs_json }}
 
@@ -82,4 +79,4 @@ response:
       - run_cmd
       - notes
       - handoff
-{% extends "../base-extensions.yaml" %}
+{% extends "../base-extensions.template.yaml" %}

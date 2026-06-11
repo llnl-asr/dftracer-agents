@@ -46,13 +46,16 @@ prompt: |
   Repository Ref: {{ repo_ref }}
   Language Hint: {{ language }}
   Canonical Stage Input JSON: {{ stage_input_json }}
+  Use feedback_context inside the canonical stage input as strong guidance from prior runs. Repeat approaches that worked and avoid approaches marked as missing or incorrect.
+  Stay inside context.workspace_root for all reads, writes, commands, and generated files. Do not access files outside that workspace, and do not use sed; prefer the provided summaries, MCP tools, cat, or python-based file reads when needed.
   Repository Tree Summary JSON: {{ repo_summary_json }}
   Heuristic Repo Attributes JSON: {{ repo_attrs_json }}
 
   Requirements:
   - Use the repository tree summary and heuristic attributes as the first-pass input so you do not need to scan the entire repository.
+  - Do not explore the repository broadly. Only inspect a file when the summaries above are genuinely insufficient or conflicting.
   - Determine the primary language and build system.
-  - Only inspect a small number of files under {{ repo_dir }} when the summaries above are insufficient, prioritizing README, configure.ac, CMakeLists.txt, Makefile.am, pyproject.toml, setup.py, and the most likely entrypoint sources.
+  - If you must inspect files, inspect at most 3 small files under {{ repo_dir }}, prioritizing README, configure.ac, CMakeLists.txt, Makefile.am, pyproject.toml, setup.py, and the most likely entrypoint sources.
   - Detect whether MPI is present.
   - If MPI is available even as an optional backend, plugin, transport, wrapper, or conditional build target, set uses_mpi=true.
   - Set mpi_detection to one of: required, optional, not_detected.
@@ -141,4 +144,4 @@ response:
       - dftracer_flags
       - notes
       - handoff
-{% extends "../base-extensions.yaml" %}
+{% extends "../base-extensions.template.yaml" %}

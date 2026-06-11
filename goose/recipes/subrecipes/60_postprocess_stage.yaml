@@ -19,6 +19,8 @@ prompt: |
   You are planning the DFTracer pipeline stage postprocess.
 
   Canonical Stage Input JSON: {{ stage_input_json }}
+  Use feedback_context inside the canonical stage input as strong guidance from prior runs. Repeat approaches that worked and avoid approaches marked as missing or incorrect.
+  Stay inside context.workspace_root for all reads, writes, commands, and generated files. Do not access files outside that workspace, and do not use sed; prefer the provided summaries, MCP tools, cat, or python-based file reads when needed.
 
   Requirements:
   - Use dftracer-split as the canonical postprocessing flow.
@@ -63,4 +65,4 @@ response:
       - commands
       - notes
       - handoff
-{% extends "../base-extensions.yaml" %}
+{% extends "../base-extensions.template.yaml" %}

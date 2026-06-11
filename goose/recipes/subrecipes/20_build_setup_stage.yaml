@@ -1,11 +1,6 @@
 version: "1.0.0"
 title: "DFTracer Default Build Setup Stage"
 description: "Plan default build and install commands for the target application."
-extensions:
-  - type: builtin
-    name: developer
-    bundled: true
-    timeout: 300
 parameters:
   - key: repo_dir
     input_type: string
@@ -48,13 +43,22 @@ prompt: |
   Repository URL: {{ repo_url }}
   Repository Ref: {{ repo_ref }}
   Install Prefix: {{ venv_dir }}
+  Use the canonical stage input only for these fields: feedback_context, planning_constraints, doc_targets, repo_reference, workspace_policy, and upstream.detect.handoff.
+  Do not reason over the whole stage_input_json blob.
   Canonical Stage Input JSON: {{ stage_input_json }}
-  Repository Tree Summary JSON: {{ repo_summary_json }}
+  Repository URL: {{ repo_url }}
+  Repository Ref: {{ repo_ref }}
+  Install Prefix: {{ venv_dir }}
+  Stay inside context.workspace_root for all reads, writes, commands, and generated files. Do not access files outside that workspace, and do not use sed; prefer the provided doc_targets, repo_reference, summaries, MCP tools, cat, or python-based file reads when needed.
+  Build-Relevant Repository Summary JSON: {{ repo_summary_json }}
   Heuristic Repo Attributes JSON: {{ repo_attrs_json }}
 
   Requirements:
-  - Use the repository summaries above as the default source of truth and inspect only a small number of key build files when needed.
-  - Look for build instructions in README, INSTALL, BUILD docs, CMakeLists.txt, configure.ac, Makefile.am, setup.py, and pyproject.toml.
+  - Treat repo_url, repo_ref, doc_targets, repo_summary_json, and upstream.detect.handoff as the primary source of truth.
+  - Do not delegate or summon a subagent for this stage.
+  - Stay in one direct planning pass unless the model is completely blocked.
+  - Start from doc_targets and inspect at most 4 small build-related files when the summaries are genuinely insufficient.
+  - Focus on README, INSTALL, BUILD docs, CMakeLists.txt, configure, configure.ac, Makefile.am, setup.py, and pyproject.toml.
   - If build instructions are genuinely missing, set needs_docs=true and explain why.
   - Otherwise emit complete shell commands to configure, build, and install into the workspace venv prefix.
   - Commands must use absolute paths.
@@ -62,6 +66,7 @@ prompt: |
   - For autotools configure use --prefix={{ venv_dir }}.
   - For CMake configure include -DCMAKE_INSTALL_PREFIX={{ venv_dir }}.
   - For cmake --install include --prefix {{ venv_dir }}.
+  - If uncertainty remains, make one best-effort plan from the available build signals instead of stalling.
   - Return stage="test_default_build_setup".
   - Return handoff with exactly these fields for downstream stages: commands, install_prefix, needs_docs, needs_docs_reason.
 response:
@@ -110,4 +115,4 @@ response:
       - commands
       - notes
       - handoff
-{% extends "../base-extensions.yaml" %}
+{% extends "../base-extensions.template.yaml" %}

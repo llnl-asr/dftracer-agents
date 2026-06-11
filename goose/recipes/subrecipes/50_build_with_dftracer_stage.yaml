@@ -1,11 +1,6 @@
 version: "1.0.0"
 title: "DFTracer Rebuild Stage"
 description: "Regenerate build commands after DFTracer annotation has been applied."
-extensions:
-  - type: builtin
-    name: developer
-    bundled: true
-    timeout: 300
 parameters:
   - key: repo_dir
     input_type: string
@@ -25,6 +20,8 @@ prompt: |
 
   Inspect the annotated repository under {{ repo_dir }}.
   Canonical Stage Input JSON: {{ stage_input_json }}
+  Use feedback_context inside the canonical stage input as strong guidance from prior runs. Repeat approaches that worked and avoid approaches marked as missing or incorrect.
+  Stay inside context.workspace_root for all reads, writes, commands, and generated files. Do not access files outside that workspace, and do not use sed; prefer the provided summaries, MCP tools, cat, or python-based file reads when needed.
 
   Requirements:
   - Revisit the repository build instructions after annotation.
@@ -67,4 +64,4 @@ response:
       - commands
       - notes
       - handoff
-{% extends "../base-extensions.yaml" %}
+{% extends "../base-extensions.template.yaml" %}

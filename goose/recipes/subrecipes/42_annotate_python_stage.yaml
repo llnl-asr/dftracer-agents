@@ -16,15 +16,12 @@ parameters:
     requirement: optional
     default: "{}"
     description: "Canonical stage input envelope for this stage"
-extensions:
-  - type: builtin
-    name: developer
-    bundled: true
-    timeout: 300
 prompt: |
   Use the DFTracer MCP tools to apply source annotations for a Python application.
 
   Canonical Stage Input JSON: {{ stage_input_json }}
+  Use feedback_context inside the canonical stage input as strong guidance from prior runs. Repeat approaches that worked and avoid approaches marked as missing or incorrect.
+  Stay inside context.workspace_root for all reads, writes, commands, and generated files. Do not access files outside that workspace, and do not use sed; prefer the provided summaries, MCP tools, cat, or python-based file reads when needed.
 
   Requirements from the repository tooling:
   - Use annotate_and_create_patch.
@@ -75,4 +72,4 @@ response:
       - patch
       - notes
       - handoff
-{% extends "../base-extensions.yaml" %}
+{% extends "../base-extensions.template.yaml" %}

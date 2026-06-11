@@ -3,14 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="${ROOT_DIR}/.venv"
-GOOSE_BIN="${DFTRACER_GOOSE_BIN:-goose}"
-if [[ ! -x "${GOOSE_BIN}" ]]; then
-  GOOSE_BIN="${VENV_DIR}/bin/goose"
-fi
-MCP_CMD="${ROOT_DIR}/.venv/bin/python -m dftracer_agents.mcp_servers.server"
+PYTHON_BIN="${VENV_DIR}/bin/python"
 RECIPE_PATH="${ROOT_DIR}/goose/recipes/00_dftracer_pipeline.yaml"
 STAGE_TIMEOUT_SECONDS="${DFTRACER_GOOSE_STAGE_TIMEOUT_SECONDS:-120}"
-RUN_TEXT="Run the loaded DFTracer pipeline recipe once. Execute the full pipeline and return only the final JSON response."
 
 NAME="${DFTRACER_PIPELINE_NAME:-ior}"
 REPO_URL="${DFTRACER_PIPELINE_REPO_URL:-https://github.com/hpc/ior}"
@@ -23,6 +18,8 @@ TRACE_DIR="${DFTRACER_PIPELINE_TRACE_DIR:-${WORKSPACE_ROOT}/traces/terminal_defa
 POST_DIR="${DFTRACER_PIPELINE_POST_DIR:-${WORKSPACE_ROOT}/artifacts/terminal_default/postprocess}"
 COMPACTED_TRACE_DIR="${DFTRACER_PIPELINE_COMPACTED_TRACE_DIR:-${POST_DIR}/compacted}"
 ANALYSIS_DIR="${DFTRACER_PIPELINE_ANALYSIS_DIR:-${WORKSPACE_ROOT}/artifacts/terminal_default/analysis}"
+FEEDBACK_DB="${DFTRACER_GOOSE_FEEDBACK_DB:-}"
+FEEDBACK_PROMPT_MODE="${DFTRACER_GOOSE_FEEDBACK_PROMPT:-auto}"
 
 _restore_if_set() {
   local name="$1"
@@ -32,13 +29,8 @@ _restore_if_set() {
   fi
 }
 
-if [[ ! -x "${GOOSE_BIN}" ]]; then
-  echo "goose not found at ${GOOSE_BIN}. Run ./scripts/install.sh first."
-  exit 1
-fi
-
-if [[ ! -x "${ROOT_DIR}/.venv/bin/python" ]]; then
-  echo "venv python not found at ${ROOT_DIR}/.venv/bin/python. Run ./scripts/install.sh first."
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+  echo "venv python not found at ${PYTHON_BIN}. Run ./scripts/install.sh first."
   exit 1
 fi
 
@@ -59,17 +51,13 @@ if [[ -f "${ROOT_DIR}/.env" ]]; then
 fi
 
 _restore_if_set LIVAI_BASE_URL "${PRESET_LIVAI_BASE_URL}"
-_restore_if_set LIVAI_API_KEY "${PRESET_LIVAI_API_KEY}"
 _restore_if_set LIVAI_MODEL "${PRESET_LIVAI_MODEL}"
 _restore_if_set OPENAI_BASE_URL "${PRESET_OPENAI_BASE_URL}"
-_restore_if_set OPENAI_API_KEY "${PRESET_OPENAI_API_KEY}"
 _restore_if_set OPENAI_MODEL "${PRESET_OPENAI_MODEL}"
 _restore_if_set GOOSE_PROVIDER "${PRESET_GOOSE_PROVIDER}"
 _restore_if_set GOOSE_MODEL "${PRESET_GOOSE_MODEL}"
 
-if [[ -z "${PRESET_OPENAI_API_KEY}" && -n "${PRESET_LIVAI_API_KEY}" ]]; then
-  export OPENAI_API_KEY="${PRESET_LIVAI_API_KEY}"
-elif [[ -n "${LIVAI_API_KEY:-}" && -z "${OPENAI_API_KEY:-}" ]]; then
+if [[ -n "${LIVAI_API_KEY:-}" && -z "${OPENAI_API_KEY:-}" ]]; then
   export OPENAI_API_KEY="${LIVAI_API_KEY}"
 fi
 if [[ -z "${PRESET_OPENAI_BASE_URL}" && -n "${PRESET_LIVAI_BASE_URL}" ]]; then
@@ -83,36 +71,44 @@ elif [[ -n "${LIVAI_MODEL:-}" && -z "${OPENAI_MODEL:-}" ]]; then
   export OPENAI_MODEL="${LIVAI_MODEL}"
 fi
 
+if [[ -n "${OPENAI_BASE_URL:-}" ]]; then
+  if [[ "${OPENAI_BASE_URL}" =~ ^(https?://[^/]+)(/(.*))?$ ]]; then
+    if [[ -z "${OPENAI_HOST:-}" ]]; then
+      export OPENAI_HOST="${BASH_REMATCH[1]}"
+    fi
+    if [[ -z "${OPENAI_BASE_PATH:-}" ]]; then
+      base_path="${BASH_REMATCH[3]:-}"
+      base_path="${base_path#/}"
+      if [[ -z "${base_path}" || "${base_path}" == "v1" ]]; then
+        export OPENAI_BASE_PATH="v1/chat/completions"
+      elif [[ "${base_path}" == */chat/completions || "${base_path}" == */responses ]]; then
+        export OPENAI_BASE_PATH="${base_path}"
+      else
+        export OPENAI_BASE_PATH="${base_path}/chat/completions"
+      fi
+    fi
+  fi
+fi
+
+if [[ -z "${GOOSE_DISABLE_KEYRING:-}" ]]; then
+  export GOOSE_DISABLE_KEYRING=1
+fi
+
 if [[ -n "${OPENAI_MODEL:-}" && -z "${GOOSE_MODEL:-}" ]]; then
   export GOOSE_MODEL="${OPENAI_MODEL}"
 fi
 if [[ -z "${GOOSE_PROVIDER:-}" ]]; then
-  export GOOSE_PROVIDER="openai"
+  if [[ -n "${OPENAI_BASE_URL:-}" || -n "${OPENAI_API_KEY:-}" ]]; then
+    export GOOSE_PROVIDER="openai"
+  fi
 fi
 
 export PYTHONUNBUFFERED=1
+export DFTRACER_GOOSE_STAGE_TIMEOUT_SECONDS="${STAGE_TIMEOUT_SECONDS}"
 
 mkdir -p "${ROOT_DIR}/.cache/goose/pipeline_contexts" "${TRACE_DIR}" "${POST_DIR}" "${COMPACTED_TRACE_DIR}" "${ANALYSIS_DIR}"
 
-CONTEXT_FILE="$(mktemp "${ROOT_DIR}/.cache/goose/pipeline_contexts/terminal_pipeline_XXXXXX.txt")"
-cat >"${CONTEXT_FILE}" <<EOF
-Application Name: ${NAME}
-Repository URL: ${REPO_URL}
-Repository Ref: ${REPO_REF}
-Repository Directory: ${REPO_DIR}
-Workspace Root: ${WORKSPACE_ROOT}
-Language: ${LANGUAGE}
-Workspace Venv: ${VENV_PREFIX}
-Trace Directory: ${TRACE_DIR}
-Postprocess Directory: ${POST_DIR}
-Compacted Trace Directory: ${COMPACTED_TRACE_DIR}
-Analysis Directory: ${ANALYSIS_DIR}
-Goal: Plan the full DFTracer pipeline for the default IOR workflow.
-EOF
-
 echo "[goose-pipeline] recipe: ${RECIPE_PATH}" >&2
-echo "[goose-pipeline] run_text: ${RUN_TEXT}" >&2
-echo "[goose-pipeline] context: ${CONTEXT_FILE}" >&2
 echo "[goose-pipeline] environment: OPENAI_BASE_URL=$([[ -n "${OPENAI_BASE_URL:-}" ]] && printf set || printf missing), OPENAI_MODEL=${OPENAI_MODEL:-missing}, OPENAI_API_KEY=$([[ -n "${OPENAI_API_KEY:-}" ]] && printf set || printf missing), LIVAI_BASE_URL=$([[ -n "${LIVAI_BASE_URL:-}" ]] && printf set || printf missing), LIVAI_MODEL=${LIVAI_MODEL:-missing}, LIVAI_API_KEY=$([[ -n "${LIVAI_API_KEY:-}" ]] && printf set || printf missing)" >&2
 echo "[goose-pipeline] workspace_root: ${WORKSPACE_ROOT}" >&2
 echo "[goose-pipeline] repo_dir: ${REPO_DIR}" >&2
@@ -121,25 +117,31 @@ echo "[goose-pipeline] trace_dir: ${TRACE_DIR}" >&2
 echo "[goose-pipeline] stage_timeout_seconds: ${STAGE_TIMEOUT_SECONDS}" >&2
 
 cmd=(
-  "${GOOSE_BIN}" run
-  --recipe "${RECIPE_PATH}"
-  --no-session
-  --params "name=${NAME}"
-  --params "repo_url=${REPO_URL}"
-  --params "repo_ref=${REPO_REF}"
-  --params "venv_dir=${VENV_PREFIX}"
-  --params "trace_dir=${TRACE_DIR}"
-  --params "post_dir=${POST_DIR}"
-  --params "compacted_trace_dir=${COMPACTED_TRACE_DIR}"
-  --params "analysis_dir=${ANALYSIS_DIR}"
-  --params "language=${LANGUAGE}"
-  --params "repo_dir=${REPO_DIR}"
+  "${PYTHON_BIN}" -m dftracer_agents.cli goose-pipeline
+  --name "${NAME}"
+  --repo-url "${REPO_URL}"
+  --repo-ref "${REPO_REF}"
+  --language "${LANGUAGE}"
+  --workspace-root "${WORKSPACE_ROOT}"
+  --repo-dir "${REPO_DIR}"
+  --venv-dir "${VENV_PREFIX}"
+  --trace-dir "${TRACE_DIR}"
+  --post-dir "${POST_DIR}"
+  --compacted-trace-dir "${COMPACTED_TRACE_DIR}"
+  --analysis-dir "${ANALYSIS_DIR}"
 )
 
-echo "[goose-pipeline] command: ${cmd[*]}" >&2
-if command -v timeout >/dev/null 2>&1; then
-  exec timeout "${STAGE_TIMEOUT_SECONDS}" "${cmd[@]}" <<<"${RUN_TEXT}"
-else
-  exec "${cmd[@]}" <<<"${RUN_TEXT}"
+if [[ -n "${FEEDBACK_DB}" ]]; then
+  cmd+=(--feedback-db "${FEEDBACK_DB}")
 fi
+case "${FEEDBACK_PROMPT_MODE,,}" in
+  1|true|yes|on)
+    cmd+=(--feedback-prompt)
+    ;;
+  0|false|no|off)
+    cmd+=(--no-feedback-prompt)
+    ;;
+esac
 
+echo "[goose-pipeline] command: ${cmd[*]}" >&2
+exec "${cmd[@]}"

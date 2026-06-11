@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="${ROOT_DIR}/.venv"
 GOOSE_BIN="${DFTRACER_GOOSE_BIN:-${VENV_DIR}/bin/goose}"
+DEFAULT_SYSTEM_PATH="/usr/local/bin:/usr/bin:/bin"
 
 _restore_if_set() {
   local name="$1"
@@ -12,6 +13,12 @@ _restore_if_set() {
     export "${name}=${value}"
   fi
 }
+
+if [[ -n "${PATH:-}" ]]; then
+  export PATH="${PATH}:${DEFAULT_SYSTEM_PATH}"
+else
+  export PATH="${DEFAULT_SYSTEM_PATH}"
+fi
 
 if [[ ! -x "${GOOSE_BIN}" ]]; then
   echo "goose not found at ${GOOSE_BIN}. Run ./scripts/install.sh first."
@@ -79,7 +86,9 @@ if [[ -n "${OPENAI_BASE_URL:-}" ]]; then
 fi
 
 if [[ -z "${GOOSE_PROVIDER:-}" ]]; then
-  export GOOSE_PROVIDER="openai"
+  if [[ -n "${OPENAI_BASE_URL:-}" || -n "${OPENAI_API_KEY:-}" ]]; then
+    export GOOSE_PROVIDER="openai"
+  fi
 fi
 if [[ -n "${OPENAI_MODEL:-}" && -z "${GOOSE_MODEL:-}" ]]; then
   export GOOSE_MODEL="${OPENAI_MODEL}"
@@ -94,8 +103,8 @@ if [[ -n "${OPENAI_MODEL:-}" && -z "${GOOSE_EDITOR_MODEL:-}" ]]; then
   export GOOSE_EDITOR_MODEL="${OPENAI_MODEL}"
 fi
 
-if [[ -z "${OPENAI_API_KEY:-}" ]]; then
-  echo "Missing OPENAI_API_KEY (or LIVAI_API_KEY). Set it in .env."
+if [[ "${GOOSE_PROVIDER:-}" == "openai" && -z "${OPENAI_API_KEY:-}" ]]; then
+  echo "Missing OPENAI_API_KEY (or LIVAI_API_KEY). Set it in .env, or choose a different GOOSE_PROVIDER."
   exit 1
 fi
 
