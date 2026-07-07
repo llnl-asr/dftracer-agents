@@ -183,8 +183,23 @@ def ensure_setup(target_root: Optional[Path] = None, force: bool = False) -> Dic
     prior = state.get(key)
 
     bundled_names = sorted(p.name for p in bundled_skills_dir().iterdir() if p.is_dir())
+
+    # Trust the "already done" fast-path only if the state matches the current
+    # bundled skill set AND the symlinks still physically exist on disk. This
+    # self-heals the case where <root>/.claude/skills was deleted or the links
+    # went stale after the state file was written — otherwise a valid-looking
+    # state entry would make this a silent no-op forever, leaving no skills
+    # installed. install_skills() is itself idempotent, so re-running is cheap.
     if prior and not force and prior.get("bundled_names") == bundled_names:
-        return {"status": "already_done", "target": key, **prior}
+        dest_root = _claude_skills_dir(root)
+        src_skills = bundled_skills_dir()
+        links_present = dest_root.is_dir() and all(
+            _is_ours(dest_root / n, src_skills) or _is_ours(dest_root / f"dftracer-{n}", src_skills)
+            for n in bundled_names
+        )
+        if links_present:
+            return {"status": "already_done", "target": key, **prior}
+        # else fall through and re-install to repair the missing/stale links
 
     result = install_skills(target_root=root)
     record = {

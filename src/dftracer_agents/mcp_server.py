@@ -258,16 +258,57 @@ def main() -> None:
         default=False,
         help="Skip the automatic (tracked, idempotent) skill-symlink setup on startup.",
     )
+    parser.add_argument(
+        "--skills-target",
+        default=None,
+        help=(
+            "Directory under which to install skills into '.claude/skills/'. "
+            "Overrides the default (current directory if it looks like a project "
+            "-- has .git or pyproject.toml -- otherwise your home directory). "
+            "Use this to avoid the silent home-directory fallback when launching "
+            "the server from a non-project directory."
+        ),
+    )
+    parser.add_argument(
+        "--force-setup",
+        action="store_true",
+        default=False,
+        help=(
+            "Re-run skill setup even if the tracking state says it is already "
+            "done for this target (also self-heals if the .claude/skills symlinks "
+            "were deleted since the last run)."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.skip_setup:
-        from dftracer_agents.skills import ensure_setup
+        from pathlib import Path as _Path
+        from dftracer_agents.skills import ensure_setup, resolve_default_target
         try:
-            result = ensure_setup()
-            if result["status"] == "installed":
-                print(f"[setup] Skills installed to {result['target']}", file=sys.stderr)
+            target_root = (
+                _Path(args.skills_target).expanduser().resolve()
+                if args.skills_target
+                else resolve_default_target()
+            )
+            result = ensure_setup(target_root=target_root, force=args.force_setup)
+            # Always report where skills went and what happened, so a silent
+            # "already_done" no-op is never mistaken for "setup didn't run".
+            status = result.get("status")
+            target = result.get("target", str(target_root))
+            if status == "installed":
+                print(f"[setup] Skills installed to {target}", file=sys.stderr)
+            elif status == "already_done":
+                print(
+                    f"[setup] Skills already up to date at {target} "
+                    f"(use --force-setup to re-link)",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"[setup] Skill setup status={status} target={target}", file=sys.stderr)
         except Exception as exc:  # never let setup issues block the server
-            print(f"[setup] Skipped skill setup: {exc}", file=sys.stderr)
+            import traceback
+            print(f"[setup] Skipped skill setup ({type(exc).__name__}): {exc}", file=sys.stderr)
+            traceback.print_exc()
 
     server = build_server(args.service)
 
