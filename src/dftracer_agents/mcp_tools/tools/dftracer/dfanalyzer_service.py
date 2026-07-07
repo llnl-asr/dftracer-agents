@@ -321,13 +321,33 @@ class DFAnalyzerService(MCPService):
                 cluster_cores=cluster_cores,
                 cluster_memory=cluster_memory,
             )
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
+            # dfanalyzer's dask LocalCluster is known to hang on teardown
+            # after it has already printed all real output (confirmed: the
+            # process sits at high CPU post-"Cluster teardown" and never
+            # exits on its own). subprocess.run() without a timeout blocks
+            # forever waiting for the process to fully exit, not just for
+            # output to stop, so a hung teardown looks like a stuck MCP
+            # tool call even though the actual analysis already finished.
+            # Give it a generous timeout, then treat a timeout as success
+            # if it already produced console output — SIGKILL the hung
+            # process and return whatever was captured before the kill.
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                stdout, stderr, returncode = result.stdout, result.stderr, result.returncode
+            except subprocess.TimeoutExpired as exc:
+                stdout = exc.stdout or ""
+                stderr = exc.stderr or ""
+                returncode = 0 if stdout.strip() else -1
+                if stderr:
+                    stderr += "\n[dfanalyzer timed out during dask cluster teardown after producing output above; process was killed]"
+                else:
+                    stderr = "[dfanalyzer timed out during dask cluster teardown; process was killed]"
+            if returncode != 0:
                 return (
-                    f"dfanalyzer exited with code {result.returncode}\n"
-                    f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+                    f"dfanalyzer exited with code {returncode}\n"
+                    f"stdout:\n{stdout}\nstderr:\n{stderr}"
                 )
-            return result.stdout or "(no output)"
+            return stdout or "(no output)"
 
     def _register_list_presets(self) -> None:
         """Register the ``list_presets`` MCP tool on :attr:`analyzer_subservice`.

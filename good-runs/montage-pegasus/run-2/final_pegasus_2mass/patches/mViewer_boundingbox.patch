@@ -1,0 +1,117 @@
+--- /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/source/MontageLib/Viewer/mViewer_boundingbox.c	2026-07-05 23:25:06.409432000 -0700
++++ /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/annotated/MontageLib/Viewer/mViewer_boundingbox.c	2026-07-06 19:59:28.055999000 -0700
+@@ -1,6 +1,7 @@
+ #include <stdio.h> 
+ #include <stdlib.h> 
+ #include <math.h> 
++#include <dftracer/dftracer.h>
+ 
+ int mViewer_bb_debug = 0;
+ 
+@@ -108,7 +109,9 @@
+ 			    (q.x - p.x) * (r.y - q.y); 
+ 
+ 	if (val == 0)
++      {
+       return 0; // colinear 
++      }
+ 
+ 	return (val > 0)? 1: 2; // clock or counterclock wise 
+ } 
+@@ -119,6 +122,8 @@
+ 
+ int mViewer_compare(const void *vp1, const void *vp2) 
+ { 
++   DFTRACER_C_FUNCTION_START();
++   DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+    Point *p1 = (Point *)vp1; 
+    Point *p2 = (Point *)vp2; 
+ 
+@@ -128,8 +133,12 @@
+    int o = mViewer_orientation(p0, *p1, *p2); 
+ 
+    if (o == 0) 
++      {
++      DFTRACER_C_FUNCTION_END();
+       return (mViewer_distSq(p0, *p2) >= mViewer_distSq(p0, *p1))? -1 : 1; 
++      }
+ 
++   DFTRACER_C_FUNCTION_END();
+    return (o == 2)? -1: 1; 
+ } 
+ 
+@@ -138,6 +147,8 @@
+ 
+ void mViewer_convexHull(int n, int *xarray, int *yarray, int *nhull, int *xhull, int *yhull) 
+ { 
++   DFTRACER_C_FUNCTION_START();
++   DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+    int i;
+ 
+    Point points[32768];
+@@ -199,7 +210,9 @@
+ 
+       while (i < n-1 && mViewer_orientation(p0, points[i], 
+                points[i+1]) == 0) 
++         {
+          i++; 
++         }
+ 
+ 
+       points[m] = points[i]; 
+@@ -211,7 +224,10 @@
+    // If modified array of points has less than 3 points, 
+    // convex hull is not possible 
+ 
++   {
++   DFTRACER_C_FUNCTION_END();
+    if (m < 3) return; 
++   }
+ 
+ 
+    // "Empty" the stack and push first three points 
+@@ -233,7 +249,9 @@
+       // a non-left turn 
+ 
+       while (mViewer_orientation(mViewer_nextToTop(), mViewer_top(), points[i]) != 2) 
++         {
+          mViewer_pop(); 
++         }
+ 
+       mViewer_push(points[i]); 
+    } 
+@@ -260,6 +278,8 @@
+                          double *a, double *b, double *c,
+                          double *xcorner, double *ycorner)
+ {
++   DFTRACER_C_FUNCTION_START();
++   DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+    int    i, j, inext, iref, imax = 0;
+    
+    double a0, at;
+@@ -290,7 +310,9 @@
+    if(mViewer_bb_debug)
+    {
+       for(i=0; i<n; ++i)
++         {
+          printf("%2d: %d %d\n", i, x[i], y[i]);
++         }
+ 
+       fflush(stdout);
+    }
+@@ -473,7 +495,9 @@
+          pad = dmax;
+ 
+          if(lmin < dmax)
++            {
+             pad = lmin;
++            }
+ 
+          pad = pad/4.;
+ 
+@@ -521,4 +545,5 @@
+          }
+       }
+    }
++   DFTRACER_C_FUNCTION_END();
+ }

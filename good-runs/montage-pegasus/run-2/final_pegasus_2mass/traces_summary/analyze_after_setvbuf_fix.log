@@ -1,0 +1,100 @@
+✓ Cluster setup (2.495s)
+✓ Analyzer setup (0.011s)
+[2026-07-06 21:27:48.046] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.046] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.046] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.046] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.046] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.046] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.046] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.046] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.046] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.046] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.046] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.046] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.046] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.046] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.046] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.047] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.047] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.048] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.048] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.048] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.049] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.049] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.049] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.050] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.066] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.066] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.067] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.067] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.070] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.070] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.072] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.072] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.072] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.073] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.073] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.073] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.073] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.074] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.074] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.074] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.074] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.074] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.075] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.075] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.076] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.075] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.076] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.077] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.089] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:27:48.089] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:27:48.246] INFO  IndexBatch: sub-batch 1/1 begin (files 0..0 of 1) (index_batch_builder_utility.cpp:596)
+[2026-07-06 21:27:48.246] INFO  IndexBatch: sub-batch 1/1 begin (files 0..0 of 1) (index_batch_builder_utility.cpp:596)
+[2026-07-06 21:27:48.247] INFO  IndexBatch: streaming pipeline begin (1 files, parse_workers=8 write_workers=4) (index_batch_builder_utility.cpp:344)
+[2026-07-06 21:27:48.247] INFO  IndexBatch: streaming pipeline begin (1 files, parse_workers=8 write_workers=4) (index_batch_builder_utility.cpp:344)
+[2026-07-06 21:27:48.248] INFO  IndexBatch: sub-batch 1/1 begin (files 0..0 of 1) (index_batch_builder_utility.cpp:596)
+[2026-07-06 21:27:48.248] INFO  IndexBatch: streaming pipeline begin (1 files, parse_workers=8 write_workers=4) (index_batch_builder_utility.cpp:344)
+[2026-07-06 21:27:48.255] INFO  IndexBatch: sub-batch 1/1 begin (files 0..0 of 1) (index_batch_builder_utility.cpp:596)
+[2026-07-06 21:27:48.256] INFO  IndexBatch: streaming pipeline begin (1 files, parse_workers=8 write_workers=4) (index_batch_builder_utility.cpp:344)
+[2026-07-06 21:27:49.176] INFO  IndexBatch: streaming pipeline complete (parsed=1 written=1) (index_batch_builder_utility.cpp:437)
+[2026-07-06 21:27:49.177] INFO  IndexBatch: sub-batch 1/1 complete (indexed=1 skipped=0 failed=0) (index_batch_builder_utility.cpp:637)
+[2026-07-06 21:27:50.098] INFO  IndexBatch: streaming pipeline complete (parsed=1 written=1) (index_batch_builder_utility.cpp:437)
+[2026-07-06 21:27:50.098] INFO  IndexBatch: sub-batch 1/1 complete (indexed=1 skipped=0 failed=0) (index_batch_builder_utility.cpp:637)
+[2026-07-06 21:27:50.144] INFO  IndexBatch: streaming pipeline complete (parsed=1 written=1) (index_batch_builder_utility.cpp:437)
+[2026-07-06 21:27:50.144] INFO  IndexBatch: sub-batch 1/1 complete (indexed=1 skipped=0 failed=0) (index_batch_builder_utility.cpp:637)
+[2026-07-06 21:27:50.241] INFO  IndexBatch: streaming pipeline complete (parsed=1 written=1) (index_batch_builder_utility.cpp:437)
+[2026-07-06 21:27:50.241] INFO  IndexBatch: sub-batch 1/1 complete (indexed=1 skipped=0 failed=0) (index_batch_builder_utility.cpp:637)
+[2026-07-06 21:27:50.652] INFO  Resolver: 4 total, 4 cached, 0 need checkpoint, 0 need bloom, 0 need manifest, 0 need aggregation (index_resolver_utility.cpp:314)
+[2026-07-06 21:27:50.680] INFO  Resolver: 4 total, 4 cached, 0 need checkpoint, 0 need bloom, 0 need manifest, 0 need aggregation (index_resolver_utility.cpp:314)
+[2026-07-06 21:27:50.736] INFO  Resolver: 2 total, 2 cached, 0 need checkpoint, 0 need bloom, 0 need manifest, 0 need aggregation (index_resolver_utility.cpp:314)
+[2026-07-06 21:27:50.737] INFO  Resolver: 2 total, 2 cached, 0 need checkpoint, 0 need bloom, 0 need manifest, 0 need aggregation (index_resolver_utility.cpp:314)
+✓ Read trace & stats (1.421s)
+✓ Compute high-level metrics (0.168s)
+✓ Compute views (3.548s)
+✓ Process views (0.287s)
+                              Time Period Summary                               
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃ Metric                                         ┃ Unit         ┃        Value ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ Job Time                                       │ seconds      │       51.759 │
+│ Trace Count                                    │ count        │      960,722 │
+│ Profile Count                                  │ count        │            0 │
+│ Total Count                                    │ count        │      960,722 │
+│ Total Files                                    │ count        │          207 │
+│ Total Nodes                                    │ count        │            1 │
+│ Total Processes                                │ count        │          262 │
+│ POSIX - All Count                              │ count        │      927,088 │
+│ POSIX - All Size                               │ MB           │     2707.287 │
+│ POSIX - All Bandwidth                          │ MB/s         │     2532.127 │
+│ POSIX - All Avg Transfer Size                  │ MB           │        0.003 │
+└────────────────────────────────────────────────┴──────────────┴──────────────┘
+                                Layer Breakdown                                 
+┏━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
+┃ Layer       ┃ Time (s) ┃     Ops ┃    Ops/sec ┃ Size (MB) ┃ Bandwidth (MB/s) ┃
+┡━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
+│ POSIX - All │    1.069 │ 927,088 │ 867105.946 │  2707.287 │         2532.127 │
+└─────────────┴──────────┴─────────┴────────────┴───────────┴──────────────────┘
+✓ Output (0.009s)
+✓ Cluster teardown (0.792s)

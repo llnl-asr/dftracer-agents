@@ -1,0 +1,51 @@
+--- /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/source/grid/Pegasus/mConcatFit.c	2026-07-05 23:25:08.127525000 -0700
++++ /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/annotated/grid/Pegasus/mConcatFit.c	2026-07-06 19:59:18.949626000 -0700
+@@ -19,6 +19,7 @@
+ #include <math.h>
+ #include <svc.h>
+ #include <mtbl.h>
++#include <dftracer/dftracer.h>
+ 
+ #define MAXSTR 4096
+ 
+@@ -48,6 +49,9 @@
+ 
+ int main(int argc, char **argv)
+ {
++   DFTRACER_C_INIT(NULL, NULL, NULL);
++   DFTRACER_C_FUNCTION_START();
++   DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+    int    ch, stat, ncols, count, failed, missing, warning;
+ 
+    int    icntr1;
+@@ -191,7 +195,9 @@
+       stat = tread();
+ 
+       if(stat < 0)
++         {
+          break;
++         }
+ 
+       cntr1 = atoi(tval(icntr1));
+       cntr2 = atoi(tval(icntr2));
+@@ -240,9 +246,13 @@
+ 
+       ++count;
+       if(strcmp( status, "ERROR") == 0)
++         {
+          ++failed;
++         }
+       else if(strcmp( status, "WARNING") == 0)
++         {
+          ++warning;
++         }
+       else
+       {
+          a         = atof(svc_val(line, "a", val));
+@@ -280,4 +290,6 @@
+    fflush(stdout);
+ 
+    exit(0);
++   DFTRACER_C_FUNCTION_END();
++   DFTRACER_C_FINI();
+ }

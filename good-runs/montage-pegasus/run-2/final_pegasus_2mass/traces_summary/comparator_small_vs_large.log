@@ -1,0 +1,162 @@
+[2026-07-06 21:07:34.586] INFO  io_uring runtime probe failed, falling back (io_backend_factory.cpp:77)
+[2026-07-06 21:07:34.587] INFO  I/O backend: using epoll+threadpool (96 threads) (io_backend_factory.cpp:95)
+[2026-07-06 21:07:34.646] INFO  Resolver: 1 total, 1 cached, 0 need checkpoint, 0 need bloom, 0 need manifest, 0 need aggregation (index_resolver_utility.cpp:314)
+[2026-07-06 21:07:34.646] INFO  All 1 files already indexed (dftracer_comparator.cpp:496)
+[2026-07-06 21:07:34.682] INFO  Resolver: 4 total, 4 cached, 0 need checkpoint, 0 need bloom, 0 need manifest, 0 need aggregation (index_resolver_utility.cpp:314)
+[2026-07-06 21:07:34.682] INFO  All 4 files already indexed (dftracer_comparator.cpp:496)
+[2026-07-06 21:07:34.686] WARN  Skipping file: /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/pegasus_2mass/traces/compact/montage_2mass-2_chunk0.pfw.gz (dftracer_comparator.cpp:179)
+[2026-07-06 21:07:34.686] WARN  Skipping file: /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/pegasus_2mass/traces/compact/montage_2mass-4_chunk0.pfw.gz (dftracer_comparator.cpp:179)
+[2026-07-06 21:07:34.686] WARN  Skipping file: /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/pegasus_2mass/traces/compact/montage_2mass-3_chunk0.pfw.gz (dftracer_comparator.cpp:179)
+[2026-07-06 21:07:34.821] INFO  Starting chunk 0: /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/pegasus3/traces/compact/montage_optimized-1_chunk0.pfw.gz [bytes 0-4194304] (chunk_aggregator_utility.cpp:24)
+[2026-07-06 21:07:34.919] INFO  Aggregation complete: 160 unique keys, 62380 total events, 1 files (event_aggregator.cpp:139)
+[2026-07-06 21:07:34.922] INFO  Starting chunk 0: /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/pegasus_2mass/traces/compact/montage_2mass-1_chunk0.pfw.gz [bytes 0-4194304] (chunk_aggregator_utility.cpp:24)
+[2026-07-06 21:07:35.070] INFO  Aggregation complete: 5584 unique keys, 469698 total events, 1 files (event_aggregator.cpp:139)
+Comparison:
+  baseline: /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/pegasus3/traces/compact
+  variant:  /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/pegasus_2mass/traces/compact
+
+  3 nodes  3 regressions  2 improvements
+
+metric                          |   baseline |                   variant |        delta |    change | sig
+--------------------------------+------------+---------------------------+--------------+-----------+----
+`-- root
+    +-- SUMMARY
+    |   +-- files               |          1 |                         1 |           +0 |     +0.0% | ~
+    |   +-- processes           |          6 |                       127 |         +121 |  +2016.7% | ~
+    |   +-- threads             |          6 |                       127 |         +121 |  +2016.7% | ~
+    |   +-- time
+    |   |   +-- pipeline        |    4.322 s |                  51.984 s |    +47.661 s |  +1102.7% | ~
+    |   |   `-- io              |    1.183 s |                   7.903 s |     +6.720 s |   +568.1% | ~
+    |   +-- total_bytes         |  811.54 MB |                  1.474 GB |   +697.66 MB |    +86.0% | ~
+    |   +-- count               |     62,380 |                   469,698 |     +407,318 |   +653.0% | ~
+    |   +-- dur
+    |   |   +-- mean            |   12.70 ms |                   4.13 ms |     -8.57 ms |    -67.5% | ~
+    |   |   +-- p50             |   10.62 ms |                  11.74 ms |     +1.12 ms |    +10.5% | ~
+    |   |   +-- p95             |   10.62 ms |                 150.09 ms |   +139.47 ms |  +1313.4% | ~
+    |   |   `-- p99             |   10.62 ms |                 150.09 ms |   +139.47 ms |  +1313.4% | ~
+    |   +-- size
+    |   |   +-- mean            |     2.7 KB |                   89.7 KB |     +87.0 KB |  +3172.9% | ***
+    |   |   +-- p50             |    16.8 KB |                   8.68 MB |     +8.67 MB | +52962.3% | ~
+    |   |   +-- p95             |    20.1 KB |                   8.68 MB |     +8.66 MB | +44221.1% | ~
+    |   |   `-- p99             |    20.1 KB |                   8.68 MB |     +8.66 MB | +44221.1% | ~
+    |   +-- transfer_size       |    15.1 KB |                  448.6 KB |    +433.5 KB |  +2875.4% | ~
+    |   `-- bandwidth           | 2.146 GB/s |                1.691 GB/s | -465.41 MB/s |    -21.2% | ~
+    +-- posix
+    |   +-- SUMMARY
+    |   |   +-- count           |         29 |                       822 |         +793 |  +2734.5% | ~
+    |   |   `-- dur
+    |   |       +-- mean        |   626.0 us |                   3.53 ms |     +2.91 ms |   +464.3% | *
+    |   |       +-- p50         |   106.7 us |                   2.57 ms |     +2.46 ms |  +2304.9% | ~
+    |   |       +-- p95         |   518.1 us |                   2.73 ms |     +2.21 ms |   +426.0% | ~
+    |   |       `-- p99         |    1.35 ms |                   9.80 ms |     +8.45 ms |   +624.3% | ~
+    |   +-- unlink
+    |   |   +-- count           |          1 |                       184 |         +183 | +18300.0% | ~
+    |   |   `-- dur
+    |   |       +-- mean        |   522.0 us |        2.58 ms (±1.20 ms) |     +2.06 ms |   +395.2% | ~
+    |   |       +-- p50         |   518.1 us |                  685.6 us |    +167.4 us |    +32.3% | ~
+    |   |       +-- p95         |   518.1 us |                   2.32 ms |     +1.80 ms |   +348.2% | ~
+    |   |       `-- p99         |   518.1 us |                   3.91 ms |     +3.39 ms |   +653.9% | ~
+    |   +-- __xstat64
+    |   |   +-- count           |         20 |                       390 |         +370 |  +1850.0% | ~
+    |   |   `-- dur
+    |   |       +-- mean        |    12.0 us |        1.84 ms (±1.66 ms) |     +1.82 ms | +15202.8% | ***
+    |   |       +-- p50         |     4.0 us |                  301.9 us |    +297.9 us |  +7419.9% | ~
+    |   |       +-- p95         |    10.1 us |                  773.0 us |    +762.9 us |  +7571.9% | ~
+    |   |       `-- p99         |    12.1 us |                   1.38 ms |     +1.37 ms | +11345.2% | ~
+    |   `-- remove
+    |       +-- count           |          8 |                       248 |         +240 |  +3000.0% | ~
+    |       `-- dur
+    |           +-- mean        |    1.34 ms |       6.18 ms (±10.63 ms) |     +4.83 ms |   +359.5% | *
+    |           +-- p50         |   314.3 us |                   2.57 ms |     +2.25 ms |   +716.7% | ~
+    |           +-- p95         |    1.35 ms |                   6.98 ms |     +5.62 ms |   +415.5% | ~
+    |           `-- p99         |    1.35 ms |                  26.65 ms |    +25.29 ms |  +1869.0% | ~
+    `-- stdio
+        +-- SUMMARY
+        |   +-- count           |     62,351 |                   468,876 |     +406,525 |   +652.0% | ~
+        |   +-- dur
+        |   |   +-- mean        |   17.22 ms |                   4.39 ms |    -12.84 ms |    -74.5% | ~
+        |   |   +-- p50         |   10.62 ms |                  11.74 ms |     +1.12 ms |    +10.5% | ~
+        |   |   +-- p95         |   10.62 ms |                 150.09 ms |   +139.47 ms |  +1313.4% | ~
+        |   |   `-- p99         |   10.62 ms |                 150.09 ms |   +139.47 ms |  +1313.4% | ~
+        |   +-- size
+        |   |   +-- mean        |     3.8 KB |                  128.2 KB |    +124.4 KB |  +3300.4% | ***
+        |   |   +-- p50         |    16.8 KB |                   8.68 MB |     +8.67 MB | +52962.3% | ~
+        |   |   +-- p95         |    20.1 KB |                   8.68 MB |     +8.66 MB | +44221.1% | ~
+        |   |   `-- p99         |    20.1 KB |                   8.68 MB |     +8.66 MB | +44221.1% | ~
+        |   +-- transfer_size   |    15.1 KB |                  448.6 KB |    +433.5 KB |  +2875.4% | ~
+        |   `-- bandwidth       | 2.146 GB/s |                1.691 GB/s | -465.41 MB/s |    -21.2% | ~
+        +-- fwrite
+        |   +-- count           |     41,392 |                   127,519 |      +86,127 |   +208.1% | ~
+        |   +-- dur
+        |   |   +-- mean        |     9.9 us |       549.2 us (±1.72 ms) |    +539.3 us |  +5432.2% | *
+        |   |   +-- p50         |    25.3 us |                  432.8 us |    +407.5 us |  +1611.7% | ~
+        |   |   +-- p95         |    25.3 us |                  432.8 us |    +407.5 us |  +1611.7% | ~
+        |   |   `-- p99         |    29.1 us |                   5.45 ms |     +5.42 ms | +18622.1% | ~
+        |   +-- size
+        |   |   +-- mean        |    10.0 KB |       891.5 KB (±2.75 MB) |    +881.5 KB |  +8779.4% | *
+        |   |   +-- p50         |     2.8 KB |                  705.6 KB |    +702.8 KB | +24868.1% | ~
+        |   |   +-- p95         |    19.7 KB |                   8.68 MB |     +8.66 MB | +45116.5% | ~
+        |   |   `-- p99         |    19.7 KB |                   8.68 MB |     +8.66 MB | +45116.5% | ~
+        |   +-- transfer_size   |    10.0 KB |       891.5 KB (±2.75 MB) |    +881.5 KB |  +8779.4% | ~
+        |   `-- bandwidth       | 1.420 GB/s | 1.137 GB/s (±427.56 MB/s) | -289.25 MB/s |    -19.9% | ~
+        +-- fread
+        |   +-- count           |     20,668 |                   322,737 |     +302,069 |  +1461.5% | ~
+        |   +-- dur
+        |   |   +-- mean        |     9.0 us |        34.0 us (±16.1 us) |     +25.0 us |   +278.6% | *
+        |   |   +-- p50         |    24.3 us |                  320.6 us |    +296.3 us |  +1219.8% | ~
+        |   |   +-- p95         |    24.3 us |                   4.03 ms |     +4.00 ms | +16481.4% | ~
+        |   |   `-- p99         |    24.3 us |                   4.03 ms |     +4.00 ms | +16481.4% | ~
+        |   +-- size
+        |   |   +-- mean        |    20.1 KB |          5.6 KB (±8.4 KB) |     -14.5 KB |    -72.0% | ***
+        |   |   +-- p50         |    20.1 KB |                   28.1 KB |      +8.1 KB |    +40.2% | ~
+        |   |   +-- p95         |    20.1 KB |                   28.1 KB |      +8.1 KB |    +40.2% | ~
+        |   |   `-- p99         |    20.1 KB |                   28.1 KB |      +8.1 KB |    +40.2% | ~
+        |   +-- transfer_size   |    20.1 KB |          5.6 KB (±8.4 KB) |     -14.5 KB |    -72.0% | ~
+        |   `-- bandwidth       | 2.872 GB/s | 2.245 GB/s (±138.93 MB/s) | -641.58 MB/s |    -21.8% | ~
+        +-- fgets
+        |   +-- count           |         98 |                    10,376 |      +10,278 | +10487.8% | ~
+        |   `-- dur
+        |       +-- mean        |     5.0 us |          3.4 us (±5.2 us) |      -1.6 us |    -32.9% | *
+        |       +-- p95         |    19.9 us |                   13.9 us |      -6.0 us |    -30.2% | ~
+        |       `-- p99         |    22.9 us |                   22.9 us |        +0 ns |     +0.0% | ~
+        +-- fclose
+        |   +-- count           |         62 |                     3,105 |       +3,043 |  +4908.1% | ~
+        |   `-- dur
+        |       +-- mean        |  134.99 ms |      23.61 ms (±44.77 ms) |   -111.38 ms |    -82.5% | *
+        |       +-- p50         |   10.62 ms |                  11.74 ms |     +1.12 ms |    +10.5% | ~
+        |       +-- p95         |   85.00 ms |                  11.74 ms |    -73.27 ms |    -86.2% | ~
+        |       `-- p99         |  134.65 ms |                  18.97 ms |   -115.69 ms |    -85.9% | ~
+        +-- fflush
+        |   +-- count           |         33 |                     1,623 |       +1,590 |  +4818.2% | ~
+        |   `-- dur
+        |       +-- mean        |    26.0 us |         10.2 us (±4.9 us) |     -15.8 us |    -60.8% | **
+        |       +-- p50         |     3.0 us |                    2.1 us |      -857 ns |    -28.8% | ~
+        |       +-- p95         |    19.9 us |                    7.0 us |     -12.9 us |    -64.7% | ~
+        |       `-- p99         |    25.8 us |                    8.9 us |     -16.9 us |    -65.4% | ~
+        +-- fopen64
+        |   +-- count           |         73 |                     3,449 |       +3,376 |  +4624.7% | ~
+        |   `-- dur
+        |       +-- mean        |    2.74 ms |        6.49 ms (±7.63 ms) |     +3.75 ms |   +136.7% | ~
+        |       +-- p50         |   399.5 us |                   2.23 ms |     +1.83 ms |   +458.5% | ~
+        |       +-- p95         |    1.47 ms |                   2.23 ms |    +765.2 us |    +52.2% | ~
+        |       `-- p99         |    2.73 ms |                   5.95 ms |     +3.22 ms |   +118.2% | ~
+        +-- fseek
+        |   +-- count           |         11 |                        67 |          +56 |   +509.1% | ~
+        |   `-- dur
+        |       +-- mean        |     6.0 us |          5.3 us (±1.2 us) |      -667 ns |    -11.1% | *
+        |       +-- p50         |     4.0 us |                    3.0 us |      -1.0 us |    -25.9% | ~
+        |       +-- p95         |     6.0 us |                    6.0 us |        +0 ns |     +0.0% | ~
+        |       `-- p99         |     6.0 us |                    6.0 us |        +0 ns |     +0.0% | ~
+        `-- fputs
+            +-- count           |         14 |                         0 |          -14 |   -100.0% | ~
+            `-- dur
+                +-- mean        |     286 ns |                         0 |      -286 ns |   -100.0% | ~
+                +-- p95         |     2.0 us |                         0 |      -2.0 us |   -100.0% | ~
+                `-- p99         |     2.0 us |                         0 |      -2.0 us |   -100.0% | ~
+
+Top 3 regressions:
+  root > posix [__xstat64]  dur_mean  +15202.8%  ***
+  root > stdio  size_mean  +3300.4%  ***
+  root  size_mean  +3172.9%  ***
+
+Completed in 16.0 ms

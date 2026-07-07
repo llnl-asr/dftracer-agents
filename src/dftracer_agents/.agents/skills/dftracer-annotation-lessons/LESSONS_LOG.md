@@ -1119,3 +1119,121 @@ fix: |
   bandwidth gain matters far more at production mosaic scale.
 tags: [dftracer, optimization, posix_fadvise, lustre, nfs, montage, fcntl, feature-test-macro, l2-l3-optimization, montage-workflow-v3]
 
+---
+date: 2026-07-06
+app: general (Pegasus 5.0.7 / PMC)
+context: "Lustre" runs were never actually on Lustre -- site catalog sharedScratch is not the execution directory
+error: |
+  (not an error -- a silent, plausible-looking measurement bug)
+  A previous "L3 optimization: moved to Lustre" result (+16% bandwidth) was
+  later found to be invalid: the actual PMC task execution directory
+  (`-w` flag in every TASK line of the generated PMC dag) was
+  `<CWD-at-plan-time>/wf-scratch/LOCAL/.../run0001` -- a real directory on
+  whatever filesystem the submit host's CWD was on -- NOT the Lustre path
+  declared in sites.yml's sharedScratch/localStorage directories.
+root_cause: |
+  Pegasus's site catalog sharedScratch/localStorage paths control where
+  DATA TRANSFER jobs (stage-in/stage-out) stage files for the replica
+  catalog -- they do NOT control where PegasusLite/PMC actually executes
+  compute jobs. The execution scratch directory is always
+  `<CWD when pegasus-plan ran>/wf-scratch/<site>/<user>/pegasus/<wf-name>/<run-id>`,
+  independent of the site catalog, for this style of local-site PMC
+  execution. Setting sites.yml to point at Lustre gives a false sense of
+  having moved the I/O path.
+  A second, related bug: this wf-scratch path is namespaced only by
+  workflow name + run number (e.g. "montage" + "run0001"), NOT by the
+  `--dir` submit-directory flag passed to pegasus-plan. Two different
+  workflow plans issued from the SAME CWD with the same workflow name
+  silently share (and contaminate) the same physical wf-scratch directory,
+  even if planned into different `--dir` submit trees.
+fix: |
+  To genuinely run on Lustre: `cd` into a directory that is ITSELF on
+  Lustre before calling pegasus-plan (copy montage-workflow.py + data/ +
+  pegasus.properties there first). Then verify before running:
+    grep -m1 "^TASK mProject" <run-dir>/montage-0.dag | grep -oP '(?<=-w )\S+'
+  -- confirm the printed path actually starts with /p/lustre... (or
+  whatever your target filesystem's mount prefix is) before submitting to
+  PMC. Never trust the site catalog path alone as proof of where jobs ran.
+  To avoid cross-run contamination: move or rm the previous run's
+  wf-scratch (and wf-output) aside before planning+running a new,
+  independent measurement from the same CWD -- do this even between runs
+  that are supposed to be "the same workflow, different config", since
+  leftover intermediate files from a prior run skew dfanalyzer's
+  unique_file_count / total_bytes for the new run.
+  See software-pegasus skill's script `plan_and_run_2mass_on_lustre.sh`
+  for an automated version of this verification check.
+tags: [pegasus, pmc, lustre, nfs, sharedScratch, wf-scratch, measurement-bug, montage-workflow-v3, software-pegasus]
+
+---
+date: 2026-07-06
+app: general
+context: mcp__dftracer__analyze (dfanalyzer) hangs the whole MCP connection indefinitely after finishing real work
+error: |
+  Calling the `analyze` MCP tool would hang forever / eventually return
+  "MCP error -32000: Connection closed". Running the identical dfanalyzer
+  command directly via Bash in the background and reading its log file
+  showed the command's real output (including the final
+  "Cluster teardown" line) appeared within ~1 minute, but the OS process
+  itself kept running at 99% CPU indefinitely afterward, never exiting on
+  its own (confirmed via `ps aux`).
+root_cause: |
+  dfanalyzer's dask LocalCluster hangs during its own shutdown/teardown
+  phase after all real analysis output has already been printed and
+  flushed. The `analyze` MCP tool's implementation
+  (dfanalyzer_service.py) called `subprocess.run(cmd, capture_output=True,
+  text=True)` with NO timeout -- this blocks until the child process fully
+  EXITS, not until it stops producing output, so a hung teardown looks
+  identical to a stuck/broken MCP tool from the caller's perspective even
+  though the actual analysis already succeeded.
+fix: |
+  Added `timeout=300` to the subprocess.run() call in
+  dfanalyzer_service.py's `analyze()` function, and a `except
+  subprocess.TimeoutExpired` handler that treats a timeout AFTER
+  non-empty stdout was already captured as success (Python's
+  subprocess.run/Popen.communicate populates exc.stdout/exc.stderr with
+  whatever was captured before the timeout fired, even though the
+  process is then killed). Only reports failure if no output was
+  captured before the timeout.
+  Workaround for the current session (before an MCP server restart makes
+  the fix live): invoke `dfanalyzer` directly via Bash, redirected to a
+  log file, run with `&` in the background, sleep briefly, then read the
+  log file directly and `pkill -9 -f "dfanalyzer trace_path=<path>"` once
+  the log shows the final "Cluster teardown" line -- do NOT `wait` on the
+  backgrounded PID, since that reintroduces the same indefinite hang.
+tags: [dftracer, dfanalyzer, dask, hang, timeout, mcp-tool-fix, subprocess]
+
+---
+date: 2026-07-06
+app: https://github.com/pegasus-isi/montage-workflow-v3
+context: annotation scoping filter must check the ACTUAL executed binaries, not assumed classic-tool names
+error: |
+  Original smoke-test-scoped annotation (session_identify_smoke_test_files)
+  covered mProject, mOverlaps, mDiffExec, mFitExec, mBgModel, mBackground/
+  mBgExec, mAdd, mImgtbl, mArchiveList -- but checking the real generated
+  Pegasus DAG's TASK lines showed the workflow actually invokes mDiffFit
+  (a combined single-shot tool, not the separate batch mDiffExec+mFitExec
+  pair), plus mConcatFit and mViewer, neither of which were in the original
+  scope at all. 3 of 8 real executables had zero instrumentation.
+root_cause: |
+  montage-workflow-v3's Pegasus DAX generator (montage-workflow.py) uses a
+  different, smaller set of Montage tools than the classic non-workflow
+  batch pipeline the original filter run was modeled on. Grepping for
+  "mDiffExec"/"mFitExec" in the transformation catalog would have shown
+  zero matches -- the actual per-job single-invocation tool names must be
+  read from the generated DAG's own TASK lines, not assumed from Montage's
+  general tool list or from the batch-pipeline naming convention.
+fix: |
+  After generating (or receiving) a Pegasus DAG, always cross-check binary
+  coverage directly against the DAG itself before declaring annotation
+  scope complete:
+    grep "^TASK" <run-dir>/montage-0.dag | awk '{print $2}' \
+      | sed 's/_ID[0-9]*_*[0-9]*$//' \
+      | sed 's/^\(chmod_\|stage_in_\|stage_out_\|clean_up_\|register_\|cleanup_\|create_dir_\)//' \
+      | sort | uniq -c | sort -rn
+  Then for each real compute-task binary name, verify instrumentation:
+    grep -c DFTRACER <annotated-dir>/path/to/entry_file.c
+  Do this BEFORE running a large/expensive workflow, not after -- it's the
+  only reliable way to confirm trace coverage matches the workflow's real
+  execution graph, not just what was assumed during initial scoping.
+tags: [dftracer, annotation-scoping, montage-workflow-v3, pegasus, mDiffFit, mConcatFit, mViewer, coverage-verification]
+

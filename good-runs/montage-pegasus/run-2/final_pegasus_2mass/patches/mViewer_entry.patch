@@ -1,0 +1,72 @@
+--- /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/source/MontageLib/Viewer/mViewer.c	2026-07-05 23:25:06.403434000 -0700
++++ /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/annotated/MontageLib/Viewer/mViewer.c	2026-07-06 19:59:20.733097000 -0700
+@@ -6,6 +6,7 @@
+ 
+ #include <mViewer.h>
+ #include <montage.h>
++#include <dftracer/dftracer.h>
+ 
+ #define MAXSTR 32768
+ #define STRLEN 1024
+@@ -17,6 +18,9 @@
+ 
+ int main(int argc, char **argv)
+ {
++   DFTRACER_C_INIT(NULL, NULL, NULL);
++   DFTRACER_C_FUNCTION_START();
++   DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+    int i, debug, len;
+ 
+    char cmdstr  [MAXSTR];
+@@ -54,7 +58,9 @@
+    for(i=0; i<argc; ++i)
+    {
+       if(strcmp(argv[i], "-d") == 0)
++         {
+          debug = 1;
++         }
+ 
+       if(strcmp(argv[i], "-out") == 0
+       || strcmp(argv[i], "-png") == 0)
+@@ -173,7 +179,9 @@
+          rstat = fgets(line, STRLEN, fin);
+ 
+          if(rstat == (char *)NULL)
++            {
+             break;
++            }
+ 
+          len = strlen(line) - 1;
+ 
+@@ -185,10 +193,14 @@
+                --len;
+ 
+                if(len < 0)
++                  {
+                   break;
++                  }
+             }
+             else
++               {
+                break;
++               }
+          }
+ 
+          strcat(jsonStr, line);
+@@ -223,7 +235,9 @@
+    for(i=1; i<argc; ++i)
+    {
+       if(i > 1)
++         {
+          strcat(cmdstr, " ");
++         }
+ 
+       strcat(cmdstr, "\"");
+       strcat(cmdstr, argv[i]);
+@@ -247,4 +261,6 @@
+       printf("[struct stat=\"OK\", module=\"mViewer\", %s]\n", returnStruct->msg);
+       exit(0);
+    }
++   DFTRACER_C_FUNCTION_END();
++   DFTRACER_C_FINI();
+ }

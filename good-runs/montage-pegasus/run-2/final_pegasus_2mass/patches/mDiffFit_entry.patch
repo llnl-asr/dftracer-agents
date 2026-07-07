@@ -1,0 +1,27 @@
+--- /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/source/MontageLib/DiffFit/mDiffFit.c	2026-07-05 23:25:06.032657000 -0700
++++ /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/annotated/MontageLib/DiffFit/mDiffFit.c	2026-07-06 19:59:13.681494000 -0700
+@@ -6,6 +6,7 @@
+ #include <mtbl.h>
+ 
+ #include <montage.h>
++#include <dftracer/dftracer.h>
+ 
+ #define MAXSTR 4096
+ 
+@@ -26,6 +27,9 @@
+ 
+ int main(int argc, char **argv)
+ {
++   DFTRACER_C_INIT(NULL, NULL, NULL);
++   DFTRACER_C_FUNCTION_START();
++   DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+    int   ch;
+ 
+    int   keep;
+@@ -143,4 +147,6 @@
+        fprintf(montage_status, "[struct stat=\"OK\", module=\"mDiffFit\", %s]\n", returnStruct->msg);
+        exit(0);
+    }
++   DFTRACER_C_FUNCTION_END();
++   DFTRACER_C_FINI();
+ }

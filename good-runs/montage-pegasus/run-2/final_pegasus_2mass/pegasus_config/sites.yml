@@ -1,0 +1,16 @@
+pegasus: "5.0"
+sites:
+ - name: local
+   arch: x86_64
+   os.type: linux
+   directories:
+    - type: sharedScratch
+      path: /p/lustre5/haridev/dftracer-pegasus-montage/scratch
+      fileServers:
+       - operation: all
+         url: file:///p/lustre5/haridev/dftracer-pegasus-montage/scratch
+    - type: localStorage
+      path: /p/lustre5/haridev/dftracer-pegasus-montage/storage
+      fileServers:
+       - operation: all
+         url: file:///p/lustre5/haridev/dftracer-pegasus-montage/storage

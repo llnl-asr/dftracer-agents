@@ -1,0 +1,42 @@
+--- /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/source/MontageLib/DiffFit/montageDiffFit.c	2026-07-05 23:25:06.036662000 -0700
++++ /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/annotated/MontageLib/DiffFit/montageDiffFit.c	2026-07-06 19:59:16.348349000 -0700
+@@ -15,6 +15,7 @@
+ #include <mtbl.h>
+ 
+ #include <montage.h>
++#include <dftracer/dftracer.h>
+ 
+ #define MAXSTR 4096
+ 
+@@ -50,6 +51,8 @@
+                                 int keep, int levelOnly, int noAreas, int border, int debugin)
+ 
+ {
++   DFTRACER_C_FUNCTION_START();
++   DFTRACER_C_FUNCTION_UPDATE_STR("comp", "io");
+    char   tmpstr[1024];
+ 
+    double a;
+@@ -101,6 +104,7 @@
+    if(diff->status)
+    {
+       strcpy(montage_msgstr, diff->msg);
++      DFTRACER_C_FUNCTION_END();
+       return returnStruct;
+    }
+ 
+@@ -118,6 +122,7 @@
+    if(fitplane->status)
+    {
+       strcpy(montage_msgstr, fitplane->msg);
++      DFTRACER_C_FUNCTION_END();
+       return returnStruct;
+    }
+    else
+@@ -224,5 +229,6 @@
+    returnStruct->boxheight = boxheight;
+    returnStruct->boxang    = boxangle;
+ 
++   DFTRACER_C_FUNCTION_END();
+    return returnStruct;
+ }

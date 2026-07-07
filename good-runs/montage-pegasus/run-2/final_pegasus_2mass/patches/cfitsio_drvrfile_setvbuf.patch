@@ -1,0 +1,37 @@
+--- /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/source/lib/src/cfitsio-3.49/drvrfile.c	2026-07-05 23:25:08.419329000 -0700
++++ /usr/WS2/haridev/dftracer-agents/workspaces/montage/20260706_062459/annotated/lib/src/cfitsio-3.49/drvrfile.c	2026-07-06 21:20:38.953220000 -0700
+@@ -308,8 +308,18 @@
+ 
+     if (!(*diskfile))           /* couldn't open file */
+     {
+-            return(FILE_NOT_OPENED); 
++            return(FILE_NOT_OPENED);
+     }
++
++    /* Use a larger stdio buffer than glibc's small default (~4-8KB).
++       cfitsio issues many small fread()/fwrite() calls per FITS record;
++       a bigger buffer lets the C library coalesce them into far fewer
++       underlying read()/write() syscalls. Pure I/O buffering hint --
++       does not change any FITS parsing/pixel logic. Ignore failure
++       (setvbuf can only fail here due to ENOMEM; fall back to default
++       buffering rather than aborting the open). */
++    setvbuf(*diskfile, NULL, _IOFBF, 262144);
++
+     return(0);
+ }
+ /*--------------------------------------------------------------------------*/
+@@ -442,9 +452,13 @@
+ 
+     if (!(diskfile))           /* couldn't create file */
+     {
+-            return(FILE_NOT_CREATED); 
++            return(FILE_NOT_CREATED);
+     }
+ 
++    /* See matching comment in file_openfile() -- same buffering hint,
++       write side. */
++    setvbuf(diskfile, NULL, _IOFBF, 262144);
++
+     handleTable[ii].fileptr = diskfile;
+     handleTable[ii].currentpos = 0;
+     handleTable[ii].last_io_op = IO_SEEK;
