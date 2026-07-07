@@ -31,9 +31,10 @@ profile = [
 dftracer-mcp-server     = "dftracer_agents.mcp_server:main"
 dftracer-configure-mcp  = "dftracer_agents.mcp_setup:main"
 dftracer-install-skills = "dftracer_agents.skills:main"
+dftracer-install-agents = "dftracer_agents.agents:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"dftracer_agents" = [".agents/skills/*/SKILL.md", "*.sh"]
+"dftracer_agents" = [".agents/skills/*/SKILL.md", ".agents/agents/*.md", "*.sh"]

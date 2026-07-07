@@ -25,3 +25,5 @@ resources/
 .cargo-goose
 *.core
 /torchrun_hpc-scaffold_*/
+.claude/skills/
+.claude/agents

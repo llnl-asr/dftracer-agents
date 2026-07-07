@@ -284,30 +284,34 @@ def main() -> None:
     if not args.skip_setup:
         from pathlib import Path as _Path
         from dftracer_agents.skills import ensure_setup, resolve_default_target
+        from dftracer_agents.agents import ensure_agents_setup
         try:
             target_root = (
                 _Path(args.skills_target).expanduser().resolve()
                 if args.skills_target
                 else resolve_default_target()
             )
-            result = ensure_setup(target_root=target_root, force=args.force_setup)
-            # Always report where skills went and what happened, so a silent
+            # Install BOTH the skills (into .claude/skills/) and the pipeline
+            # subagents (into .claude/agents/) for the same target. Always
+            # report where each went and what happened, so a silent
             # "already_done" no-op is never mistaken for "setup didn't run".
-            status = result.get("status")
-            target = result.get("target", str(target_root))
-            if status == "installed":
-                print(f"[setup] Skills installed to {target}", file=sys.stderr)
-            elif status == "already_done":
-                print(
-                    f"[setup] Skills already up to date at {target} "
-                    f"(use --force-setup to re-link)",
-                    file=sys.stderr,
-                )
-            else:
-                print(f"[setup] Skill setup status={status} target={target}", file=sys.stderr)
+            for label, fn in (("Skills", ensure_setup), ("Agents", ensure_agents_setup)):
+                result = fn(target_root=target_root, force=args.force_setup)
+                status = result.get("status")
+                target = result.get("target", str(target_root))
+                if status == "installed":
+                    print(f"[setup] {label} installed to {target}", file=sys.stderr)
+                elif status == "already_done":
+                    print(
+                        f"[setup] {label} already up to date at {target} "
+                        f"(use --force-setup to re-link)",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(f"[setup] {label} setup status={status} target={target}", file=sys.stderr)
         except Exception as exc:  # never let setup issues block the server
             import traceback
-            print(f"[setup] Skipped skill setup ({type(exc).__name__}): {exc}", file=sys.stderr)
+            print(f"[setup] Skipped setup ({type(exc).__name__}): {exc}", file=sys.stderr)
             traceback.print_exc()
 
     server = build_server(args.service)
