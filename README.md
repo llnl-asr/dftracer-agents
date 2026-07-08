@@ -24,7 +24,112 @@ source venv/bin/activate
 pip install -e .
 ```
 
-This installs two console scripts: `dftracer-mcp-server` and `dftracer-install-skills`.
+This installs console scripts including:
+
+- `dftracer-mcp-server`
+- `dftracer-install-skills`
+- `dftracer-install-agents`
+- `dftracer-bootstrap-workspace`
+- `dftracer-configure-harness`
+
+### Quick setup (pip or uv)
+
+```bash
+# Option A: pip
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install .
+
+# Option B: uv
+uv venv
+source .venv/bin/activate
+uv pip install .
+```
+
+Bootstrap the workspace links from source-of-truth files:
+
+```bash
+dftracer-bootstrap-workspace --target . --force
+```
+
+Configure harness backend and model classes (haiku/sonnet/opus):
+
+```bash
+# Show current harness/model mapping
+dftracer-configure-harness --show
+
+# Interactive guided setup (recommended)
+dftracer-configure-harness --interactive
+
+# Example: set OpenCode to Ollama with semantic class levels
+dftracer-configure-harness \
+  --harness opencode \
+  --provider ollama \
+  --class-level-1 haiku \
+  --class-level-2 sonnet \
+  --class-level-3 sonnet \
+  --class-level-4 opus
+
+# Example: explicit model override for one level
+dftracer-configure-harness \
+  --harness opencode \
+  --model-level-4 deepseek-v3.2:cloud
+```
+
+Start MCP server daemon (default behavior):
+
+```bash
+dftracer-mcp-server
+```
+
+Daemon control commands:
+
+```bash
+# Start/restart daemon (kills existing PID if running)
+dftracer-mcp-server start
+
+# Stop daemon
+dftracer-mcp-server stop
+
+# Status
+dftracer-mcp-server status
+
+# Run in foreground (no daemon)
+dftracer-mcp-server run --service both --transport http
+```
+
+Runtime files are stored at:
+
+```bash
+/tmp/$USER/dftracer-agents/
+```
+
+Including:
+
+- `dftracer-mcp-server.pid`
+- `dftracer-mcp-server.out.log`
+- `dftracer-mcp-server.err.log`
+
+Configuration state files are stored in:
+
+- `src/dftracer_agents/.agents/workspace/active-models.json`
+- `src/dftracer_agents/.agents/workspace/setup-state.json`
+
+On startup, the server now runs an interactive setup flow first:
+
+- if previous setup exists, asks whether to continue with previous harness/model config
+- choose harness(es)
+- choose provider per harness
+- choose model for each level (Enter accepts defaults)
+
+After that, it applies setup/symlink steps and starts/restarts the MCP daemon.
+
+The server prints:
+
+- which setup steps ran (`Skills`, `Agents`, `Workspace`)
+- which harnesses are configured (`claude`, `opencode`, `copilot`)
+- provider and resolved model for `level_1..level_4`
 
 ---
 

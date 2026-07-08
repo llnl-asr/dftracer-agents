@@ -4,9 +4,12 @@ location.
 
 Subagents are bundled inside the package at
 ``dftracer_agents/.agents/agents/<name>.md``. Claude Code discovers project
-subagents under ``<root>/.claude/agents/<name>.md`` — this module symlinks the
-bundled agent files there (never copies, so upgrading the package or editing a
-bundled agent is immediately reflected).
+subagents under ``<root>/.claude/agents/<name>.md`` — this module materializes
+the bundled agent files there as real copies, resolving each shared
+``model: level_N`` placeholder to the concrete Claude model class from
+``.agents/workspace/active-models.json`` (Claude Code cannot interpret the
+``level_N`` levels that the multi-harness source files carry). The copies are
+regenerated whenever the bundled source or the model map changes.
 
 Each bundled agent scopes a single dftracer pipeline stage to a specific
 model + a specific MCP-tool allowlist, so the stage runs in a small, cheap,
@@ -31,6 +34,8 @@ Programmatic usage::
 """
 from __future__ import annotations
 
+import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,6 +51,64 @@ from dftracer_agents.skills import (
 )
 
 _AGENT_STATE_KEY_SUFFIX = "::agents"  # namespace agent state separately from skills
+
+# Marker injected into every materialized agent so we can recognise our own
+# generated files (they are real copies, not symlinks, because the shared
+# ``level_N`` model placeholders must be resolved to concrete Claude model
+# classes at install time — Claude Code does not understand ``level_N``).
+_GEN_MARKER = "# generated-by: dftracer-agents — edit src/dftracer_agents/.agents/agents, not this file"
+
+# Fallback used only if active-models.json is missing/unreadable. Mirrors the
+# claude harness map in .agents/workspace/active-models.json.
+_DEFAULT_CLAUDE_LEVELS = {
+    "level_1": "haiku",
+    "level_2": "sonnet",
+    "level_3": "sonnet",
+    "level_4": "opus",
+}
+
+
+def _load_claude_level_map() -> Dict[str, str]:
+    """Return the level_N → Claude model-class map for the claude harness.
+
+    Read from the bundled ``.agents/workspace/active-models.json`` so the
+    canonical model map is the single source of truth; falls back to
+    ``_DEFAULT_CLAUDE_LEVELS`` if the file is absent or malformed.
+    """
+    workspace = bundled_agents_dir().parent / "workspace" / "active-models.json"
+    try:
+        data = json.loads(workspace.read_text())
+        mapping = data["harnesses"]["claude"]["class_by_level"]
+        # Keep only well-formed string entries; backfill any missing level.
+        resolved = dict(_DEFAULT_CLAUDE_LEVELS)
+        for level, cls in mapping.items():
+            if isinstance(cls, str) and cls:
+                resolved[level] = cls
+        return resolved
+    except (OSError, ValueError, KeyError, TypeError):
+        return dict(_DEFAULT_CLAUDE_LEVELS)
+
+
+def _materialize_agent(text: str, level_map: Dict[str, str]) -> str:
+    """Resolve ``model: level_N`` to a concrete Claude class and stamp a marker.
+
+    Only the ``model:`` frontmatter key is rewritten (that is what Claude Code
+    reads); ``model_level:`` is left intact as the human-readable level record.
+    Agents that already name a concrete class (e.g. ``model: haiku``) are left
+    unchanged apart from the generated marker.
+    """
+    def _sub(match: "re.Match[str]") -> str:
+        prefix, value = match.group(1), match.group(2).strip()
+        return f"{prefix}{level_map.get(value, value)}"
+
+    text = re.sub(r"(?m)^(model:[ \t]*)(level_[0-9]+)[ \t]*$", _sub, text)
+
+    # Stamp the marker just after the opening frontmatter fence so we can later
+    # recognise this file as ours (content-based, since it is a copy now).
+    if _GEN_MARKER not in text and text.startswith("---"):
+        newline = text.index("\n") + 1
+        text = text[:newline] + _GEN_MARKER + "\n" + text[newline:]
+    return text
 
 
 def bundled_agents_dir() -> Path:
@@ -65,41 +128,65 @@ def _claude_agents_dir(target_root: Path) -> Path:
     return target_root / ".claude" / "agents"
 
 
-def _is_ours(link: Path, src_agents: Path) -> bool:
-    """True if *link* is already a symlink into our bundled agents tree."""
+def _is_ours(dest: Path, src_agents: Path) -> bool:
+    """True if *dest* is a dftracer-managed agent file.
+
+    Recognises both the current form (a materialized copy carrying
+    ``_GEN_MARKER``) and the legacy form (a symlink into the bundled tree),
+    so an upgrade from the old symlink layout still self-heals cleanly.
+    """
     try:
-        return link.is_symlink() and link.resolve().parent == src_agents.resolve()
+        if dest.is_symlink() and dest.resolve().parent == src_agents.resolve():
+            return True
+        return dest.is_file() and _GEN_MARKER in dest.read_text()
+    except OSError:
+        return False
+
+
+def _is_current(dest: Path, expected: str) -> bool:
+    """True if *dest* already holds exactly the materialized content we'd write."""
+    try:
+        return dest.is_file() and not dest.is_symlink() and dest.read_text() == expected
     except OSError:
         return False
 
 
 def install_agents(target_root: Optional[Path] = None) -> Dict[str, Any]:
-    """Symlink every bundled agent ``.md`` into ``<target_root>/.claude/agents/``.
+    """Materialize every bundled agent ``.md`` into ``<target_root>/.claude/agents/``.
 
-    Idempotent and merge-safe: an agent already symlinked from a previous run
-    is left untouched; a name colliding with a pre-existing unrelated agent is
-    reported as a conflict and skipped (never overwrites the user's own agent).
+    Each agent is written as a real file with its ``model: level_N`` placeholder
+    resolved to the concrete Claude model class (Claude Code cannot interpret
+    ``level_N``). Idempotent and merge-safe: a file already matching what we'd
+    write is left untouched; a legacy symlink or a stale copy we own is
+    refreshed; a name colliding with an unrelated user file is reported as a
+    conflict and never overwritten.
     """
     root = Path(target_root) if target_root else Path.cwd()
     dest_root = _claude_agents_dir(root)
     dest_root.mkdir(parents=True, exist_ok=True)
 
     src_agents = bundled_agents_dir()
+    level_map = _load_claude_level_map()
     installed = []
     conflicts = []
 
     for agent_file in sorted(src_agents.glob("*.md")):
         name = agent_file.name
         dest = dest_root / name
+        content = _materialize_agent(agent_file.read_text(), level_map)
 
-        if _is_ours(dest, src_agents):
+        if _is_current(dest, content):
             installed.append({"name": name, "action": "already_installed"})
             continue
-        if not dest.exists():
-            dest.symlink_to(agent_file)
-            installed.append({"name": name, "action": "linked"})
+        if dest.exists() and not _is_ours(dest, src_agents):
+            conflicts.append(name)  # a real, non-ours file occupies this name
             continue
-        conflicts.append(name)  # a real, non-ours file occupies this name
+
+        action = "refreshed" if (dest.exists() or dest.is_symlink()) else "installed"
+        if dest.exists() or dest.is_symlink():
+            dest.unlink()  # drop legacy symlink or stale copy before rewriting
+        dest.write_text(content)
+        installed.append({"name": name, "action": action})
 
     return {"target": str(dest_root), "installed": installed, "conflicts": conflicts}
 
@@ -124,12 +211,14 @@ def ensure_agents_setup(
     if prior and not force and prior.get("bundled_names") == bundled_names:
         dest_root = _claude_agents_dir(root)
         src_agents = bundled_agents_dir()
-        links_present = dest_root.is_dir() and all(
-            _is_ours(dest_root / n, src_agents) for n in bundled_names
+        level_map = _load_claude_level_map()
+        files_current = dest_root.is_dir() and all(
+            _is_current(dest_root / n, _materialize_agent((src_agents / n).read_text(), level_map))
+            for n in bundled_names
         )
-        if links_present:
+        if files_current:
             return {"status": "already_done", "target": str(dest_root), **prior}
-        # else fall through and re-install to repair missing/stale links
+        # else fall through and re-install to repair missing/stale/outdated files
 
     result = install_agents(target_root=root)
     record = {

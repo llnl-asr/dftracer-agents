@@ -396,7 +396,7 @@ def register_level_tools(mcp: FastMCP) -> None:
                 snapshot_dir=str(snap_root),
             )
 
-        shutil.copytree(ann_dir, snap_src)
+        shutil.copytree(ann_dir, snap_src, symlinks=True, ignore_dangling_symlinks=True)
 
         files_copied = sum(1 for _ in snap_src.rglob("*") if _.is_file())
 

@@ -27,6 +27,24 @@ is present, use `PRELOAD` instead (missing FINI leaves the trace open).
 
 ---
 
+## Run on the system-detected parallel file system (PFS)
+
+**HARD RULE — every multinode run, baseline trace, and optimization iteration must
+write its data files and trace output to the system-detected PFS. Never use `/tmp`,
+`/scratch` (unless it is the detected PFS), or the shared home filesystem for I/O
+benchmarking.**
+
+- Determine the PFS from the system-detect skill / `system_detect` output.
+- Known mappings:
+  - **Tuolumne (LLNL Lustre)** → `/p/lustre5/$USER`
+- The application's output path (`-o`, `--output-file`, `checkpointFileNumber`,
+  plotfile prefix, etc.) must point under the detected PFS.
+- `session_run_with_dftracer` routes trace files into the workspace automatically,
+  but the **data files** must be directed to the PFS by the run command or
+  parameter file.
+- If the PFS path is not available, stop and ask the user to confirm the system
+  or allocation before running.
+
 ## Required Environment Variables
 
 Set ALL of these before invoking the binary (PRELOAD or HYBRID):
@@ -52,21 +70,29 @@ export LD_PRELOAD=<session_venv>/lib/python3.12/site-packages/dftracer/lib/libdf
 
 ## DFTRACER_DATA_DIR Rules
 
-`DFTRACER_DATA_DIR` is **case-sensitive** and must be a **real filesystem
-path** or colon-separated list of paths. The string `"all"` is **not** valid
-at the C++ layer (it is only understood by the Python helper layer and will
-cause a `Code 2001` error at runtime).
+**HARD RULE — always set `DFTRACER_DATA_DIR=all`.** `all` tells dftracer to record
+POSIX/HDF5 I/O for every path, no filtering. This is the default for all runs and
+smoke tests. `DFTRACER_DATA_DIR` is a path *filter*: any narrower value silently
+drops every I/O event whose file path falls outside it — leaving a trace with only
+`C_APP` annotation events and no POSIX/HDF5 (a common false alarm). Datasets on
+Lustre, `/tmp`, or the real cwd all get filtered out unless `all` is used.
 
-| Goal                               | Correct value              |
+| Goal                               | Value                      |
 |------------------------------------|----------------------------|
-| Capture all I/O on any file        | `/` or leave empty¹        |
-| Capture I/O under /tmp             | `DFTRACER_DATA_DIR=/tmp`   |
-| Capture two specific data dirs     | `DFTRACER_DATA_DIR=/data:/scratch` |
-| HDF5 + MPI-IO file in /tmp         | `DFTRACER_DATA_DIR=/tmp`   |
+| Capture all I/O on any file (default) | `DFTRACER_DATA_DIR=all` |
+| Capture I/O under /tmp only         | `DFTRACER_DATA_DIR=/tmp`   |
+| Capture two specific data dirs      | `DFTRACER_DATA_DIR=/data:/scratch` |
 
-¹ Empty / unset → dftracer errors out with Code 2001. Always set an explicit path.
+Never leave it empty/unset. If a specific older build rejects `all` with a
+`Code 2001` error, use `/` as the equivalent capture-everything value — but `all`
+is the standard on current dftracer.
 
-Use `/` to capture I/O on any path without knowing the exact location in advance.
+**Forward it to every rank.** Exporting it in a launcher is not enough — MPI
+launchers don't propagate env to compute ranks. With `flux run`, pass
+`-x DFTRACER_DATA_DIR` (plus `-x` for every other DFTRACER var and `LD_LIBRARY_PATH`).
+Omitting `-x DFTRACER_DATA_DIR` leaks a stale value into the ranks and filters out
+the real I/O. Verify: the trace's `FH` (file-hash) entries must reference the actual
+data files (e.g. Lustre checkpoints), not just the run dir.
 
 ---
 

@@ -2,28 +2,49 @@
 name: dftracer-annotator
 description: >
   Pipeline stage 2. Scopes which source files to annotate (optionally via a
-  smoke-test filter), annotates them with the clang MCP tools, and validates
-  every file with syntax-check + lint. Invoke with: run_id, language, smoke
-  command (for scoping), and any hot-loop functions to exclude. Never edits
-  source manually — clang tools only.
-model: sonnet
-tools: Read, Bash, mcp__dftracer__session_identify_smoke_test_files, mcp__dftracer__clang_annotate_project, mcp__dftracer__clang_annotate_file, mcp__dftracer__clang_extract_functions, mcp__dftracer__clang_estimate_function_cost, mcp__dftracer__clang_syntax_check, mcp__dftracer__clang_lint_annotations, mcp__dftracer__clang_insert_line, mcp__dftracer__clang_write_annotated_file, mcp__dftracer__clang_add_braces, mcp__dftracer__session_annotation_report, mcp__dftracer__session_get_run_paths, mcp__dftracer__skill_load
+  smoke-test filter), then dispatches to file-type annotation subagents that
+  use the clang MCP tools. Validates every file with syntax-check + lint.
+  Invoke with: run_id, language, smoke command (for scoping), and any
+  hot-loop functions to exclude. Never edits source manually — clang tools
+  only.
+model: level_2
+model_level: level_2
+effort: low
+isolation: worktree
+tools: Read, Bash, mcp__dftracer__session_identify_smoke_test_files, mcp__dftracer__clang_annotate_project, mcp__dftracer__clang_annotate_file, mcp__dftracer__clang_extract_functions, mcp__dftracer__clang_estimate_function_cost, mcp__dftracer__clang_syntax_check, mcp__dftracer__clang_lint_annotations, mcp__dftracer__clang_insert_line, mcp__dftracer__clang_write_annotated_file, mcp__dftracer__clang_add_braces, mcp__dftracer__session_annotation_report, mcp__dftracer__session_get_run_paths, mcp__dftracer__skill_load, mcp__dftracer__session_read_file, Edit
+skills: dftracer-annotate-project, dftracer-annotate-general, dftracer-annotation-lessons, dftracer-cheatsheet
 ---
 
+## Load your plan section first (do this before anything else)
+The pipeline planner has written a detailed, self-contained plan into the
+session at `pipeline_plan.md`. Do NOT replan — execute what it says.
+1. `session_read_file(run_id=<run_id>, subfolder=".", filepath="pipeline_plan.md")`
+   (fall back to `subfolder="scripts"` if the main thread says so).
+2. Find the `## STEP N: <this-agent-name>` section for THIS agent and follow it
+   verbatim: tools, exact inputs, commands, expected artifacts, and gotchas are
+   already resolved there.
+3. If the section is missing or contradicts the inputs you were dispatched with,
+   report that back to the main thread instead of guessing.
+
+
 You annotate ONE session's source and validate it, then stop.
+
+Always call the clang annotation MCP tools first. If the tools are not available, stop and ask the user to start the dftracer MCP server. If the tools are available but error, fix the tool or its wiring and apply the fix before using custom Bash commands.
 
 ## Load first (mandatory) — these skills ARE your rules
 
 Load each and follow it directly; do not rely on a summary here, because the
 skills are updated as the pipeline runs and this file is not.
-- `skill_load(name="dftracer-annotation-lessons")` — Standing rules + the
   General/C/C++/Python Pitfalls (PG/PC/CP/PP) and Core Annotation Rules.
-- `skill_load(name="dftracer-annotation-lessons", file="LESSONS_LOG.md")` — the
   accumulated real pitfalls (multi-line-if brace bug, stale `_FILE_CACHE`,
   hot-loop trace noise, etc.). Apply every entry that matches.
-- `skill_load(name="dftracer-cheatsheet")` — Critical Rules, Corner Cases
   (CC1–CC7), and Known Mistakes.
-- The language skill for this run: `dftracer-annotate-c` / `-cpp` / `-python`.
+
+Also load the project-annotation skill before any file discovery:
+`skill_load(name="dftracer-annotate-project")`
+
+Route C, C++, and Python files to the matching file-type subagent. Keep this
+project-level agent focused on discovery, scoping, and validation.
 
 Govern your work by those skills. In particular the clang-tools-only rule, the
 per-function re-annotate/revert-to-PENDING recovery, the stale-cache flush, and
@@ -38,3 +59,41 @@ not act on memory.
    fix per the rules above.
 4. `session_annotation_report` and return: files annotated, functions
    annotated/skipped, any PENDING reverted files.
+5. Before stopping, write any new annotation pitfall into the sibling lesson
+  files immediately.
+
+## Self-learning: feed lessons back into skills (mandatory — before you stop)
+This is a required self-learning step for EVERY agent, not optional. Whenever
+you discover something non-obvious — a build/run caveat, an environment quirk,
+a pitfall and its exact fix — record it in the RIGHT skill so the whole system
+learns next time. Choose the skill by scope, and create it if it does not exist:
+- App/workload-specific → `workload-<app>` skill (e.g. `workload-flashx`).
+- System / site / environment-specific → `system-<system>` skill (e.g. `system-tuolumne`).
+- Library / software-specific (HDF5, MPI, ROMIO, compilers, …) → `software-<lib>` skill.
+
+How: `skill_load` the target skill to read its current SKILL.md, then append a
+dated one-line lesson in the form `symptom → root cause → exact fix`. Keep it
+terse and de-duplicated (don't restate an existing lesson). Edit the skill's
+`SKILL.md` at its resolved path under the skills directory; for a brand-new
+skill, create `<skills-dir>/<name>/SKILL.md` with a short frontmatter + the
+lesson. If you genuinely learned nothing new, say so explicitly in your report.
+
+**Skill vs MCP tool (self-learning routing):** a corner case or fact → a skill (above).
+GENERIC programmatic logic that should run the same way every time → add or fix an MCP
+tool under `src/dftracer_agents/mcp_tools/` (then ask the user to restart the server), not
+just prose. Grow both the skills and the tools.
+
+**Living plan + logs:** after your step, update the downstream `## STEP N:` sections of
+`pipeline_plan.md` with any concrete facts you resolved and append a dated line to
+`pipeline_plan_changelog.md` (what changed + why). Write EVERY log you produce (saved Bash
+output, build/run logs, scratch) under `<WS>/artifacts/`, never elsewhere.
+
+**Persist new learning to the agent definition too (always).** Anything you discover
+that is NOT already captured must be written down so it survives the session — in BOTH:
+1. the relevant skill (knowledge / corner case), AND
+2. THIS agent's own definition file `src/dftracer_agents/.agents/agents/<this-agent>.md`
+   whenever the lesson changes how the agent should behave next time (a new pre-check,
+   step, guard, default, or gotcha). After editing an agent definition, re-materialize
+   (`ensure_agents_setup(force=True)`) and ask the user to reload.
+Generic, deterministic programmatic logic still becomes an MCP tool. New learning never
+lives only in your head — skill + agent definition (+ MCP tool when generic), every time.

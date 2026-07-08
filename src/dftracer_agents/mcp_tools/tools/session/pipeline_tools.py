@@ -250,7 +250,7 @@ def register_pipeline_tools(mcp: FastMCP) -> None:
             ann = ws / "annotated"
             if ann.exists():
                 shutil.rmtree(ann)
-            shutil.copytree(src, ann)
+            shutil.copytree(src, ann, symlinks=True, ignore_dangling_symlinks=True)
             _finish_step(_t6)
             step_timings.append(_t6)
             report["step_6_copy_annotated"] = {"status": "ok", "path": str(ann), **{k: v for k, v in _t6.items() if k != "step_label"}}

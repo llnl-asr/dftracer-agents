@@ -1,0 +1,15 @@
+{
+	"servers": {
+		"dftracer": {
+			"type": "stdio",
+			"command": "/usr/WS2/haridev/dftracer-agents/.venv/bin/dftracer-mcp-server",
+			"args": [
+        "--skip-setup",
+				"run",
+        "--transport",
+        "stdio"
+			]
+		}
+	},
+	"inputs": []
+}

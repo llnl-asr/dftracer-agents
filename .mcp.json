@@ -2,7 +2,12 @@
   "mcpServers": {
     "dftracer": {
       "command": "/usr/WS2/haridev/dftracer-agents/.venv/bin/dftracer-mcp-server",
-      "args": ["--transport", "stdio"]
+      "args": [
+        "--skip-setup",
+				"run",
+        "--transport",
+        "stdio"
+			]
     }
   }
 }

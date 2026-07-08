@@ -1,0 +1,40 @@
+{
+	"name": "Ollama Cloud",
+	"vendor": "customendpoint",
+	"apiKey": "ollama",
+	"apiType": "chat-completions",
+	"models": [
+		{
+			"id": "qwen3.6:35b-cloud",
+			"name": "Qwen 3.6 35B MoE",
+			"url": "http://127.0.0.1",
+			"toolCalling": true,
+			"vision": true,
+			"maxInputTokens": 262144
+		},
+		{
+			"id": "qwen3-coder:480b-cloud",
+			"name": "Qwen3 Coder 480B",
+			"url": "http://127.0.0.1",
+			"toolCalling": true,
+			"vision": false,
+			"maxInputTokens": 128000
+		},
+		{
+			"id": "kimi-k2.6:cloud",
+			"name": "Kimi K2.6 Agentic",
+			"url": "http://127.0.0.1",
+			"toolCalling": true,
+			"vision": true,
+			"maxInputTokens": 128000
+		},
+		{
+			"id": "qwen3.5:9b-cloud",
+			"name": "Qwen 3.5 9B",
+			"url": "http://127.0.0.1",
+			"toolCalling": true,
+			"vision": true,
+			"maxInputTokens": 32000
+		}
+	]
+}

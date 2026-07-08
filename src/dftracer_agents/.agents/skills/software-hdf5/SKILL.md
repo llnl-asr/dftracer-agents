@@ -2,7 +2,8 @@
 name: software-hdf5
 description: >
   HDF5 optimization strategies (L2 software tuning), version compatibility,
-  building from source, Cray HDF5 pitfalls, and dftracer HDF5 tracing setup.
+  ALWAYS building HDF5 from source (never Cray/system module), Cray HDF5
+  pitfalls, and dftracer HDF5 tracing setup.
   Load this skill for any HDF5 or parallel I/O work.
 ---
 
@@ -23,6 +24,25 @@ HDF5 1.10.x silently degrades optimization effectiveness:
 `1.8.23` | `1.10.5` | `1.12.3` | `1.14.5` (preferred)
 
 ---
+
+## ALWAYS build HDF5 from source — never use the Cray/system HDF5 module
+
+**Hard rule:** For every dftracer session, install HDF5 from source into the session
+workspace (`<ws>/install_hdf5`) and point the app + dftracer at it. Do **not** load or
+link the Cray `cray-hdf5` / `cray-hdf5-parallel` module (or any site HDF5 module) as the
+HDF5 the app builds against.
+
+Why:
+- Cray HDF5 ships header typos (`chid_t`, tentative-def issues) that break dftracer/brahma
+  C++ linkage — see the patches below; a clean source build is easier to control.
+- Cray HDF5 version/ABI drifts with the PE and is not one of the dftracer-compatible
+  exact series, silently degrading L2 optimizations.
+- A source build gives a stable, known-good prefix that dftracer HDF5 tracing links
+  against reliably (RPATH/patchelf targets one predictable location).
+
+Use the module system only for the compiler/MPI toolchain (to get `mpicc`/`mpicxx`), then
+build HDF5 1.14.5 from source with that toolchain. If a session was set up against Cray
+HDF5, rebuild from source before proceeding.
 
 ## Building HDF5 from Source
 

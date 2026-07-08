@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "harnesses": {
+    "claude": {
+      "provider": "claude",
+      "class_by_level": {
+        "level_1": "haiku",
+        "level_2": "sonnet",
+        "level_3": "sonnet",
+        "level_4": "opus"
+      },
+      "model_by_level": {}
+    },
+    "opencode": {
+      "provider": "ollama",
+      "class_by_level": {
+        "level_1": "haiku",
+        "level_2": "sonnet",
+        "level_3": "sonnet",
+        "level_4": "opus"
+      },
+      "model_by_level": {}
+    },
+    "copilot": {
+      "provider": "ollama",
+      "class_by_level": {
+        "level_1": "haiku",
+        "level_2": "sonnet",
+        "level_3": "sonnet",
+        "level_4": "opus"
+      },
+      "model_by_level": {}
+    }
+  }
+}

@@ -105,9 +105,12 @@ def _create_run(
     created run for this application without the caller needing to track the
     ID manually.
 
-    If *run_id* is given and not a placeholder it is used verbatim, which lets
-    callers **resume** an existing run by passing its ID — the directory and
-    ``session.json`` are not overwritten; :func:`_save_state` merges updates.
+    *run_id* is a **resume handle only**: it is honoured (namespaced under the
+    app dir when bare) *only* when that session already exists on disk, letting
+    callers resume an existing run without overwriting its ``session.json``. For
+    a brand-new session a caller-supplied name is ignored and a fresh
+    ``<app_name>/<YYYYMMDD_HHMMSS>`` id is always generated — the workspace
+    layout is always ``<app_name>/<uid>``.
 
     Args:
         app: Application identifier.  Can be a bare name (``"ior"``), an
@@ -125,10 +128,20 @@ def _create_run(
             *workspace* is the absolute ``Path`` to the run directory.
     """
     app_name = _derive_app_name(app)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     if run_id and run_id not in _PLACEHOLDER_IDS:
-        rid = run_id
+        # `run_id` is a RESUME handle only. It must reference an existing
+        # session on disk (bare ids are namespaced under the app dir); if it
+        # does not exist we FAIL rather than silently creating a new run under
+        # a caller-chosen name. New sessions always use <app_name>/<uid>.
+        candidate = run_id if "/" in run_id else f"{app_name}/{run_id}"
+        if not _ws(candidate).exists():
+            raise FileNotFoundError(
+                f"Cannot resume run '{run_id}': no session at {_ws(candidate)}. "
+                f"Omit run_id to create a new '{app_name}/<timestamp>' session."
+            )
+        rid = candidate
     else:
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         rid = f"{app_name}/{timestamp}"
 
     ws = _ws(rid)

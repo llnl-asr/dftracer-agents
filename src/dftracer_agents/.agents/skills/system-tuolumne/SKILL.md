@@ -555,6 +555,14 @@ fi
   temporary workaround, set `multiprocessing_context="spawn"` on DataLoader to
   avoid fork-safety issues — but source-built HDF5 is the permanent fix.
 
+## Build lessons (dated)
+- 2026-07-08: Fortran apps (Flash-X) FAIL to build with Cray PE `ftn`/`craycc`
+  (Fortran flag incompatibilities). Use the **GNU MPI wrappers** at
+  `/opt/cray/pe/mpich/9.0.1/ofi/gnu/11.2/bin/{mpif90,mpicc,mpicxx}`, and add
+  `-fallow-argument-mismatch` to gfortran FFLAGS to tolerate MPI Fortran
+  interface type mismatches. LD_LIBRARY_PATH must include the CCE libs +
+  `/usr/lib64` at link time (dlopen). See [[workload-flashx]].
+
 ## Permissions
 
 This skill uses:

@@ -611,10 +611,12 @@ def _snapshot_source(src: Path, dest: Path) -> Dict[str, Any]:
             return {"success": True, "file_count": count, "tool": "rsync"}
     except (FileNotFoundError, _sp.TimeoutExpired):
         pass
-    # Fallback: shutil
+    # Fallback: shutil. Preserve symlinks (rsync -a already does) and tolerate
+    # dangling ones so repos like Flash-X (with links to not-yet-generated
+    # targets) snapshot without crashing.
     import shutil as _sh
     _sh.rmtree(str(dest), ignore_errors=True)
-    _sh.copytree(str(src), str(dest))
+    _sh.copytree(str(src), str(dest), symlinks=True, ignore_dangling_symlinks=True)
     count = sum(1 for _ in dest.rglob("*") if _.is_file())
     return {"success": True, "file_count": count, "tool": "shutil"}
 
@@ -1119,31 +1121,48 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             This must be the first tool called in a new annotation session.
             All other ``session_*`` tools require a valid *run_id* produced here.
         """
-        # _create_run derives app name from the URL, creates workspaces/<app>/<ts>/,
-        # and writes .current_run so pipeline_get_run_id can recall this session.
-        rid, ws = _create_run(url, run_id)
+        # _create_run derives app name from the URL and creates
+        # workspaces/<app>/<uid>/ for a NEW session. A supplied run_id is a
+        # resume handle: it must reference an existing session or _create_run
+        # raises FileNotFoundError (we never invent a new run under that name).
+        try:
+            rid, ws = _create_run(url, run_id)
+        except FileNotFoundError as e:
+            return _err(str(e))
 
         src = ws / "source"
         src.mkdir(exist_ok=True)
 
-        clone_result = _run(
-            ["git", "clone", "--depth", "1", "--branch", ref, url, str(src)],
-            timeout=300,
-        )
-        if not clone_result["success"]:
-            # Retry without --branch (bare clone then checkout)
-            shutil.rmtree(src, ignore_errors=True)
-            src.mkdir(exist_ok=True)
-            r2 = _run(["git", "clone", "--depth", "1", url, str(src)], timeout=300)
-            if not r2["success"]:
-                return _err("git clone failed", clone_stderr=r2["stderr"])
-            _run(["git", "checkout", ref], cwd=src)
+        # Resume: if source/ is already populated (existing session), skip the
+        # clone entirely — re-cloning into a non-empty dir would fail and would
+        # clobber any local state.
+        already_cloned = any(src.iterdir())
+        if not already_cloned:
+            clone_result = _run(
+                ["git", "clone", "--depth", "1", "--branch", ref, url, str(src)],
+                timeout=300,
+            )
+            if not clone_result["success"]:
+                # Retry without --branch (bare clone then checkout)
+                shutil.rmtree(src, ignore_errors=True)
+                src.mkdir(exist_ok=True)
+                r2 = _run(["git", "clone", "--depth", "1", url, str(src)], timeout=300)
+                if not r2["success"]:
+                    return _err("git clone failed", clone_stderr=r2["stderr"])
+                _run(["git", "checkout", ref], cwd=src)
 
         structure = _init_structure(ws, dataset_path)
         for target_name in ("baseline", "annotated"):
             target_source = Path(structure[target_name]) / "source"
             if not any(target_source.iterdir()):
-                shutil.copytree(src, target_source, dirs_exist_ok=True)
+                # symlinks=True preserves repo symlinks as symlinks (matching the
+                # clone) instead of dereferencing them; ignore_dangling_symlinks
+                # keeps the copy from crashing on links whose target is absent in
+                # a shallow clone (e.g. Flash-X's physics/.../StirMain/TurbGen.h).
+                shutil.copytree(
+                    src, target_source, dirs_exist_ok=True,
+                    symlinks=True, ignore_dangling_symlinks=True,
+                )
 
         _save_state(rid, {
             "url": url,
@@ -1204,8 +1223,25 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         return _ok(f"Session structure ready for {run_id}", **structure)
 
     @mcp.tool()
-    def session_detect(run_id: str) -> str:
+    def session_detect(
+        run_id: str,
+        hdf5_prefix: Optional[str] = None,
+        mpi_prefix: Optional[str] = None,
+        mpicc: Optional[str] = None,
+        mpicxx: Optional[str] = None,
+    ) -> str:
         """Detect the programming language, build tool, and dftracer feature flags.
+
+        Optional overrides let the caller pin the SAME libraries the application
+        was built with, so dftracer links against them (not a stray system copy):
+
+        * ``hdf5_prefix`` — install prefix of the HDF5 the app uses (e.g. a
+          source-built HDF5 in the workspace like ``<WS>/hdf5_1.14``). Detection
+          probes ``<prefix>/bin/h5pcc``/``h5cc`` for the version + parallel flag
+          instead of scanning ``/usr``.
+        * ``mpi_prefix`` — MPI install prefix; its ``bin/mpicc``/``mpicxx`` are
+          used for the compile-based version probe.
+        * ``mpicc`` / ``mpicxx`` — explicit wrapper paths (override ``mpi_prefix``).
 
         Analyses the cloned ``source/`` tree to determine how the project is
         built, which languages it uses, and which optional dftracer features
@@ -1247,8 +1283,15 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         if not src.exists():
             return _err("source/ not found — run session_create first")
 
-        info = _detect_info(src)
-        _save_state(run_id, {"detection": info, "step": "detected"})
+        info = _detect_info(src, hdf5_prefix=hdf5_prefix, mpi_prefix=mpi_prefix,
+                            mpicc=mpicc, mpicxx=mpicxx)
+        # Persist the overrides so re-detection (configure/install) stays pinned.
+        overrides = {k: v for k, v in {
+            "hdf5_prefix": hdf5_prefix, "mpi_prefix": mpi_prefix,
+            "mpicc": mpicc, "mpicxx": mpicxx,
+        }.items() if v}
+        _save_state(run_id, {"detection": info, "step": "detected",
+                             **({"detect_overrides": overrides} if overrides else {})})
         _write_artifact_log(_ws(run_id), 2, "session_detect", info, run_id)
         return _ok("Detection complete", **info)
 
@@ -1878,7 +1921,7 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             return _err("source/ not found — run session_create first")
         if dst.exists():
             shutil.rmtree(dst)
-        shutil.copytree(src, dst)
+        shutil.copytree(src, dst, symlinks=True, ignore_dangling_symlinks=True)
         _save_state(run_id, {"step": "annotated_copy_created"})
         return _ok(f"Copied source to {dst}")
 

@@ -612,8 +612,71 @@ def _install_dftracer_pip_direct(
         pip_env.setdefault("DFTRACER_ENABLE_HDF5", "ON")
         hdf5_prefix = (features.get("hdf5_system") or {}).get("prefix") or ""
         if hdf5_prefix:
+            # Pin the SOURCE HDF5 explicitly so brahma's cmake FindHDF5 does not
+            # auto-detect a system HDF5 (e.g. /usr/bin/h5cc -> /usr/lib64/
+            # libhdf5.so.103, a serial 1.10 build).  If that happens, brahma links
+            # NEEDED libhdf5.so.103 while the app uses the source libhdf5.so.310 and
+            # its HDF5 (and often POSIX) interception silently records nothing —
+            # only C_APP annotation events appear.  Two failure modes are pinned out
+            # here: (1) wrong library soname, (2) wrong (serial /usr/include) header
+            # that leaves H5Pset_fapl_mpio undeclared.
+            import os as _os
+            from pathlib import Path as _P
+
             pip_env.setdefault("HDF5_ROOT", hdf5_prefix)
             pip_env.setdefault("HDF5_DIR", hdf5_prefix)
+            pip_env.setdefault("HDF5_PREFER_PARALLEL", "ON")
+
+            _hbin = _P(hdf5_prefix) / "bin"
+            _hlib = _P(hdf5_prefix) / "lib"
+            _hinc = _P(hdf5_prefix) / "include"
+
+            # Prefer the PARALLEL compiler wrapper (h5pcc); a parallel-only HDF5 build
+            # ships h5pcc but NOT h5cc, so cmake's default `h5cc` probe would fall
+            # through to the system one.  Fall back to h5cc if that is all there is.
+            _wrapper = ""
+            for _cand in ("h5pcc", "h5cc"):
+                if (_hbin / _cand).exists():
+                    _wrapper = str(_hbin / _cand)
+                    break
+
+            if _wrapper:
+                # Expose the wrapper under the name `h5cc` on PATH so any FindHDF5
+                # that shells out to `h5cc` resolves to the SOURCE build.
+                try:
+                    import tempfile as _tf
+                    _shim = _P(_tf.gettempdir()) / "dftracer-hdf5bin"
+                    _shim.mkdir(parents=True, exist_ok=True)
+                    for _nm in ("h5cc", "h5pcc"):
+                        _lnk = _shim / _nm
+                        if _lnk.is_symlink() or _lnk.exists():
+                            _lnk.unlink()
+                        _lnk.symlink_to(_wrapper)
+                    pip_env["PATH"] = str(_shim) + _os.pathsep + pip_env.get(
+                        "PATH", _os.environ.get("PATH", "")
+                    )
+                except Exception:
+                    pass
+                # And pass it as a first-class cmake arg (see below: SPACE-joined).
+                _hdf5_cmake = (
+                    f"-DHDF5_C_COMPILER_EXECUTABLE={_wrapper} -DHDF5_PREFER_PARALLEL=ON"
+                )
+                _existing = pip_env.get("DFTRACER_CMAKE_ARGS", "")
+                pip_env["DFTRACER_CMAKE_ARGS"] = (
+                    (_existing + " " + _hdf5_cmake).strip() if _existing else _hdf5_cmake
+                )
+
+            # Prepend source HDF5 include/lib so the compiler/linker prefer it over
+            # any /usr/include or /usr/lib64 HDF5 that would otherwise leak in.
+            for _var, _val in (
+                ("CMAKE_PREFIX_PATH", hdf5_prefix),
+                ("C_INCLUDE_PATH", str(_hinc)),
+                ("CPLUS_INCLUDE_PATH", str(_hinc)),
+                ("LIBRARY_PATH", str(_hlib)),
+                ("LD_LIBRARY_PATH", str(_hlib)),
+            ):
+                _cur = pip_env.get(_var, _os.environ.get(_var, ""))
+                pip_env[_var] = _val + (_os.pathsep + _cur if _cur else "")
     if features.get("hip"):
         pip_env.setdefault("DFTRACER_ENABLE_HIP_TRACING", "ON")
     if features.get("hwloc"):

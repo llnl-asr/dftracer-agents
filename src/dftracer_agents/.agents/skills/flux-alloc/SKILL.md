@@ -91,6 +91,56 @@ flux jobs
 flux queue idle
 ```
 
+## Inspecting a job with `flux job info`
+
+`flux job info <JOBID> <KEY>` dumps a specific piece of a job's stored data (the
+`KEY` is a KVS guest key). Use it to introspect what a job actually requested,
+what it was allocated, and its lifecycle events — invaluable for debugging a run
+that failed, got the wrong resources, or when reconstructing an allocation's shape.
+
+```bash
+# Resource set actually assigned to the job (nodes, cores, ranks → hostnames)
+flux job info <JOBID> R
+
+# The jobspec that was submitted (requested nodes/tasks/cores, attributes, env)
+flux job info <JOBID> jobspec
+
+# Full eventlog: submit → depend → alloc → start → finish → release, with timestamps
+flux job info <JOBID> eventlog
+
+# Guest eventlog (shell/exec events inside the job, e.g. per-task exit codes)
+flux job info <JOBID> guest.exec.eventlog
+```
+
+**Common keys:** `R` (allocated resources), `jobspec` (request), `eventlog`
+(state transitions + exceptions/errors), `guest.exec.eventlog` (task-level exec
+events). If a key is missing, the job hasn't reached that stage yet.
+
+Related job-inspection commands (higher-level, human-formatted):
+
+```bash
+# One-line status + resources of a job
+flux jobs <JOBID>
+
+# Detailed, formatted view (state, exceptions, resources, node list)
+flux job status -v <JOBID>
+
+# Re-attach to a running/finished job to stream its stdout/stderr and get exit code
+flux job attach <JOBID>
+
+# Resolve node hostnames assigned to a job (parse R)
+flux job info <JOBID> R | flux hostlist -
+```
+
+Inside a proxied allocation, prefix with `flux proxy <ALLOC_JOBID>`:
+
+```bash
+flux proxy <ALLOC_JOBID> flux job info <INNER_JOBID> eventlog
+```
+
+Use `flux job info <JOBID> eventlog` first when a run fails — the `exception`
+entries there carry the actual failure reason (e.g. OOM, timeout, node failure).
+
 ## Decision logic (when user asks to allocate)
 
 1. Run `flux queue list` to show available queues.

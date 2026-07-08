@@ -1,0 +1,51 @@
+# Canonical model map for dftracer agents
+#
+# The four levels below are the shared source of truth. Harness-specific
+# startup files can point at this document and replace the level values with
+# provider-specific choices for Ollama, Claude, or Copilot-backed sessions.
+
+levels:
+  level_1:
+    purpose: deterministic orchestration and tool plumbing
+    default: haiku
+    providers:
+      ollama: qwen3.5:9b
+      claude: claude-haiku-4-20250514
+      copilot: gpt-5-codex-mini
+  level_2:
+    purpose: routing, planning, and limited reasoning
+    default: sonnet
+    providers:
+      ollama: qwen3.5:32b
+      claude: claude-sonnet-4-20250514
+      copilot: gpt-5-codex
+  level_3:
+    purpose: analysis, diagnosis, and stage-to-stage decisions
+    default: sonnet
+    providers:
+      ollama: qwen3-coder:480b-cloud
+      claude: claude-sonnet-4-20250514
+      copilot: gpt-5-codex
+  level_4:
+    purpose: deep synthesis, optimization, and cross-stage reasoning
+    default: opus
+    providers:
+      ollama: deepseek-v3.2:cloud
+      claude: claude-opus-4-20250514
+      copilot: gpt-5-codex-pro
+
+harness_mapping:
+  claude_code:
+    instructions: CLAUDE.md
+    model_file: src/dftracer_agents/.agents/workspace/models.yaml
+    levels: [level_1, level_2, level_3, level_4]
+  opencode:
+    instructions: AGENTS.md
+    config: .opencode/opencode.jsonc
+    model_file: src/dftracer_agents/.agents/workspace/models.yaml
+    levels: [level_1, level_2, level_3, level_4]
+  copilot:
+    instructions: copilot-instructions.md
+    config: .vscode/mcp.json
+    model_file: src/dftracer_agents/.agents/workspace/models.yaml
+    levels: [level_1, level_2, level_3, level_4]

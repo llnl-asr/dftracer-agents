@@ -112,8 +112,57 @@ def _hdf5_version_compatible(version: Optional[str]) -> bool:
     return series in _HDF5_COMPATIBLE_SERIES
 
 
-def _detect_system_hdf5() -> Dict[str, Any]:
+def _hdf5_from_prefix(prefix: str) -> Dict[str, Any]:
+    """Build an HDF5 detection result from an explicit install *prefix*.
+
+    Used when the caller already knows the HDF5 install to use (e.g. a
+    source-built HDF5 in the session workspace). Probes ``<prefix>/bin/h5pcc``
+    or ``h5cc -showconfig`` for the version and parallel flag, falling back to
+    reading the version out of the installed headers. This is authoritative —
+    it always wins over the system scan — so dftracer links the SAME HDF5 the
+    application was built against instead of a stray ``/usr`` HDF5.
+    """
+    p = Path(prefix)
+    version: Optional[str] = None
+    parallel = False
+    for wrapper in ("h5pcc", "h5cc"):
+        w = p / "bin" / wrapper
+        if w.exists():
+            parallel = parallel or wrapper == "h5pcc"
+            try:
+                r = subprocess.run([str(w), "-showconfig"],
+                                   capture_output=True, text=True, timeout=10)
+                if r.returncode == 0:
+                    m = re.search(r"HDF5 Version:\s+(\S+)", r.stdout)
+                    if m:
+                        version = m.group(1)
+                    if re.search(r"Parallel HDF5:\s+yes", r.stdout, re.I):
+                        parallel = True
+                    break
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass
+    if version is None:
+        inc = _find_hdf5_include_under(prefix)
+        version = _read_hdf5_version_from_header(inc) if inc else None
+    series = tuple(int(x) for x in version.split(".")[:2]) if version else None
+    return {
+        "found": True,
+        "version": version,
+        "prefix": prefix,
+        "parallel": parallel,
+        "cmake_hint": f"-DHDF5_ROOT={prefix}",
+        "source": f"prefix:{prefix}",
+        "compatible": _hdf5_version_compatible(version),
+        "recommended": _HDF5_RECOMMENDED_VERSIONS.get(series) if series else _HDF5_DEFAULT_VERSION,
+    }
+
+
+def _detect_system_hdf5(prefix: Optional[str] = None) -> Dict[str, Any]:
     """Probe the host system for an HDF5 installation.
+
+    When *prefix* is provided and exists, that install is used authoritatively
+    (via :func:`_hdf5_from_prefix`) instead of scanning the system — this is how
+    a caller pins a source-built HDF5 so dftracer links against it.
 
     Detection is attempted via four strategies in order of decreasing
     reliability:
@@ -152,6 +201,10 @@ def _detect_system_hdf5() -> Dict[str, Any]:
               the detected series (e.g. ``"1.14.5"``), or ``None`` when the
               version could not be determined.
     """
+    # 0. Explicit caller-provided prefix wins over any system scan.
+    if prefix and Path(prefix).exists():
+        return _hdf5_from_prefix(prefix)
+
     # 1. pkg-config
     for pkg in ("hdf5", "hdf5-serial"):
         try:
@@ -542,8 +595,16 @@ def _find_mpi_compilers() -> Tuple[Optional[str], Optional[str]]:
     return mpicc, mpicxx
 
 
-def _detect_mpi_impl() -> Dict[str, Any]:
+def _detect_mpi_impl(
+    mpicc_override: Optional[str] = None,
+    mpicxx_override: Optional[str] = None,
+) -> Dict[str, Any]:
     """Detect MPI implementation, version, and compiler wrappers.
+
+    When *mpicc_override* / *mpicxx_override* are provided (e.g. the exact MPI
+    wrappers the application was built with), they are used verbatim instead of
+    searching ``PATH`` — the C probe still compiles against them to read the
+    true vendor/version, so the detected values match the app's MPI.
 
     Uses :func:`_probe_mpi_via_c` (``MPI_Get_library_version``) as the primary
     strategy and falls back to the text-based :func:`_detect_system_mpi` probes.
@@ -561,6 +622,11 @@ def _detect_mpi_impl() -> Dict[str, Any]:
     - ``cmake_flags`` (List[str]): ``-D`` flags for cmake FindMPI
     """
     mpicc, mpicxx = _find_mpi_compilers()
+    # Caller-supplied wrappers (the app's actual MPI) take priority.
+    if mpicc_override and Path(mpicc_override).exists():
+        mpicc = mpicc_override
+    if mpicxx_override and Path(mpicxx_override).exists():
+        mpicxx = mpicxx_override
 
     # Primary: compile and run a C probe (most accurate)
     probe: Optional[Dict[str, Any]] = None
@@ -952,8 +1018,30 @@ def _detect_analyzer_preset(detect_info: Dict[str, Any]) -> str:
     return "posix"
 
 
-def _detect_info(source_dir: Path) -> Dict[str, Any]:
+def _mpi_prefix_to_wrappers(mpi_prefix: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """Return ``(mpicc, mpicxx)`` under ``<mpi_prefix>/bin`` if they exist."""
+    if not mpi_prefix:
+        return None, None
+    b = Path(mpi_prefix) / "bin"
+    mpicc = next((str(b / n) for n in ("mpicc", "mpcc") if (b / n).exists()), None)
+    mpicxx = next((str(b / n) for n in ("mpicxx", "mpic++", "mpiCC") if (b / n).exists()), None)
+    return mpicc, mpicxx
+
+
+def _detect_info(
+    source_dir: Path,
+    hdf5_prefix: Optional[str] = None,
+    mpi_prefix: Optional[str] = None,
+    mpicc: Optional[str] = None,
+    mpicxx: Optional[str] = None,
+) -> Dict[str, Any]:
     """Scan a source tree and return a comprehensive analysis dict.
+
+    *hdf5_prefix* pins the HDF5 install to probe (e.g. a source-built HDF5 in
+    the session workspace) so dftracer links the SAME HDF5 as the app rather
+    than a stray system one. *mpi_prefix* (or explicit *mpicc*/*mpicxx*) pins
+    the MPI wrappers the app was built with; the C probe compiles against them
+    to read the true vendor/version.
 
     Walks *source_dir* recursively to collect file names and suffixes, then
     uses them to infer:
@@ -1048,7 +1136,7 @@ def _detect_info(source_dir: Path) -> Dict[str, Any]:
                 pass
 
     hdf5_in_source = bool(re.search(r"hdf5\.h|H5Fopen|H5Fcreate|H5Dread|H5Dwrite|h5py", all_text, re.I))
-    hdf5_system = _detect_system_hdf5()
+    hdf5_system = _detect_system_hdf5(hdf5_prefix)
     hwloc_found = _detect_system_hwloc()
 
     features = {
@@ -1081,16 +1169,22 @@ def _detect_info(source_dir: Path) -> Dict[str, Any]:
     # vendor string and can pass explicit cmake compiler hints.
     mpi_impl_info: Dict[str, Any] = {}
     if features["mpi"]:
-        mpi_impl_info = _detect_mpi_impl()
+        _mpicc_ov = mpicc or _mpi_prefix_to_wrappers(mpi_prefix)[0]
+        _mpicxx_ov = mpicxx or _mpi_prefix_to_wrappers(mpi_prefix)[1]
+        mpi_impl_info = _detect_mpi_impl(_mpicc_ov, _mpicxx_ov)
 
-    # For MPI+HDF5 combinations prefer the parallel (MPI-enabled) HDF5 build.
+    # For MPI+HDF5 combinations prefer the parallel (MPI-enabled) HDF5 build —
+    # unless the caller pinned an explicit hdf5_prefix, which always wins.
     parallel_hdf5: Optional[Dict[str, Any]] = None
-    if features["mpi"] and features["hdf5"]:
+    if features["mpi"] and features["hdf5"] and not hdf5_prefix:
         parallel_hdf5 = _detect_parallel_hdf5()
 
-    # Resolve the HDF5 root to use: parallel variant > serial system prefix
+    # Resolve the HDF5 root to use:
+    # explicit hdf5_prefix > parallel variant > serial system prefix
     hdf5_root: Optional[str] = None
-    if parallel_hdf5:
+    if hdf5_prefix:
+        hdf5_root = hdf5_prefix
+    elif parallel_hdf5:
         hdf5_root = parallel_hdf5["prefix"]
     elif hdf5_system.get("prefix"):
         hdf5_root = hdf5_system["prefix"]
@@ -1141,20 +1235,25 @@ def _detect_info(source_dir: Path) -> Dict[str, Any]:
         cmake_args_parts.append("-DDFTRACER_ENABLE_HDF5=ON")
         if hdf5_root:
             cmake_args_parts.append(f"-DHDF5_ROOT={hdf5_root}")
+            # Prefer parallel HDF5 so brahma compiles against the parallel headers
+            # (H5FDmpio / H5Pset_fapl_mpio) rather than a serial /usr/include one.
+            cmake_args_parts.append("-DHDF5_PREFER_PARALLEL=ON")
     if hip_tracing_needed:
         cmake_args_parts.append("-DDFTRACER_ENABLE_HIP_TRACING=ON")
     if hwloc_found:
         cmake_args_parts.append("-DDFTRACER_DISABLE_HWLOC=OFF")
 
     # Set DFTRACER_CMAKE_ARGS env var — consumed by dftracer's setup.py.
-    # v2.0.3 splits on ";", develop splits on whitespace.  We store both
-    # forms under the same key using ";" (semicolon) as the separator:
-    # v2.0.3 will split correctly; develop treats the whole string as one
-    # unknown flag (harmless).  The real per-compiler hints are forwarded
-    # via MPICC / MPICXX env vars (cmake FindMPI checks these env vars
-    # before falling back to searching PATH), so the important MPI
-    # compiler hint reaches brahma even without DFTRACER_CMAKE_ARGS parsing.
-    dftracer_pip_env["DFTRACER_CMAKE_ARGS"] = ";".join(cmake_args_parts)
+    # MUST be SPACE-separated: the default install ref (develop) splits this on
+    # whitespace and passes each token as its own cmake -D.  A ";"-joined string is
+    # passed as ONE argument, so cmake parses e.g.
+    #   -DDFTRACER_ENABLE_TESTS=OFF;-DDFTRACER_ENABLE_HDF5=ON;...
+    # as DFTRACER_ENABLE_TESTS="OFF;-D...", a non-false list that RE-ENABLES tests
+    # (and builds the HDF5-MPI test that fails to compile).  Space-join keeps each
+    # -D clean.  Critical flags (HDF5_ROOT, MPICC/MPICXX, ENABLE_* ) are ALSO passed
+    # as standalone env vars in install.py, so they hold even if a given dftracer
+    # version parses DFTRACER_CMAKE_ARGS differently.
+    dftracer_pip_env["DFTRACER_CMAKE_ARGS"] = " ".join(cmake_args_parts)
 
     # Map features → dftracer cmake flags (for cmake-based installs)
     dftracer_cmake_flags: List[str] = list(cmake_args_parts)
