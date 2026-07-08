@@ -79,3 +79,28 @@ that is NOT already captured must be written down so it survives the session —
    (`ensure_agents_setup(force=True)`) and ask the user to reload.
 Generic, deterministic programmatic logic still becomes an MCP tool. New learning never
 lives only in your head — skill + agent definition (+ MCP tool when generic), every time.
+
+
+## Self-learning confirmation gate (MANDATORY — overrides "record immediately")
+
+Capture learning aggressively, persist it safely:
+
+1. **Always propose skill updates.** Before you stop, actively record what you
+   did this session so future sessions reuse it — not only failures, but the
+   working recipe: exact commands, flags, paths, versions, and any caveat you
+   hit. Every agent is expected to grow the skills every run.
+2. **Route generic vs specific correctly.**
+   - Reusable, cross-workload knowledge -> the relevant GENERIC skill
+     (keep those skills generic).
+   - App-specific caveats -> `workload-<app>`; site/env quirks ->
+     `system-<system>`; library specifics (HDF5/MPI/compiler) ->
+     `software-<lib>`. Create the specific skill if it does not exist.
+   - Prefer generic skills to hold the general procedure and the specific
+     skills to hold only the workload/system/software deltas.
+3. **Confirmation gate — do NOT self-write.** Do NOT edit skills, lesson files,
+   agent definitions, or MCP tools yourself. Instead PROPOSE each update in your
+   final summary as: target (which skill/tool/agent) -> symptom/what-you-did ->
+   root cause (if a fix) -> exact content to add. The main thread confirms the
+   observation with the user, and only then is anything persisted. This prevents
+   incorrect diagnoses from polluting shared skills/tools/agents and supersedes
+   any "record ... immediately in the sibling lesson files" instruction above.

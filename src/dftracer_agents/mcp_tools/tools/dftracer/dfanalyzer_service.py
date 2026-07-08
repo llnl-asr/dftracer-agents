@@ -25,12 +25,66 @@ Reference documentation:
 
 from __future__ import annotations
 
+import glob
+import os
+import shutil
 import subprocess
+from pathlib import Path
 from typing import List, Optional
 
 from fastmcp import FastMCP
 
 from ...mcp_service_factory import MCPService, MCPServiceFactory
+
+
+def _ensure_analyzable_path(trace_path: str) -> str:
+    """Return a dfanalyzer-ready trace path, splitting raw traces first if needed.
+
+    dfanalyzer silently truncates a directory of raw per-rank ``*.pfw.gz`` files
+    (observed: it reads only ~1542 events from a single process even when the
+    directory holds tens of thousands of events across many ranks).  The fix is
+    to first run ``dftracer_split``, which merges + indexes all rank files into
+    a single indexed chunk that dfanalyzer reads in full (confirmed: 98,695
+    events / 8 processes vs 1,542 / 1 process on the same traces).
+
+    Heuristic: if ``trace_path`` is a directory containing more than one
+    ``*.pfw.gz`` file and does not already look like split output, split it into
+    a cached ``<trace_path>/.dfa_split`` dir and return that.  On any failure the
+    original path is returned unchanged (best-effort, never blocks analysis).
+    """
+    try:
+        p = Path(trace_path)
+        if not p.is_dir():
+            return trace_path
+        split_dir = p / ".dfa_split"
+        gz = [f for f in glob.glob(str(p / "*.pfw.gz")) if os.path.isfile(f)]
+        # Already a single (possibly split) chunk, or nothing to do.
+        if len(gz) <= 1:
+            return trace_path
+        # Reuse a fresh cached split (newer than every input file).
+        if split_dir.is_dir():
+            existing = glob.glob(str(split_dir / "*.pfw.gz"))
+            if existing and min(os.path.getmtime(f) for f in existing) >= max(
+                os.path.getmtime(f) for f in gz
+            ):
+                return str(split_dir)
+            shutil.rmtree(split_dir, ignore_errors=True)
+        split_dir.mkdir(parents=True, exist_ok=True)
+        split_bin = shutil.which("dftracer_split")
+        if not split_bin:
+            return trace_path
+        r = subprocess.run(
+            [split_bin, "-d", str(p), "--output", str(split_dir),
+             "--index-dir", str(split_dir / "idx"), "--compress",
+             "--app-name", "analyze"],
+            capture_output=True, text=True, timeout=600,
+        )
+        if r.returncode == 0 and glob.glob(str(split_dir / "*.pfw.gz")):
+            return str(split_dir)
+        shutil.rmtree(split_dir, ignore_errors=True)
+        return trace_path
+    except Exception:
+        return trace_path
 
 
 def _hydra_args(
@@ -297,6 +351,9 @@ class DFAnalyzerService(MCPService):
             cluster_memory: Optional[str] = None,
         ) -> str:
             """Run dfanalyzer on the provided trace path."""
+            # dfanalyzer truncates a dir of raw per-rank *.pfw.gz files; split +
+            # index them first so it reads the full event set across all ranks.
+            trace_path = _ensure_analyzable_path(trace_path)
             cmd = _hydra_args(
                 trace_path=trace_path,
                 view_types=view_types,

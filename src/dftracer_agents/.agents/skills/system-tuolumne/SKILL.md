@@ -563,6 +563,23 @@ fi
   interface type mismatches. LD_LIBRARY_PATH must include the CCE libs +
   `/usr/lib64` at link time (dlopen). See [[workload-flashx]].
 
+## Running under an existing allocation (lessons 2026-07-08)
+
+- **Always use `flux proxy <alloc_id> flux run ...` when an allocation is already up.**
+  A bare `flux run -N.. -n..` from a login shell does NOT run inside your existing
+  allocation — it silently submits a NEW pbatch job that queues (status `S`), so the
+  command appears to hang / times out. Check `flux jobs` for a stuck queued job and
+  `flux cancel <jobid>` it if this happens. Find the active alloc id with `flux jobs`
+  (look for your `flux` NAME job in `R` state).
+
+- **`flux run` task env does NOT inherit your interactive `LD_LIBRARY_PATH`.** A binary
+  that `ldd`-resolves fine interactively can fail under `flux run` with
+  `error while loading shared libraries: libmpifort_gnu_112.so.12: cannot open shared
+  object file`. → **Fix:** export the full runtime lib path INSIDE the run script/env,
+  e.g. add `/opt/cray/pe/mpich/9.0.1/ofi/gnu/11.2/lib:/opt/cray/pe/lib64` (plus the
+  session HDF5 `lib/` and dftracer `lib64/`) to `LD_LIBRARY_PATH`. Do not rely on
+  ldd-at-build-time being sufficient at run time.
+
 ## Permissions
 
 This skill uses:

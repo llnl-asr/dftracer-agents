@@ -133,17 +133,36 @@ from .config_search import search_papers_for_config
 # HPC environment helpers
 # ---------------------------------------------------------------------------
 
-def _extract_module_load_lines(source_dir: Path) -> List[str]:
+#: Directory names that hold per-site/prototype/vendor scripts which are NOT
+#: the scripts actually invoked to build or run this session.  Scanning them
+#: for ``module load`` lines pulls in dozens of irrelevant/conflicting modules
+#: (e.g. Flash-X's ``sites/*`` prototype makefiles), which can hang or break the
+#: run environment.  Excluded from module-load auto-detection.
+_MODULE_SCAN_EXCLUDE_DIRS = {
+    "sites", "docs", "doc", "test", "tests", "examples", "example",
+    "third_party", "thirdparty", "external", "extern", "vendor",
+    ".git", "unittest", "unittests",
+}
+
+
+def _extract_module_load_lines(
+    source_dir: Path,
+    scripts: Optional[List[Path]] = None,
+) -> List[str]:
     """Scan install/job scripts for 'ml ...' / 'module load ...' lines.
 
     Returns a deduplicated list of shell lines (preserving order) that load
     modules, suitable for prepending to any run command so that the same
     environment used by the app's own scripts is reproduced consistently.
 
-    Scans *.sh, *.job, *.slurm, *.lsf, *.bsub files under source_dir.
-    Skips comment lines.  Stops collecting once a non-module-load line that
-    is not a blank or comment is encountered (avoids pulling in benchmark
-    body commands).
+    If ``scripts`` is given, only those explicit files are scanned (use this to
+    scope to the scripts actually invoked for this session).  Otherwise scans
+    *.sh, *.job, *.slurm, *.lsf, *.bsub files under ``source_dir``, but SKIPS
+    per-site/prototype/vendor directories (see ``_MODULE_SCAN_EXCLUDE_DIRS``) so
+    it never harvests module loads from scripts that are not part of this
+    session's build/run path.  Skips comment lines.  Stops collecting once a
+    non-module-load line that is not a blank or comment is encountered (avoids
+    pulling in benchmark body commands).
     """
     script_extensions = {".sh", ".job", ".slurm", ".lsf", ".bsub"}
     module_re = re.compile(
@@ -152,10 +171,21 @@ def _extract_module_load_lines(source_dir: Path) -> List[str]:
     seen: set = set()
     lines: List[str] = []
 
-    script_files = sorted(
-        f for f in source_dir.rglob("*")
-        if f.is_file() and f.suffix.lower() in script_extensions
-    )
+    if scripts is not None:
+        script_files = sorted(
+            f for f in scripts
+            if f.is_file() and f.suffix.lower() in script_extensions
+        )
+    else:
+        script_files = sorted(
+            f for f in source_dir.rglob("*")
+            if f.is_file()
+            and f.suffix.lower() in script_extensions
+            and not any(
+                part.lower() in _MODULE_SCAN_EXCLUDE_DIRS
+                for part in f.relative_to(source_dir).parts
+            )
+        )
     for f in script_files:
         try:
             text = f.read_text(errors="ignore")
@@ -230,8 +260,18 @@ def _session_build_annotated_impl(
     run_id: str,
     jobs: int = 4,
     extra_cmake_flags: str = "",
+    custom_build_cmd: str = "",
+    build_subdir: str = "",
 ) -> str:
-    """Standalone implementation of session_build_annotated."""
+    """Standalone implementation of session_build_annotated.
+
+    ``custom_build_cmd`` is an escape hatch for apps whose build system is not
+    cmake/autotools/python (e.g. Flash-X's ``setup`` + GNU Make workflow). When
+    provided, it is run verbatim via the shell in ``annotated/<build_subdir>``
+    (or ``annotated/`` if ``build_subdir`` is empty), and the cmake/autotools/
+    python auto-detection is bypassed entirely — so we never fall through to a
+    spurious ``pip install`` on a non-Python project.
+    """
     ws = _ws(run_id)
     ann = ws / "annotated"
     build_ann = ws / "build_ann"
@@ -248,6 +288,21 @@ def _session_build_annotated_impl(
     dft_prefix = state.get("dftracer_install_prefix")
 
     steps: Dict[str, Any] = {}
+
+    # Escape hatch: pre-existing custom build recipe (make/setup/etc.).
+    if custom_build_cmd:
+        work = ann / build_subdir if build_subdir else ann
+        if not work.exists():
+            return _err(
+                f"custom build_subdir not found: {work}",
+                build_subdir=build_subdir,
+            )
+        r_bld = _run(["bash", "-lc", custom_build_cmd], cwd=work, timeout=1800)
+        steps["custom_build"] = r_bld
+        if not r_bld["success"]:
+            return _err("custom build command failed for annotated source", **r_bld)
+        _save_state(run_id, {"step": "annotated_built"})
+        return _ok("Annotated build succeeded (custom)", build_tool="custom", steps=steps)
 
     if bt == "cmake":
         flags = [
@@ -326,7 +381,12 @@ def _session_build_annotated_impl(
             return _err("pip install failed for annotated source", **r_bld)
 
     else:
-        return _err(f"Unsupported build tool: {bt}")
+        return _err(
+            f"Unsupported build tool: {bt}. Pass custom_build_cmd (and "
+            f"optional build_subdir) to build with a pre-existing custom "
+            f"recipe (e.g. Flash-X 'bash setup ... && make -j').",
+            build_tool=bt,
+        )
 
     _save_state(run_id, {"step": "annotated_built"})
     return _ok("Annotated build succeeded", build_tool=bt, steps=steps)
@@ -2386,6 +2446,8 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         run_id: str,
         jobs: int = 4,
         extra_cmake_flags: str = "",
+        custom_build_cmd: str = "",
+        build_subdir: str = "",
     ) -> str:
         """Configure and build the annotated source with dftracer linked.
 
@@ -2438,6 +2500,8 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             run_id=run_id,
             jobs=jobs,
             extra_cmake_flags=extra_cmake_flags,
+            custom_build_cmd=custom_build_cmd,
+            build_subdir=build_subdir,
         )
 
     @mcp.tool()

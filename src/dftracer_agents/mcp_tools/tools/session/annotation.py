@@ -1069,6 +1069,51 @@ def _diff_modified_files(source_dir: Path, annotated_dir: Path) -> List[str]:
     return changed
 
 
+#: Recognised source-file extensions used when aligning annotated/source roots.
+_SOURCE_EXTS = {'.c', '.h', '.cpp', '.cxx', '.cc', '.hpp', '.hxx', '.py'}
+
+
+def _count_counterparts(source_dir: Path, ann_root: Path) -> int:
+    """Count recognised source files under ``ann_root`` that have a counterpart in ``source_dir``.
+
+    Used to auto-detect the correct annotated root when some pipelines nest the
+    annotated tree one directory deeper than ``ws/annotated`` (e.g. Flash-X
+    copies ``ws/<run>/source`` → ``ws/annotated/source``, so annotated files
+    live at ``ws/annotated/source/...`` while their originals live at
+    ``ws/source/...``).  A rel-path computed against the wrong root never
+    resolves, yielding a false 0/0 coverage report.
+    """
+    count = 0
+    for f in ann_root.rglob("*"):
+        if not f.is_file() or f.suffix.lower() not in _SOURCE_EXTS:
+            continue
+        if (source_dir / f.relative_to(ann_root)).exists():
+            count += 1
+    return count
+
+
+def _resolve_annotated_root(source_dir: Path, ann_dir: Path) -> Path:
+    """Return the annotated root whose rel-paths best align with ``source_dir``.
+
+    Considers ``ann_dir`` itself and its immediate sub-directories (one level),
+    and picks whichever maximises the number of annotated files that have an
+    existing counterpart under ``source_dir``.  Falls back to ``ann_dir`` when
+    nothing matches so the flat/common layout is preserved.
+    """
+    candidates = [ann_dir]
+    try:
+        candidates += [d for d in sorted(ann_dir.iterdir()) if d.is_dir()]
+    except OSError:
+        pass
+    best_root = ann_dir
+    best_score = _count_counterparts(source_dir, ann_dir)
+    for cand in candidates[1:]:
+        score = _count_counterparts(source_dir, cand)
+        if score > best_score:
+            best_root, best_score = cand, score
+    return best_root
+
+
 def _generate_annotation_report(ws: Path, run_id: str) -> Dict[str, Any]:
     """Build a structured annotation coverage report for a workspace run.
 
@@ -1131,6 +1176,13 @@ def _generate_annotation_report(ws: Path, run_id: str) -> Dict[str, Any]:
             "error": "source/ or annotated/ directory missing",
             "run_id": run_id,
         }
+
+    # Some pipelines nest the annotated tree one level deeper than ws/annotated
+    # (e.g. Flash-X copies ws/<run>/source → ws/annotated/source), so the
+    # annotated files live at ws/annotated/source/... while their originals
+    # live at ws/source/...  Auto-detect the annotated root that aligns with
+    # source_dir, otherwise the report falsely shows 0/0 coverage.
+    ann_dir = _resolve_annotated_root(source_dir, ann_dir)
 
     status_map = _parse_annotation_status(ws)
     changed_files = _diff_modified_files(source_dir, ann_dir)

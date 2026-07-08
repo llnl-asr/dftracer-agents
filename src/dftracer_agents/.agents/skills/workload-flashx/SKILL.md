@@ -375,3 +375,55 @@ After every production run, update this skill with:
 4. New benchmark parameter files discovered in the Flash-X repo
 5. Paper references that provided useful configuration guidance
 
+
+## Additional Lessons (2026-07-08)
+
+- **session_configure incompatibility:** The standard MCP `session_configure` tool fails
+  on Flash-X because it's NOT a standard Python package. The tool attempts `pip install -e`
+  but Flash-X's repository root lacks both `setup.py` and `pyproject.toml`.
+  
+  **Why it fails:** Flash-X uses a custom Python-based setup script (`./setup <Problem>`)
+  that generates a GNU Make build system, not a pip-installable package.
+  
+  **Correct procedure for Flash-X setup:**
+  1. Initialize all git submodules: `git submodule update --init --recursive`
+  2. Run the Flash-X setup script: `bash setup Sedov -auto -3d` (generates `object/` dir)
+  3. Customize `object/Makefile.h` with paths and compiler flags
+  4. Build with `make -j <ncores>` in the `object/` directory
+  
+  The documentation in SESSION_CONFIGURATION.md (generated 2026-07-08) has the full build procedure.
+
+
+- 2026-07-08 (HDF5 setup fallback): Flash-X setup script accepts HDF5_PATH pointing to source-only
+  directory (with no lib/ subdirectory built) and silently falls back to system HDF5 instead of
+  failing or warning → `bash setup Sedov -auto -3d` with HDF5_PATH=/path/to/source generated
+  Makefile.h that still tried to link against the source dir, but linker couldn't find libhdf5
+  and fell back to /lib64/libhdf5.so.103 (system HDF5 1.10.5) → binary runs but uses old HDF5 API
+  → **Fix for next build:** Build + install HDF5 1.14.5 to `hdf5_install/lib/` BEFORE running
+  setup, or verify with `test -d $HDF5_PATH/lib && test -f $HDF5_PATH/lib/libhdf5.so*` before
+  proceeding. If fallback is unavoidable, check actual library linked at runtime with `ldd flashx | grep hdf5`
+  and update documentation if system HDF5 is acceptable for the baseline (it is, for tracing purposes).
+  → **Common trigger (confirmed 2026-07-08):** HDF5_PATH set to a SOURCE-ONLY directory (e.g. the
+  hyphenated `hdf5-1.14.5` unpack dir with no built `lib/`/`include/`) — point HDF5_PATH at the
+  BUILT/installed prefix (e.g. `hdf5_1.14`) instead. After a clean rebuild (`make distclean && make -j`),
+  a correct link shows `<WS>/hdf5_1.14/lib/libhdf5.so.310`, never `/lib64/libhdf5.so.103`.
+
+
+- 2026-07-08 (dftracer install on Tuolumne): Successfully installed dftracer develop with session-built HDF5 1.14.5 and Cray MPICH 9.0.1 (GNU 11.2 wrappers). HIP disabled (CPU-only workload). All libraries (libdftracer_preload.so, libdftracer_core.so) verified clean with ldd. Session HDF5 1.14.5 and Cray MPI correctly linked. Installation paths resolved: $DFTRACER_LIB_DIR=/usr/WS2/haridev/dftracer-agents/workspaces/flash_x/20260708_201403/install/lib/python3.13/site-packages/dftracer/lib64 (see artifacts/01_dftracer_install_verification.log for full details). NOTE: MPI is compatible on tuolumne — MPI-IO tracing should be enabled by passing the MPI version + headers; do not accept "auto-disabled/unsupported" (user-confirmed misdiagnosis).
+
+- 2026-07-08 (setup wipes object/): `bash setup Sedov -auto -3d` REGENERATES the `object/` build dir
+  from scratch every time, wiping any hand-added files. → **Fix:** apply Makefile.h edits AND recreate
+  any shim files (e.g. the dftracer `dftracer_init_fini.c` constructor/destructor shim, `MACHOBJ +=
+  dftracer_init_fini.o`) AFTER running setup, never before. If you re-run setup, re-apply them.
+
+- 2026-07-08 (output paths are cwd-relative): Flash-X resolves `basenm`/output paths (checkpoints,
+  plotfiles, `sedov.dat`) relative to the PROCESS cwd, not the workspace root. Under a job launcher the
+  run cwd is `object/`. → **Fix:** the `ds -> /p/lustre<N>/$USER/flashx` output symlink must exist in the
+  RUN cwd (`object/`), not only at the WS root. Create `ds` in `object/` before running, or you get
+  `Fortran runtime error: Cannot open file 'ds/.../sedov.dat'`. (Keep the flash.par 80-column limit in mind —
+  use the short `ds` symlink for the output path.)
+
+- 2026-07-08 (annotated smoke SUCCESS): FUNCTION-mode instrumentation works end-to-end. Annotated flashx
+  (66 C IO files + init/fini shim) ran Sedov 3D single-rank and emitted a 6566-event trace:
+  HDF5 5236, POSIX 696, C_APP 552, dftracer 43, STDIO 36, MPI 3. No PRELOAD pivot needed. ldd shows session
+  HDF5 1.14.5 (libhdf5.so.310) + libdftracer_core.so.4.1.0 (RPATH) + cray-mpich gnu/11.2.
