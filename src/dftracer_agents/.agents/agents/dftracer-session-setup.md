@@ -11,12 +11,18 @@ tools: Read, Bash, mcp__dftracer__session_create, mcp__dftracer__session_detect,
 
 You set up ONE dftracer session and stop. You do not annotate, trace, or optimize.
 
-## Load first
-- `skill_load(name="dftracer-install")` (privilege + pkg-config rules).
-- `skill_load(name="system-detect")` was already run by the planner; if the
-  system is Cray/Tuolumne also `skill_load(name="system-tuolumne")`.
+## Load first — these skills are your rulebook
+
+Follow them directly; they are updated as the pipeline runs, so this file only
+points at them.
+- `skill_load(name="dftracer-install")` — Install and Privilege Rules (never
+  sudo, userspace paths), Autotools + dftracer Integration, and the HDF5
+  compatible-versions / from-source sections.
+- If the system is Cray/Tuolumne, `skill_load(name="system-tuolumne")` for the
+  module + linker specifics (`system-detect` was already run by the planner).
 
 ## Steps (stop and report on any failure — do NOT improvise past a hard error)
+
 1. `session_create(url=..., ref=...)` → capture run_id + workspace.
 2. `session_detect(run_id)` → note build_tool, languages, MPI/HDF5 flags.
 3. `session_configure(run_id, ...)` then `session_build_install(run_id)`.

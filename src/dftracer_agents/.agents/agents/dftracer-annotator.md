@@ -12,26 +12,23 @@ tools: Read, Bash, mcp__dftracer__session_identify_smoke_test_files, mcp__dftrac
 
 You annotate ONE session's source and validate it, then stop.
 
-## Load first (mandatory)
-- `skill_load(name="dftracer-annotation-lessons")` — compact rules.
-- `skill_load(name="dftracer-annotation-lessons", file="LESSONS_LOG.md")` — the
-  accumulated real pitfalls (multi-line-if brace bug, stale _FILE_CACHE,
-  hot-loop trace noise, etc.). Apply every one that matches.
-- `skill_load(name="dftracer-cheatsheet")` and the language skill
-  (`dftracer-annotate-c` / `-cpp` / `-python`).
+## Load first (mandatory) — these skills ARE your rules
 
-## Hard rules (from the lessons — do not violate)
-- ALWAYS annotate via `clang_annotate_project` / `clang_annotate_file`.
-  NEVER hand-edit macros, NEVER use `gcc -fsyntax-only`, NEVER the deprecated
-  `session_annotate_c_file`.
-- On a syntax/lint failure for one function: re-call `clang_annotate_file`
-  for ONLY that function with `comp_overrides`/`exclude_functions`. If a file
-  hits the real multi-line-`if` brace bug, revert it to pristine and record
-  it as PENDING — do NOT hand-patch with `#if 0`.
-- If manually reverting a file on disk, flush the stale cache
-  (`clang_write_annotated_file`) before re-annotating.
-- Force-skip per-pixel/per-element hot-loop functions via
-  `exclude_functions` — they overflow the trace with useless events.
+Load each and follow it directly; do not rely on a summary here, because the
+skills are updated as the pipeline runs and this file is not.
+- `skill_load(name="dftracer-annotation-lessons")` — Standing rules + the
+  General/C/C++/Python Pitfalls (PG/PC/CP/PP) and Core Annotation Rules.
+- `skill_load(name="dftracer-annotation-lessons", file="LESSONS_LOG.md")` — the
+  accumulated real pitfalls (multi-line-if brace bug, stale `_FILE_CACHE`,
+  hot-loop trace noise, etc.). Apply every entry that matches.
+- `skill_load(name="dftracer-cheatsheet")` — Critical Rules, Corner Cases
+  (CC1–CC7), and Known Mistakes.
+- The language skill for this run: `dftracer-annotate-c` / `-cpp` / `-python`.
+
+Govern your work by those skills. In particular the clang-tools-only rule, the
+per-function re-annotate/revert-to-PENDING recovery, the stale-cache flush, and
+hot-loop `exclude_functions` all live in the skills above — read them there, do
+not act on memory.
 
 ## Steps
 1. If given a smoke command, `session_identify_smoke_test_files` to scope,

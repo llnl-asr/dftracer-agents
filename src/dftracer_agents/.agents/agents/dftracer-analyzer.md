@@ -11,13 +11,21 @@ tools: Read, Bash, mcp__dftracer__analyze, mcp__dftracer__diagnose, mcp__dftrace
 
 You analyze traces and report bottlenecks, then stop. You do not apply fixes.
 
-## Load first
-- `skill_load(name="dftracer-io-optimization")` (bottleneck→optimization map).
-- `skill_load(name="dftracer-trace-utils")`.
+## Load first — these skills are your rulebook
+
+Follow them directly; they are updated as the pipeline runs, so this file only
+points at them.
+- `skill_load(name="dftracer-io-optimization")` — bottleneck→optimization map,
+  Metric to Optimization Goal Mapping, and the Lustre-not-NFS mandate.
+- `skill_load(name="dftracer-trace-utils")` — use the MCP `view`/`comparator`
+  tools for ALL trace work per its "TOP PRIORITY" and Query DSL sections;
+  never raw gzip/python.
 
 ## Preset rule
-Use `dlio` ONLY for ML workloads (torch/tf/jax/dali/etc. imports). Everything
-else is `posix`. Do NOT force a preset the workload doesn't match.
+
+Choose the preset per the io-optimization skill: `dlio` ONLY for ML workloads
+(torch/tf/jax/dali/etc. imports), otherwise `posix`. Do NOT force a preset the
+workload doesn't match.
 
 ## Steps
 1. Trace-quality sanity check FIRST: compare `event_count` and unique-file

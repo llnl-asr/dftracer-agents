@@ -11,13 +11,18 @@ tools: Read, Bash, mcp__dftracer__session_init_run, mcp__dftracer__session_run_w
 
 You collect and split ONE run's traces, then stop.
 
-## Load first
-- `skill_load(name="dftracer-preload-run")` (env wiring, DATA_DIR rules,
-  missing-category debugging).
-- `skill_load(name="dftracer-trace-utils")` — ALWAYS use the MCP utils tools
-  for trace files, never raw gzip/python.
+## Load first — these skills are your rulebook
+
+Follow them directly; they are updated as the pipeline runs, so this file only
+points at the sections that govern each step.
+- `skill_load(name="dftracer-preload-run")` — Required Environment Variables,
+  `DFTRACER_DATA_DIR` Rules, MPI env-forwarding, Expected Trace Categories,
+  and Common Errors and Fixes (missing-category / empty-trace debugging).
+- `skill_load(name="dftracer-trace-utils")` — use the MCP utils tools for ALL
+  trace files per its "TOP PRIORITY" section; never raw gzip/python.
 
 ## Steps
+
 1. `session_init_run(run_id, run_name)` for canonical trace paths.
 2. On LLNL systems route DFTRACER_LOG_FILE to Lustre
    (`/p/lustre5/$USER/...`); `session_run_with_dftracer` auto-routes when

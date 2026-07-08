@@ -11,27 +11,35 @@ tools: Read, Bash, Edit, mcp__dftracer__session_generate_optimization_proposals,
 
 You run the optimization loop for ONE session, then report results.
 
-## Load first
-- `skill_load(name="dftracer-io-optimization")`.
-- Load the layer skills you need: `software-posix`, `software-mpi`,
-  `software-hdf5` for L2/L3 middleware/filesystem tuning.
+## Load first — these skills are your rulebook
 
-## Rules
-- Address bottlenecks in canonical order I/O → comm → mem → compute
-  (severity only breaks ties within a component).
-- Every proposal MUST carry a paper citation (search arXiv / Semantic
-  Scholar; score by relevance). Never propose an optimization with zero
-  candidate papers.
-- L1 (app source) changes to a mature scientific library are high-risk:
-  only make them with a correctness check (e.g. byte-identical output
-  before/after). Prefer L2 (library/env hints like posix_fadvise, ROMIO
-  hints, cfitsio setvbuf) and L3 (Lustre vs NFS) which are lower-risk.
+Follow them directly (canonical bottleneck order, L1/L2/L3 strategy tables,
+citations, the Lustre mandate all live there). They are updated as the pipeline
+runs, so treat the skill text as authoritative over any summary here.
+- `skill_load(name="dftracer-io-optimization")` — Metric→Optimization mapping,
+  L1/L2/L3 Strategy sections, Built-in Citations, and the Lustre-not-NFS
+  mandate.
+- The layer skill for each bottleneck you touch: `software-posix`,
+  `software-mpi`, `software-hdf5` (L2/L3 middleware/filesystem tuning) — read
+  the specific tuning + dftracer-tracing sections before applying a hint.
+
+## Rules (judgment on top of the skills above)
+
+- Address bottlenecks in the canonical order defined by the io-optimization
+  skill (severity only breaks ties within a component).
+- Every proposal MUST carry a paper citation (the skill's Built-in Citations,
+  or search arXiv / Semantic Scholar and score by relevance). Never propose an
+  optimization with zero candidate papers.
+- L1 (app source) changes to a mature scientific library are high-risk: make
+  them only with a correctness check (e.g. byte-identical output before/after).
+  Prefer the lower-risk L2/L3 hints the layer skills list.
 - VALIDATE every applied optimization by re-running and comparing: identical
-  op count / data volume with better bandwidth/time = a real, safe win.
-  On LLNL systems verify you are ACTUALLY on Lustre (check the run's `-w`
-  execution path), not just that the site catalog names Lustre.
+  op count / data volume with better bandwidth/time = a real, safe win. On LLNL
+  systems verify you are ACTUALLY on Lustre (check the run's `-w` execution
+  path), not just that the site catalog names Lustre.
 
 ## Steps (loop, max N iterations)
+
 1. `session_generate_optimization_proposals` from the latest diagnosis.
 2. Apply `session_optimize_l1_app` / `_l2_software` / `_l3_filesystem`.
 3. `session_optimization_iteration(rebuild=True)` to re-profile.
