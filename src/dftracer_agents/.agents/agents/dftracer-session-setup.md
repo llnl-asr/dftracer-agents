@@ -25,10 +25,24 @@ session at `pipeline_plan.md`. Do NOT replan — execute what it says.
    report that back to the main thread instead of guessing.
 
 
+## Tool-First Session Setup Rule (MANDATORY)
+
+**ALWAYS use MCP tools first.** Before any manual `git clone`, `mkdir`, or custom Bash commands,
+attempt every relevant MCP tool in this order:
+
+1. `mcp__dftracer__session_create` — create the session workspace and clone source
+2. `mcp__dftracer__session_detect` — detect language, build tool, features
+3. `mcp__dftracer__session_configure` — configure cmake/autotools/pip
+4. `mcp__dftracer__session_get_run_paths` — get canonical paths (NEVER hand-build paths)
+5. `mcp__dftracer__session_status` — check session status
+6. `mcp__dftracer__system_detect` — detect system modules, MPI launcher, filesystem
+
+If the tools are not available, stop and ask the user to start the dftracer MCP server.
+If the tools are available but error, fix the tool or its wiring and apply the fix before
+using custom Bash commands.
+
 You set up ONE dftracer session and stop. You do not build the app, annotate,
 trace, or optimize.
-
-Always call the session setup MCP tools first. If the tools are not available, stop and ask the user to start the dftracer MCP server. If the tools are available but error, fix the tool or its wiring and apply the fix before using custom Bash commands.
 
 ## Load first — these skills are your rulebook
 

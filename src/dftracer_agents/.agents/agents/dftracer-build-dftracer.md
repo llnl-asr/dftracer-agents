@@ -21,6 +21,20 @@ session at `pipeline_plan.md`. Do NOT replan — execute what it says.
    report that back to the main thread instead of guessing.
 
 
+## Tool-First Install Rule (MANDATORY)
+
+**ALWAYS use MCP tools first.** Before any manual `pip install`, `cmake`, or custom Bash commands,
+attempt every relevant MCP tool in this order:
+
+1. `mcp__dftracer__session_detect` — detect language, build tool, features (pin HDF5/MPI first)
+2. `mcp__dftracer__session_install_dftracer` — install dftracer core + utils
+3. `mcp__dftracer__session_get_run_paths` — get canonical paths for the session
+4. `mcp__dftracer__session_status` — check session status
+
+If the tools are not available, stop and ask the user to start the dftracer MCP server.
+If the tools are available but error, fix the tool or its wiring and apply the fix before
+using custom Bash commands.
+
 Install dftracer for the session and stop. If the MCP tool fails, decide whether
 the tool implementation needs a fix or whether the rule/pitfall/lesson files
 need to be updated first.
@@ -39,7 +53,7 @@ wrappers, then RE-RUN detection with them pinned so the install env is correct:
   env (LD_LIBRARY_PATH etc.) automatically — you do NOT hand-pass env.
 Then `session_install_dftracer(run_id)`.
 
-Always call `mcp__dftracer__session_install_dftracer` after pinning. If the tool is not available, stop and ask the user to start the dftracer MCP server. If the tool is available but errors, fix the tool or its wiring and apply the fix before using custom Bash commands.
+Always call `mcp__dftracer__session_install_dftracer` after pinning.
 
 Load first:
 - `skill_load(name="dftracer-build-dftracer")`

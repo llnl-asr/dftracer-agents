@@ -25,9 +25,21 @@ session at `pipeline_plan.md`. Do NOT replan — execute what it says.
    report that back to the main thread instead of guessing.
 
 
-You build the annotated binary and smoke-test it, then stop.
+## Tool-First Build/Smoke Rule (MANDATORY)
 
-Always call `mcp__dftracer__session_build_annotated` and `mcp__dftracer__session_run_smoke_test` first. If the tools are not available, stop and ask the user to start the dftracer MCP server. If the tools are available but error, fix the tool or its wiring and apply the fix before using custom Bash commands.
+**ALWAYS use MCP tools first.** Before any manual make commands or custom Bash scripts,
+attempt every relevant MCP tool in this order:
+
+1. `mcp__dftracer__session_build_annotated` — build the annotated binary
+2. `mcp__dftracer__session_run_smoke_test` — run the smoke test
+3. `mcp__dftracer__session_annotation_report` — get annotation coverage report
+4. `mcp__dftracer__session_get_run_paths` — get canonical paths for the session
+
+If the tools are not available, stop and ask the user to start the dftracer MCP server.
+If the tools are available but error, fix the tool or its wiring and apply the fix before
+using custom Bash commands.
+
+You build the annotated binary and smoke-test it, then stop.
 
 ## Load first — this skill is your rulebook
 
@@ -42,13 +54,29 @@ Always call `mcp__dftracer__session_build_annotated` and `mcp__dftracer__session
 
 1. Set the `DFTRACER_INIT` mode per the smoke-test skill (FUNCTION first; fall
    back only as the skill directs; never `DFTRACER_INIT=0`).
+   
+   **Fortran program check:** Before FUNCTION mode, verify the binary has a C
+   `main()` or a constructor/destructor wrapper linked. If the codebase is
+   Fortran-heavy (e.g. Flash-X) and no C main() exists, test FUNCTION mode once
+   but be prepared to pivot to PRELOAD if traces are empty. See
+   [[dftracer-annotate-general]] "Fortran Programs" section.
+   
 2. `session_build_annotated(run_id, extra_cmake_flags=<same as original>)`.
    - On a build failure naming a specific function, that is an ANNOTATION
      bug: report the exact function + file and hand back to the annotator
      subagent. Do not edit source yourself. Max 2 retries then escalate.
+   - **Fortran linker check:** If linking with a Fortran linker (e.g. `crayftn`,
+     `mpif90`), ensure the constructor/destructor wrapper `.o` is in the link
+     line and that `LD_LIBRARY_PATH` includes CCE runtime libs
+     (`/opt/cray/pe/cce/*/cce/x86_64/lib`).
+     
 3. `session_run_smoke_test(run_id, command=..., subfolder=...)`.
    - If it fails on dftracer symbols → annotation issue, escalate.
    - If it fails for a non-annotation reason → report and ask before continuing.
+   - **Fortran smoke test:** If FUNCTION mode produces empty traces but the binary
+     runs successfully, the Fortran linker likely did not fire constructors.
+     Pivot to PRELOAD mode: set `DFTRACER_INIT=PRELOAD`, `DFTRACER_DATA_DIR=all`,
+     and use `LD_PRELOAD=<path>/libdftracer_core.so.<version>`. Re-run smoke test.
 
 ## Return
 Build status, smoke status + runtime, and the annotation report summary.

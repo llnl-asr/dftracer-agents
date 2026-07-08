@@ -134,6 +134,38 @@ MMAP_Xfer()      ← annotate (captures MMAP-level intent)
 
 Build and run a smoke test for each backend immediately after annotating it.
 
+### Fortran Programs — No C main() available
+
+Fortran codes (e.g. Flash-X, many HPC multiphysics codes) have a Fortran `program`
+entry point, not a C `main()`. This means DFTRACER_C_INIT/DFTRACER_C_FINI cannot be
+placed in the application source.
+
+**Solution for FUNCTION/HYBRID mode:**
+Create a separate C wrapper file with constructor/destructor attributes:
+
+```c
+#include <stddef.h>
+#include <dftracer/dftracer.h>
+
+__attribute__((constructor)) static void dftracer_init(void) {
+    DFTRACER_C_INIT(NULL, NULL, NULL);
+}
+
+__attribute__((destructor)) static void dftracer_fini(void) {
+    DFTRACER_C_FINI();
+}
+```
+
+Compile to `.o` and link it into the final binary (e.g. add to `ALL_OBJ_FILES` in
+GNU Make, or to the link line). The constructor runs before `program` starts; the
+destructor runs after exit.
+
+**Fallback:** Some Fortran linkers (observed: CCE `crayftn`) do not reliably fire
+constructor attributes. If FUNCTION mode produces empty traces despite the wrapper
+being linked, **pivot to PRELOAD mode** — it captures HDF5/POSIX/MPI I/O at the
+library level without requiring INIT/FINI in the application. See
+[[dftracer-preload-run]] and [[dftracer-annotation-lessons]] PF1.
+
 ### Quick checklist before writing annotated code
 
 - [ ] Language-specific include / import added
@@ -146,3 +178,4 @@ Build and run a smoke test for each backend immediately after annotating it.
 - [ ] For duplicate function names: annotated only the definition (Rule 7)
 - [ ] After each file: verify definition count ≈ START count (Rule 9)
 - [ ] Build passes after each file — fix errors before moving to the next file
+- [ ] **Fortran programs:** constructor/destructor wrapper created and linked (or PRELOAD mode selected)

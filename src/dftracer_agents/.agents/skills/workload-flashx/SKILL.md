@@ -51,6 +51,35 @@ I/O is captured at the library level regardless of source annotation. See
   mismatches. Working Sedov 3D build: `./setup Sedov -auto -3d` then `make -j` in
   `object/`; exe is `object/flashx`. LD_LIBRARY_PATH must include CCE libs +
   `/usr/lib64` at link time.
+- 2026-07-08 (annotation): Flash-X is Fortran-heavy (~2600 .F90 files) with C/C++
+  IO layer. Fortran entry point `program Flashx` in `source/Simulation/main.F90`
+  has no C `main()` for DFTRACER_C_INIT/FINI → create a C wrapper file
+  `object/dftracer_init_fini.c` with `__attribute__((constructor))` and
+  `__attribute__((destructor))` to auto-call DFTRACER_C_INIT/DFTRACER_C_FINI.
+  Add the `.o` to `ALL_OBJ_FILES` in `object/Makefile` and ensure it links.
+  See [[dftracer-annotate-general]] for the exact wrapper pattern.
+- 2026-07-08 (annotation): CCE Fortran linker (`crayftn`) may not fire
+  constructor/destructor attributes reliably → if FUNCTION mode produces no
+  traces despite wrapper being linked, **pivot to PRELOAD mode immediately**.
+  PRELOAD mode captures HDF5/POSIX I/O at the library level without requiring
+  source annotations to work. Set `DFTRACER_INIT=PRELOAD`, `DFTRACER_DATA_DIR=all`,
+  and use `LD_PRELOAD=<path>/libdftracer_core.so.4.1.0`.
+- 2026-07-08 (runtime): CCE runtime libraries must be in `LD_LIBRARY_PATH`:
+  `/opt/cray/pe/cce/20.0.0/cce/x86_64/lib` — without this, the binary fails to
+  find `libcraymp.so` and other CCE runtime deps at runtime even though it links.
+- 2026-07-08 (runtime): `module load` inside a bash script submitted via `flux proxy`
+  HUNG indefinitely — Lmod re-loading already-loaded modules in a Flux allocation
+  causes a deadlock in the Lua module interpreter. The script showed 768 bash
+  processes all stuck on `/usr/bin/lua /usr/share/lmod/lmod/libexec/lmod shell
+  load cray-mpich/9.0.1`. **Fix:** Do NOT load modules inside the bash script
+  when running under `flux proxy` — the allocation already has the correct modules
+  loaded. Verify with `module list` inside the script if needed, but never reload.
+- 2026-07-08 (trace analysis): Flash-X Sedov 3D I/O pattern — primary bottleneck
+  is `io_h5write_unknowns_` (32% of I/O time), secondary is the xfer pipeline
+  (`io_xfer_cont_slab` → `io_h5_xfer_wrapper` → `io_h5_xfer` → `io_h5_type_matched_xfer`)
+  at 26.6%. Attribute creation (`io_h5_attribute_create`, 156 calls) is 9.6%.
+  Optimization: increase `checkpointFileIntervalTime` (default 0.01 → 0.05),
+  reduce `plot_var_N` count, enable HDF5 collective I/O.
 
 ## Build Session 2026-07-08: Flash-X Sedov 3D Baseline
 
@@ -74,4 +103,275 @@ Successfully built Flash-X Sedov 3D baseline executable on Tuolumne.
 - HDF5_PATH env var is honored by setup script to override Makefile.h defaults
 - GNU 11.2 MPI wrappers are used (auto-detected, working correctly)
 - No code errors, build completed successfully on first attempt after setup
+
+## Large-Scale Production Run Configuration
+
+**MANDATORY: Every baseline and optimization iteration must run on the user's active allocation with ALL nodes, using Lustre for I/O.**
+
+### Problem Size Requirements
+To produce meaningful optimization results, the problem must be large enough to:
+1. **Use ~50% of node memory** (~250 GB per node on Tuolumne)
+2. **Run for at least 30 minutes** (to amortize startup overhead)
+3. **Generate substantial I/O** (checkpoint files should be multi-GB)
+
+### Flash-X Grid Sizing Formula
+Flash-X memory per cell ≈ 200 bytes (conservative estimate for Sedov 3D with AMR).
+For 8 nodes × 250 GB target = 2 TB total:
+- Total cells needed: 2 TB / 200 B ≈ 10 billion cells
+- Uniform grid: cube_root(10B) ≈ 2150³
+- With AMR (lrefine_max=6, typical 2-4× refinement): base grid ~ 512³ to 1024³
+
+**Recommended large-scale config for 8 nodes:**
+```
+# Grid parameters (uniform base grid, AMR refines up to lrefine_max)
+iProcs = 8          # 8 MPI ranks in X (1 per node)
+jProcs = 1
+kProcs = 1
+# OR for better decomposition:
+iProcs = 2
+jProcs = 2
+kProcs = 2
+
+# With AMR, effective resolution can be much higher
+lrefine_max = 6
+
+# I/O parameters — frequent checkpoints to generate I/O load
+checkpointFileIntervalTime = 0.05   # checkpoint every 0.05 time units
+checkpointFileIntervalStep = 0
+nend = 100000
+tmax = 0.5                          # longer runtime
+
+# Output to Lustre
+basenm = "/p/lustre5/haridev/flashx/sedov_"
+```
+
+### Allocation-Aware Run Rules
+1. **ALWAYS ask the user for their active allocation ID** before any large run.
+2. **Use ALL nodes in the allocation** (`flux run -N <nnodes> -n <ntasks> --exclusive`).
+3. **Route I/O to Lustre** — set `basenm` in flash.par to a path under `/p/lustre5/$USER/`.
+4. **Create the Lustre output directory before running** (`mkdir -p /p/lustre5/$USER/flashx`).
+5. **Verify the allocation is still active** with `flux jobs` before submitting.
+6. **Wall time**: request at least 60 minutes for a 30-minute app run (dftracer overhead + safety margin).
+
+### Flux Proxy Run Pattern (MANDATORY)
+
+**Never pass environment variables inline with `flux proxy <id> flux run -x VAR`.**
+`flux proxy` opens an SSH tunnel to the allocation broker; environment variables
+set in the local shell are **not** automatically forwarded through the proxy.
+Instead, **wrap the entire run in a bash script** and invoke that script via
+`flux proxy`:
+
+```bash
+# 1. Create a run script that exports ALL env vars internally
+# NOTE: Do NOT load modules inside the script — the Flux allocation already has
+# the correct modules loaded. Re-loading modules via Lmod inside a flux proxy
+# job causes a deadlock in the Lua interpreter.
+cat > production_run.sh << 'EOF'
+#!/bin/bash
+set -e
+
+# Environment
+export PATH="/usr/WS2/haridev/dftracer-agents/.venv/bin:$PATH"
+export LD_LIBRARY_PATH="${WS}/hdf5_1.14/lib:${WS}/install/lib/python3.13/site-packages/dftracer/lib64:/opt/cray/pe/cce/20.0.0/cce/x86_64/lib:$LD_LIBRARY_PATH"
+
+# DFTracer setup
+export DFTRACER_ENABLE=1
+export DFTRACER_INIT=PRELOAD
+export DFTRACER_DATA_DIR=all
+export DFTRACER_INC_METADATA=1
+export DFTRACER_LOG_FILE="${WS}/traces/raw/baseline"
+export LD_PRELOAD="${WS}/install/lib/python3.13/site-packages/dftracer/lib64/libdftracer_preload.so"
+
+# MPI / HDF5 settings
+export MPICH_GPU_SUPPORT_ENABLED=0
+export HDF5_USE_FILE_LOCKING=FALSE
+
+# Run the application
+cd "${FLASHX_DIR}"
+./flashx
+EOF
+chmod +x production_run.sh
+
+# 2. Submit the script via flux proxy — NO -x flags needed
+# Use 48 processes per node (not 96) to avoid oversubscription issues
+flux proxy <alloc_id> flux run -N <nnodes> -n $((<nnodes> * 48)) --exclusive ./production_run.sh
+```
+
+**Why this works:** The bash script runs inside the allocation where it sets its
+own environment. `flux proxy` only needs to forward the script execution;
+all DFTracer variables are established locally within the script.
+
+**Anti-pattern (DO NOT USE):**
+```bash
+# WRONG — env vars are lost across the proxy boundary
+export DFTRACER_ENABLE=1
+flux proxy <id> flux run -N 8 -n 768 --exclusive -x DFTRACER_ENABLE ./flashx
+```
+
+**When `-x` IS appropriate:** For single-node runs or direct `flux run` (without
+`flux proxy`), `-x` is required to forward env vars to MPI ranks:
+```bash
+# OK — direct flux run on a single node, no proxy boundary
+flux run -N 1 -n 4 -x DFTRACER_ENABLE -x DFTRACER_INIT -x LD_PRELOAD ./flashx
+```
+
+### Lustre I/O Best Practices for Flash-X
+- Use a dedicated subdirectory per run: `/p/lustre5/$USER/flashx/<run_name>/`
+- Set `HDF5_USE_FILE_LOCKING=FALSE` to avoid Lustre file locking contention
+- For collective I/O at scale, set `ROMIO_CB_WRITE=enable` and `CB_BUFFER_SIZE=16777216`
+- Lustre stripe count should match or exceed the number of OSTs (typically 4-8 on Tuolumne)
+
+### Paper Search for Production Configuration (MANDATORY)
+
+Before configuring any production-scale Flash-X run, **search academic papers** for the specific problem setup to find validated configurations. The Flash-X source tree contains parameter files, but they are often small test cases. Papers provide:
+
+1. **Validated problem sizes** that produce meaningful I/O and runtime
+2. **AMR refinement parameters** (lrefine_max, refine_cutoff, etc.)
+3. **Scaling studies** that inform rank count and decomposition decisions
+4. **I/O patterns** (checkpoint frequency, file sizes, collective vs independent)
+
+**How to search (Tool-First Rule):**
+1. **Call the MCP tool first:** `mcp_dftracer2_session_search_papers_for_config` with:
+   - `app_name="Flash-X"`
+   - `problem_name="Sedov"` (or whatever problem you are running)
+   - This searches arXiv + Semantic Scholar, extracts known parameter patterns, and persists results to `session.json`
+2. **Fallback:** If the tool is unavailable, use `mcp_dftracer2_search_papers_combined` manually with queries like:
+   - `"Flash-X Sedov AMR simulation configuration production HPC"`
+   - `"Flash-X checkpoint I/O performance optimization parallel HDF5"`
+   - `"FLASH AMR Sedov scaling study"`
+3. Also search the local paper library with `mcp_dftracer2_session_search_local_papers`
+4. Read the full paper (arXiv PDF) to extract specific parameter values
+
+**Key paper found for Flash-X checkpoint/restart:**
+- *"Checkpoint/Restart for Lagrangian particle mesh with AMR in community code FLASH-X"* — Jain et al., 2021, arXiv:2103.04267v1
+- Covers cross-mesh checkpoint-restart, AMReX and Paramesh formats, HDF5 I/O strong/weak scaling
+- Relevant for understanding checkpoint I/O patterns and expected file sizes
+
+### Correct Flash-X Grid Configuration (Paramesh AMR)
+
+**Critical discovery (2026-07-08):** The `nblockx`, `nblocky`, `nblockz` parameters in `flash.par` control the **initial number of blocks per direction** in Paramesh AMR mode. These are NOT the same as `iProcs/jProcs/kProcs` (which control MPI decomposition).
+
+**For a large-scale production run with AMR:**
+```
+# Initial block distribution (controls base problem size)
+nblockx = 9
+nblocky = 9
+nblockz = 9
+# Total initial blocks: 9³ = 729 blocks
+# With NXB=8 (compile-time), each block is 8³ cells
+# Total initial cells: 729 × 512 = 373,248 cells
+# AMR will refine this up to lrefine_max levels
+```
+
+**Reference configurations from Flash-X source:**
+- `flash.bgp.2048.par`: nblockx/y/z=9, lrefine_max=7, nend=4, tmax=0.05
+- `flash.bgp.4096.par`: lrefine_max=7, lrefine_min=6, checkpointFileIntervalTime=0.03, wall_clock_time_limit=2700
+- `flash.bgp_bench.4096.par`: nblockx/y/z=9, lrefine_max=7, useCollectiveHDF5=.true.
+
+**Key insight:** The 2048-rank and 4096-rank benchmark configs use **nblockx/y/z=9** with relatively short runtimes (nend=4, tmax=0.05). For a 30+ minute production run, increase `nend` and `tmax` proportionally while keeping the same block structure.
+
+### Smoke Test vs Production Run
+| Aspect | Smoke Test | Production Run |
+|--------|-----------|----------------|
+| Grid size | 16³ (tiny) | nblockx/y/z=9 with AMR |
+| MPI ranks | 1 | All nodes (8–768) |
+| Runtime | < 5 seconds | ≥ 30 minutes |
+| I/O volume | < 1 MB | Multi-GB checkpoints |
+| Purpose | Verify annotation/build | Measure optimization impact |
+| Allocation | Any single node | User's active allocation |
+
+**Never compare a smoke test against a production run.** Always compare baseline vs optimization within the same run class (both smoke or both production).
+
+## Configuration Validation Checklist (MANDATORY before every production run)
+
+The following checklist MUST be completed before submitting any production-scale Flash-X run. Missing any item will produce meaningless results (tiny checkpoints, short runtime, or outright failure).
+
+### Pre-Run Verification Steps
+
+1. **Verify binary was compiled with the expected NXB value**
+   - Check the build log for compile flags: `grep -E 'NXB|NYB|NZB' <build_log>`
+   - Expected: `-DNXB=8 -DNYB=8 -DNZB=8` (or `-DNXB=32` if rebuilt)
+   - **Pitfall:** The Makefile may show NXB=32 but the actual binary was built with NXB=8. Always verify the build log, not just the Makefile.
+
+2. **Verify flash.par uses Paramesh AMR mode (NOT uniform grid)**
+   - Paramesh AMR: `iProcs=1, jProcs=1, kProcs=1` with explicit `nblockx/y/z`
+   - Uniform grid: `iProcs×jProcs×kProcs = total_ranks`, no explicit `nblockx/y/z`
+   - **Why it matters:** Uniform grid with default nblockx/y/z=1 produces ~140KB checkpoints. Paramesh AMR with nblockx/y/z=9 produces multi-GB checkpoints.
+   - **Pitfall:** The `flash_production.par` file was accidentally modified to use uniform grid mode after the run, which would fail or produce tiny checkpoints.
+
+3. **Verify checkpoint size expectations**
+   - After the first checkpoint, check file size: `ls -lh <lustre_out>/*chk_*`
+   - Expected: ≥ 500MB per checkpoint for meaningful I/O tracing
+   - If checkpoints are < 10MB, the problem is too small — increase nblockx/y/z or lrefine_max
+
+4. **Verify runtime expectations**
+   - After 5 minutes of wall time, check the log for step count: `grep 'n=' sedov_production.log | tail -5`
+   - Expected: ≥ 50 steps in first 5 minutes (AMR timesteps are small)
+   - If < 10 steps, the problem may be too small or CFL too restrictive
+
+5. **Verify DFTracer trace files are being generated**
+   - Check trace directory: `ls -lh <ws>/production_baseline/traces/raw/`
+   - Expected: `.pfw` or `.pfw.gz` files growing in size during the run
+   - If no trace files, check LD_PRELOAD path and DFTRACER_ENABLE=1
+
+### Configuration Parameters Reference (Validated)
+
+Based on Flash-X benchmark files (`flash.bgp.2048.par`, `flash.bgp_bench.4096.par`) and weak scaling I/O tests (`sedov_io_*_32b_3d_weak.par`):
+
+| Parameter | Benchmark Value | Production Value (384 ranks) | Notes |
+|-----------|----------------|-------------------------------|-------|
+| `nblockx` | 9 | 9 | Initial blocks in X (from benchmark) |
+| `nblocky` | 9 | 9 | Initial blocks in Y (from benchmark) |
+| `nblockz` | 9 | 9 | Initial blocks in Z (from benchmark) |
+| `iProcs` | 1 | 1 | Paramesh AMR mode (always 1) |
+| `jProcs` | 1 | 1 | Paramesh AMR mode (always 1) |
+| `kProcs` | 1 | 1 | Paramesh AMR mode (always 1) |
+| `lrefine_max` | 7 | 6 | Reduced from 7 to avoid memory pressure at 384 ranks |
+| `lrefine_min` | — | 4 | Added to ensure minimum refinement |
+| `sim_rInit` | — | 0.013671875 | Calibrated for NXB=8 (1 cell radius) |
+| `checkpointFileIntervalTime` | 0.03 | 0.03 | From benchmark; ~16 checkpoints for tmax=0.5 |
+| `tmax` | 0.05 | 0.5 | Extended for 30+ min runtime |
+| `nend` | 4–10000 | 1000000 | High enough that tmax or wall time stops first |
+| `wall_clock_time_limit` | 2700 | 3600 | 60 minutes for 30-minute app run |
+| `useCollectiveHDF5` | .true. | .true. | Required for scale |
+
+### Common Configuration Mistakes and Fixes
+
+| Mistake | Symptom | Fix |
+|---------|---------|-----|
+| Uniform grid mode (iProcs>1) with default nblockx/y/z=1 | Tiny checkpoints (~140KB), short runtime | Switch to Paramesh AMR: iProcs=jProcs=kProcs=1, nblockx/y/z=9 |
+| NXB mismatch (binary built with NXB=8, par file assumes NXB=32) | Incorrect cell sizes, possible crash | Verify build log, update sim_rInit to match actual NXB |
+| lrefine_max too high for rank count | Out-of-memory crash | Reduce lrefine_max (e.g., 7→6 for 384 ranks) |
+| checkpointFileIntervalTime too large | Few checkpoints, insufficient I/O data | Reduce to 0.03 (from benchmark) |
+| tmax too small | Run finishes in < 5 minutes | Increase tmax to 0.5 |
+| Missing lrefine_min | Coarse regions may cause numerical issues | Add lrefine_min=4 |
+
+### Paper-Backed Configuration Discovery (Tool-First Rule)
+
+Before configuring ANY production-scale Flash-X run, search for validated configurations in academic papers. The MCP tool `mcp_dftracer2_session_search_papers_for_config` should be called first. If unavailable, use these manual search queries:
+
+**arXiv / Semantic Scholar queries:**
+- `"Flash-X Sedov AMR simulation configuration production HPC"`
+- `"Flash-X checkpoint I/O performance optimization parallel HDF5"`
+- `"FLASH AMR Sedov scaling study"`
+- `"Flash-X weak scaling I/O benchmark"`
+
+**GitHub repository search (Flash-X/Flash-X):**
+- Search `source/Simulation/SimulationMain/Sedov/extraParfiles/` for benchmark parameter files
+- Key files: `flash.bgp.2048.par`, `flash.bgp_bench.4096.par`, `sedov_io_*_32b_3d_weak.par`
+- These contain validated parameters from the Flash-X development team
+
+**Key paper:**
+- *"Checkpoint/Restart for Lagrangian particle mesh with AMR in community code FLASH-X"* — Jain et al., 2021, arXiv:2103.04267v1
+- Covers checkpoint I/O patterns, AMReX and Paramesh formats, HDF5 scaling
+- Use this to understand expected checkpoint sizes and I/O patterns
+
+### Self-Learning Update Rule
+
+After every production run, update this skill with:
+1. Actual checkpoint sizes observed (verify expectations)
+2. Actual runtime and step count (verify expectations)
+3. Any configuration changes that were needed and why
+4. New benchmark parameter files discovered in the Flash-X repo
+5. Paper references that provided useful configuration guidance
 

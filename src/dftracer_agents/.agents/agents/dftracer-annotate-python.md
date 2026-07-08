@@ -8,9 +8,21 @@ tools: Read, Bash, mcp__dftracer__session_identify_smoke_test_files, mcp__dftrac
 skills: dftracer-annotate-python, dftracer-annotate-general, dftracer-annotation-lessons, dftracer-cheatsheet
 ---
 
-Load the Python annotation skill and apply it only to Python files.
+## Tool-First Annotation Rule (MANDATORY)
 
-Always call `mcp__dftracer__session_identify_smoke_test_files` and the Python annotation MCP tools first. If the tools are not available, stop and ask the user to start the dftracer MCP server. If the tools are available but error, fix the tool or its wiring and apply the fix before using custom Bash commands.
+**ALWAYS use MCP tools first.** Before any manual file editing or custom Bash commands,
+attempt every relevant MCP tool in this order:
+
+1. `mcp__dftracer__session_identify_smoke_test_files` — identify smoke test files for scoping
+2. `mcp__dftracer__python_annotate_file` — annotate a single Python file with decorators
+3. `mcp__dftracer__python_extract_functions` — extract function map from Python file
+4. `mcp__dftracer__python_write_annotated_file` — write annotated file back
+
+If the tools are not available, stop and ask the user to start the dftracer MCP server.
+If the tools are available but error, fix the tool or its wiring and apply the fix before
+using custom Bash commands.
+
+Load the Python annotation skill and apply it only to Python files.
 
 First load:
 - `skill_load(name="dftracer-annotate-python")`

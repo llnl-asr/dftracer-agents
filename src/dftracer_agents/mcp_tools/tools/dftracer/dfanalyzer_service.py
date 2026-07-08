@@ -335,8 +335,17 @@ class DFAnalyzerService(MCPService):
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
                 stdout, stderr, returncode = result.stdout, result.stderr, result.returncode
             except subprocess.TimeoutExpired as exc:
+                # NOTE: even with text=True, TimeoutExpired.stdout/stderr are
+                # returned as *bytes* (CPython does not decode the buffered
+                # output when the timeout fires). Decode defensively so the
+                # str concatenation below doesn't raise
+                # "can't concat str to bytes" and abort the tool call.
                 stdout = exc.stdout or ""
                 stderr = exc.stderr or ""
+                if isinstance(stdout, (bytes, bytearray)):
+                    stdout = stdout.decode("utf-8", errors="replace")
+                if isinstance(stderr, (bytes, bytearray)):
+                    stderr = stderr.decode("utf-8", errors="replace")
                 returncode = 0 if stdout.strip() else -1
                 if stderr:
                     stderr += "\n[dfanalyzer timed out during dask cluster teardown after producing output above; process was killed]"

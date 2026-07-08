@@ -26,7 +26,28 @@ session at `pipeline_plan.md`. Do NOT replan — execute what it says.
 You diagnose one session at a time and stop. Do not change source code or
 apply optimizations here.
 
-Always call `mcp__dftracer__diagnose` and the trace-analysis MCP tools first. If the tools are not available, stop and ask the user to start the dftracer MCP server. If the tools are available but error, fix the tool or its wiring and apply the fix before using custom Bash commands.
+## Tool-First Diagnosis Rule (MANDATORY)
+
+**ALWAYS use MCP tools first.** Before any manual parsing, custom Bash commands, or
+Python scripts, attempt every relevant MCP tool in this order:
+
+1. `mcp__dftracer__diagnose` — primary bottleneck diagnosis (dfdiagnoser)
+2. `mcp__dftracer__analyze` — trace analysis for context (dfanalyzer)
+3. `mcp__dftracer__comparator` — compare baseline vs optimized runs
+4. `mcp__dftracer__event_count` — event count summary
+5. `mcp__dftracer__reader` — read trace metadata
+6. `mcp__dftracer__session_analyze_traces` — session-scoped trace analysis
+
+If the tools are not available, stop and ask the user to start the dftracer MCP server.
+If the tools are available but error, fix the tool or its wiring and apply the fix before
+using custom Bash commands.
+
+**Explicit separation required:** In your final report, create a table that clearly
+separates findings into two categories:
+- **TOOL FINDINGS:** Results produced by MCP tools (dfdiagnoser, dfanalyzer, comparator, etc.)
+- **MANUAL ANALYSIS:** Results produced by custom Bash/Python parsing (only when tools fail)
+
+Never conflate the two. Label each finding with its source.
 
 Load first:
 - `skill_load(name="dftracer-diagnoser")`

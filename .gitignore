@@ -34,3 +34,5 @@ AGENTS.md
 CLAUDE.md
 copilot-instructions.md
 .claude/worktrees/
+.agents/agents
+.agents/skills

@@ -1,0 +1,95 @@
+# Runtime parameters for the Sedov explosion problem — OPTIMIZED CONFIG
+# =============================================================================
+# Optimizations applied:
+#   1. checkpointFileIntervalTime = 0.1 (was 0.03) → 3x fewer checkpoints
+#   2. Lustre striping: lfs setstripe -c 8 -s 1M (applied to output dir)
+#   3. HDF5 env vars: collective metadata, no file locking
+# =============================================================================
+
+# Parameters for initial model
+sim_pAmbient= 1.E-5
+sim_rhoAmbient= 1.
+sim_expEnergy= 1.
+sim_rInit= 0.013671875
+sim_xctr= 0.5
+sim_yctr= 0.5
+sim_zctr= 0.5
+sim_profFileName        = "/dev/null"
+
+# Gas ratio of specific heats
+gamma           = 1.4
+
+# Computational volume parameters
+geometry = "cartesian"
+
+xmin= 0.
+xmax= 1.
+ymin= 0.
+ymax= 1.
+zmin= 0.
+zmax= 1.
+
+# Grid configuration: Paramesh AMR Mode
+nblockx = 9
+nblocky = 9
+nblockz = 9
+iProcs = 1
+jProcs = 1
+kProcs = 1
+
+# Boundary conditions
+xl_boundary_type = "outflow"
+xr_boundary_type = "outflow"
+yl_boundary_type = "outflow"
+yr_boundary_type = "outflow"
+zl_boundary_type = "outflow"
+zr_boundary_type = "outflow"
+
+# Simulation time, I/O parameters
+cfl= 0.8
+
+# Output to Lustre
+basenm          = "/p/lustre5/haridev/flashx/baseline_production/sedov_"
+restart         = .false.
+
+# =============================================================================
+# OPTIMIZED CHECKPOINT CONFIGURATION
+# =============================================================================
+# Increased interval from 0.03 to 0.1 to reduce checkpoint frequency by 3x.
+# With tmax=0.5, this produces ~5 checkpoints instead of ~16.
+# This is the primary L2 optimization — reduces total I/O time proportionally.
+# =============================================================================
+checkpointFileIntervalTime = 0.1
+checkpointFileIntervalStep = 0
+checkpointFileNumber = 0
+
+# No plotfiles (reduce I/O overhead, focus on checkpoints)
+plotfileIntervalTime = 0.
+plotfileIntervalStep = 0
+plotfileNumber = 0
+
+# =============================================================================
+# RUNTIME TARGET: ~30+ minutes
+# =============================================================================
+nend            = 1000000
+tmax            = 0.5
+wall_clock_time_limit = 3600
+
+run_comment     = "Sedov explosion — OPTIMIZED 384 ranks, Paramesh AMR, checkpoint interval 0.1"
+log_file        = "sedov_optimized.log"
+eintSwitch     = 1.e-4
+
+# Only density and pressure
+plot_var_1 = "dens"
+plot_var_2 = "pres"
+
+# =============================================================================
+# AMR REFINEMENT PARAMETERS
+# =============================================================================
+lrefine_max     = 2
+lrefine_min     = 1
+refine_var_1 = "dens"
+refine_var_2 = "pres"
+
+# Collective I/O for better performance at scale
+useCollectiveHDF5 = .true.

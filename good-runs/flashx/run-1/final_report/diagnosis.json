@@ -1,0 +1,57 @@
+{
+  "run_id": "flash_x/20260708_063844",
+  "app": "flash_x",
+  "system": "tuolumne",
+  "analysis_timestamp": "2026-07-08T12:20:00Z",
+  "bottlenecks": [
+    {
+      "metric": "small_io",
+      "severity": "critical",
+      "description": "24.1M write operations (87.6% of all events) with mean duration ~15-17 microseconds, indicating extremely small write sizes",
+      "evidence": "POSIX write dominates with 24,119,080 operations. Mean write duration across chunks: 13.6-17.2 us. Total POSIX I/O time: 846s.",
+      "affected_ranks": "all",
+      "time_range": "full_run"
+    },
+    {
+      "metric": "write_time",
+      "severity": "high",
+      "description": "Checkpoint writes consume significant I/O time despite small individual operations",
+      "evidence": "Top 4 files by fhash each have 5.3-6.4M writes with 0 reads, totaling ~24M writes. These are checkpoint files written sequentially.",
+      "affected_ranks": "all",
+      "time_range": "checkpoint_phases"
+    },
+    {
+      "metric": "metadata",
+      "severity": "medium",
+      "description": "High metadata overhead from open/close operations during checkpointing",
+      "evidence": "165,540 open operations, 145,008 close operations. Open mean duration ~380-460 us. mkdir: 23,080 ops.",
+      "affected_ranks": "all",
+      "time_range": "checkpoint_phases"
+    },
+    {
+      "metric": "checkpoint",
+      "severity": "high",
+      "description": "18 checkpoints written, sizes growing from 56M to 460M, total ~6.5GB. Frequent checkpointing with small interval (0.03 time units)",
+      "evidence": "checkpointFileIntervalTime=0.03, tmax=0.5, resulting in 18 checkpoints. Each checkpoint triggers millions of small writes.",
+      "affected_ranks": "all",
+      "time_range": "throughout"
+    }
+  ],
+  "system_context": {
+    "filesystem": "Lustre",
+    "nodes": 8,
+    "cores": 384,
+    "mpi_ranks": 384,
+    "storage_path": "/p/lustre5/haridev/flashx/baseline_production/",
+    "hdf5_version": "1.14.3"
+  },
+  "trace_summary": {
+    "total_events": 27517563,
+    "posix_events": 25343010,
+    "stdio_events": 1297392,
+    "app_events": 688004,
+    "io_time_seconds": 846.0,
+    "compute_time_seconds": 60.8,
+    "total_time_seconds": 7884.9
+  }
+}

@@ -228,6 +228,31 @@ PG10 Revert-all on build error
 
 ---
 
+## Fortran Entry Point Pitfall (PF)
+
+PF1  No C main() in Fortran programs
+     Fortran programs (e.g. `program Flashx` in `main.F90`) have no C `main()`
+     function, so DFTRACER_C_INIT/DFTRACER_C_FINI cannot be placed in the source.
+     → Create a separate C wrapper file with `__attribute__((constructor))` and
+     `__attribute__((destructor))` to auto-call INIT before and FINI after the
+     Fortran program runs. Compile to `.o` and link it into the final binary.
+     Example `dftracer_init_fini.c`:
+
+     ```c
+     #include <stddef.h>
+     #include <dftracer/dftracer.h>
+     __attribute__((constructor)) static void dftracer_init(void) {
+         DFTRACER_C_INIT(NULL, NULL, NULL);
+     }
+     __attribute__((destructor)) static void dftracer_fini(void) {
+         DFTRACER_C_FINI();
+     }
+     ```
+
+     Add the `.o` to the link line (e.g. `ALL_OBJ_FILES` in GNU Make).
+     If the Fortran linker does not fire constructors reliably (CCE `crayftn`
+     observed), pivot to PRELOAD mode instead of FUNCTION/HYBRID mode.
+
 ## C-Specific Pitfalls (PC)
 
 PC1  END after return

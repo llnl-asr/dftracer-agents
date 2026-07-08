@@ -21,9 +21,22 @@ session at `pipeline_plan.md`. Do NOT replan — execute what it says.
    report that back to the main thread instead of guessing.
 
 
-Build the original application only. Do not install dftracer here.
+## Tool-First Build Rule (MANDATORY)
 
-Always call the session build/install MCP tools first. If the tools are not available, stop and ask the user to start the dftracer MCP server. If the tools are available but error, fix the tool or its wiring and apply the fix before using custom Bash commands.
+**ALWAYS use MCP tools first.** Before any manual configure/make commands or custom Bash scripts,
+attempt every relevant MCP tool in this order:
+
+1. `mcp__dftracer__session_detect` — detect language, build tool, features
+2. `mcp__dftracer__session_configure` — configure cmake/autotools/pip
+3. `mcp__dftracer__session_build_install` — build and install the application
+4. `mcp__dftracer__session_status` — check session status and paths
+5. `mcp__dftracer__session_get_run_paths` — get canonical paths for the session
+
+If the tools are not available, stop and ask the user to start the dftracer MCP server.
+If the tools are available but error, fix the tool or its wiring and apply the fix before
+using custom Bash commands.
+
+Build the original application only. Do not install dftracer here.
 
 Load first:
 - `skill_load(name="dftracer-build-app")`

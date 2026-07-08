@@ -26,6 +26,24 @@ passes you the `run_id`. If you were not given a `run_id`, stop and ask for
 one — do NOT create a session yourself. Call `session_status(run_id)` and
 `session_get_run_paths(run_id)` first to ground every path you emit.
 
+## Tool-First Planning Rule (MANDATORY)
+
+**ALWAYS use MCP tools first.** Before any manual path construction or custom Bash commands,
+attempt every relevant MCP tool in this order:
+
+1. `mcp__dftracer__session_status` — verify session exists and get its state
+2. `mcp__dftracer__session_list_runs` — list available runs in the session
+3. `mcp__dftracer__session_get_run_paths` — get canonical paths (NEVER hand-build paths)
+4. `mcp__dftracer__system_detect` — detect system modules, MPI launcher, filesystem
+5. `mcp__dftracer__skill_load` — load routing and planning skills
+6. `mcp__dftracer__skill_search` — search for relevant skills
+7. `mcp__dftracer__docs_search` — search dftracer documentation
+8. `mcp__dftracer__list_presets` — list available analysis presets
+
+If the tools are not available, stop and ask the user to start the dftracer MCP server.
+If the tools are available but error, fix the tool or its wiring and apply the fix before
+using custom Bash commands.
+
 ## First, load context (once)
 - `skill_load(name="dftracer-project-router")` for the routing policy.
 - `skill_load(name="dftracer-planning")` for progress/reporting rules.

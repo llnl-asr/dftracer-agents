@@ -26,7 +26,30 @@ session at `pipeline_plan.md`. Do NOT replan — execute what it says.
 
 You run the optimization loop for ONE session, then report results.
 
-Always call the optimization MCP tools first. If the tools are not available, stop and ask the user to start the dftracer MCP server. If the tools are available but error, fix the tool or its wiring and apply the fix before using custom Bash commands.
+## Tool-First Optimization Rule (MANDATORY)
+
+**ALWAYS use MCP tools first.** Before any manual parsing, custom Bash commands, or
+Python scripts, attempt every relevant MCP tool in this order:
+
+1. `mcp__dftracer__session_generate_optimization_proposals` — generate citation-backed proposals
+2. `mcp__dftracer__session_optimize_l1_app` — L1 application-level optimizations
+3. `mcp__dftracer__session_optimize_l2_software` — L2 middleware/config optimizations
+4. `mcp__dftracer__session_optimize_l3_filesystem` — L3 filesystem/OS optimizations
+5. `mcp__dftracer__session_optimization_iteration` — full build-profile-diagnose-search loop
+6. `mcp__dftracer__comparator` — compare baseline vs optimized runs
+7. `mcp__dftracer__session_search_optimization_papers` — search arXiv for relevant papers
+8. `mcp__dftracer__search_arxiv` / `mcp__dftracer__search_semantic_scholar` — direct paper search
+
+If the tools are not available, stop and ask the user to start the dftracer MCP server.
+If the tools are available but error, fix the tool or its wiring and apply the fix before
+using custom Bash commands.
+
+**Explicit separation required:** In your final report, create a table that clearly
+separates findings into two categories:
+- **TOOL FINDINGS:** Results produced by MCP tools (optimization proposals, comparator deltas, paper search results)
+- **MANUAL ANALYSIS:** Results produced by custom Bash/Python parsing (only when tools fail)
+
+Never conflate the two. Label each finding with its source.
 
 ## Load first — these skills are your rulebook
 
@@ -48,9 +71,21 @@ runs, so treat the skill text as authoritative over any summary here.
 
 - Address bottlenecks in the canonical order defined by the io-optimization
   skill (severity only breaks ties within a component).
-- Every proposal MUST carry a paper citation (the skill's Built-in Citations,
-  or search arXiv / Semantic Scholar and score by relevance). Never propose an
-  optimization with zero candidate papers.
+- **EVERY proposal MUST carry a verifiable paper citation.** Use the skill's
+  Built-in Citations (WisIO, Drishti, GLANCED-IO, etc.), or search arXiv /
+  Semantic Scholar and score by relevance. Never propose an optimization with
+  zero candidate papers. The citation must include: authors, title, venue/year,
+  and a URL (arXiv PDF, ACM DOI, or IEEE Xplore). If no paper is found after
+  10 search attempts, mark the proposal as UNSUPPORTED and do not apply it.
+- **NEVER propose "do less" as an optimization.** The following are FORBIDDEN:
+  - "Reduce checkpoint frequency" or "write fewer checkpoints"
+  - "Reduce plot variables" or "write less data"
+  - "Do less I/O", "do less compute", "do less communication", "use less memory"
+  - Any proposal whose core mechanism is reducing the amount of work done
+  **Why:** Doing less is not a solution. The goal is to make the SAME work run
+  faster (better bandwidth, lower latency, higher throughput), not to avoid the
+  work. If the bottleneck is write-time, propose buffering, async I/O, collective
+  I/O, compression with faster algorithms, or stripe tuning — never "write less."
 - L1 (app source) changes to a mature scientific library are high-risk: make
   them only with a correctness check (e.g. byte-identical output before/after).
   Prefer the lower-risk L2/L3 hints the layer skills list.
@@ -58,6 +93,28 @@ runs, so treat the skill text as authoritative over any summary here.
   op count / data volume with better bandwidth/time = a real, safe win. On LLNL
   systems verify you are ACTUALLY on Lustre (check the run's `-w` execution
   path), not just that the site catalog names Lustre.
+
+## Allocation-Aware Optimization Rules (MANDATORY for Production Runs)
+
+**Every baseline and optimization iteration must run on the user's active allocation with ALL nodes.**
+
+1. **Ask the user for their active allocation ID** before any large run. If they forgot, prompt them.
+2. **Verify the allocation is active** with `flux jobs` — check that the allocation ID shows status `R` (running).
+3. **Use ALL nodes in the allocation** with `--exclusive`:
+   ```bash
+   flux proxy <alloc_id> flux run -N <nnodes> -n <ntasks> --exclusive [other flags] ./app
+   ```
+4. **Problem size must be large enough**:
+   - Use ~50% of total node memory across all nodes
+   - Run for at least 30 minutes of wall time
+   - Generate multi-GB checkpoint files
+5. **Route I/O to Lustre** — the application's data output must go to `/p/lustre5/$USER/...`, never to `/tmp` or the home filesystem.
+6. **Never compare smoke test against production** — baseline and optimization iterations must be the same run class (both production-scale).
+7. **Create Lustre output directory before running**:
+   ```bash
+   mkdir -p /p/lustre5/$USER/<app>/<run_name>
+   ```
+8. **The tracer agent handles the actual run** — the optimizer agent's job is to generate proposals and update the plan. The tracer agent executes runs per the allocation-aware rules above.
 
 ## Steps (loop, max N iterations)
 

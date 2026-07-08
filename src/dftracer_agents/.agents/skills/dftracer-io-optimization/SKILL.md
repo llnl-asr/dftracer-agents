@@ -3,6 +3,50 @@ name: dftracer-io-optimization
 description: Key literature, bottleneck-to-optimization mappings, and strategies for the dftracer I/O optimization pipeline
 ---
 
+## MANDATORY: Tool-First Analysis and Explicit Separation
+
+### Tool-First Rule
+Every analysis and diagnosis step MUST attempt MCP tools before falling back to
+manual methods. The canonical tool order is:
+
+1. `mcp__dftracer__analyze` — dfanalyzer trace analysis
+2. `mcp__dftracer__diagnose` — dfdiagnoser bottleneck scoring
+3. `mcp__dftracer__comparator` — compare two runs
+4. `mcp__dftracer__event_count` — event count summary
+5. `mcp__dftracer__reader` — trace metadata reader
+6. `mcp__dftracer__session_analyze_traces` — session-scoped analysis
+
+If tools are unavailable, ask the user to start the dftracer MCP server.
+If tools error, fix the tool or wiring before using custom Bash/Python.
+
+### Explicit Separation Requirement
+In every report, create a table separating:
+- **TOOL FINDINGS:** Results from MCP tools (dfanalyzer, dfdiagnoser, comparator)
+- **MANUAL ANALYSIS:** Results from custom Bash/Python (only when tools fail)
+
+Never conflate the two. Label each finding with its source.
+
+### Citation-Backed Optimizations (MANDATORY)
+Every optimization proposal MUST carry a verifiable paper citation. Use the
+Built-in Citations section below (WisIO, Drishti, GLANCED-IO, etc.), or search
+arXiv / Semantic Scholar. The citation must include: authors, title, venue/year,
+and a URL (arXiv PDF, ACM DOI, or IEEE Xplore). If no paper is found after
+10 search attempts, mark the proposal as UNSUPPORTED and do not apply it.
+
+### NEVER "Do Less" as Optimization
+The following are FORBIDDEN:
+- "Reduce checkpoint frequency" or "write fewer checkpoints"
+- "Reduce plot variables" or "write less data"
+- "Do less I/O", "do less compute", "do less communication", "use less memory"
+- Any proposal whose core mechanism is reducing the amount of work done
+
+**Why:** Doing less is not a solution. The goal is to make the SAME work run
+faster (better bandwidth, lower latency, higher throughput), not to avoid the
+work. If the bottleneck is write-time, propose buffering, async I/O, collective
+I/O, compression with faster algorithms, or stripe tuning — never "write less."
+
+---
+
 ## MANDATORY: Datasets Must Live on Lustre, Never NFS
 
 Application datasets (training data, fractals/checkpoints/runs, any file the

@@ -8,9 +8,25 @@ tools: Read, Bash, mcp__dftracer__session_identify_smoke_test_files, mcp__dftrac
 skills: dftracer-annotate-cpp, dftracer-annotate-general, dftracer-annotation-lessons, dftracer-cheatsheet
 ---
 
-Load the C++ annotation skill and apply it only to C++ files.
+## Tool-First Annotation Rule (MANDATORY)
 
-Always call `mcp__dftracer__session_identify_smoke_test_files` and the C++ annotation MCP tools first. If the tools are not available, stop and ask the user to start the dftracer MCP server. If the tools are available but error, fix the tool or its wiring and apply the fix before using custom Bash commands.
+**ALWAYS use MCP tools first.** Before any manual file editing or custom Bash commands,
+attempt every relevant MCP tool in this order:
+
+1. `mcp__dftracer__session_identify_smoke_test_files` — identify smoke test files for scoping
+2. `mcp__dftracer__clang_annotate_project` — annotate entire C++ project at once
+3. `mcp__dftracer__clang_annotate_file` — annotate a single C++ file
+4. `mcp__dftracer__clang_extract_functions` — extract function map from C++ file
+5. `mcp__dftracer__clang_syntax_check` — verify annotated file compiles
+6. `mcp__dftracer__clang_lint_annotations` — lint annotation correctness
+7. `mcp__dftracer__clang_write_annotated_file` — write annotated file back
+8. `mcp__dftracer__clang_insert_line` — insert annotation macros at specific lines
+
+If the tools are not available, stop and ask the user to start the dftracer MCP server.
+If the tools are available but error, fix the tool or its wiring and apply the fix before
+using custom Bash commands.
+
+Load the C++ annotation skill and apply it only to C++ files.
 
 First load:
 - `skill_load(name="dftracer-annotate-cpp")`

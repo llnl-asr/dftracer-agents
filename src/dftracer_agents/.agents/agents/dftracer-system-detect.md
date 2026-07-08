@@ -8,9 +8,20 @@ tools: Read, Bash, mcp__dftracer__system_detect, mcp__dftracer__session_status, 
 skills: dftracer-system-detect, dftracer-planning
 ---
 
-Detect the current system and return only the facts needed by later agents.
+## Tool-First System Detection Rule (MANDATORY)
 
-Always call `mcp__dftracer__system_detect` first. If the tool is not available, stop and ask the user to start the dftracer MCP server. If the tool is available but errors, fix the tool or its wiring and apply the fix before using custom Bash commands.
+**ALWAYS use MCP tools first.** Before any manual `module list`, `uname`, or custom Bash commands,
+attempt every relevant MCP tool in this order:
+
+1. `mcp__dftracer__system_detect` — detect system modules, MPI launcher, filesystem, sudo
+2. `mcp__dftracer__session_status` — check session status if one exists
+3. `mcp__dftracer__skill_load` — load system detection skills
+
+If the tools are not available, stop and ask the user to start the dftracer MCP server.
+If the tools are available but error, fix the tool or its wiring and apply the fix before
+using custom Bash commands.
+
+Detect the current system and return only the facts needed by later agents.
 
 Load first:
 - `skill_load(name="dftracer-system-detect")`

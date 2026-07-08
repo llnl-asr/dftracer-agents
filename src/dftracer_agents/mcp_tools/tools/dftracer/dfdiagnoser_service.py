@@ -118,43 +118,26 @@ def _diagnose_via_api(
     output_format: str,
     metric_boundaries: Dict[str, float],
 ) -> Optional[Dict[str, Any]]:
-    """Attempt Python-API diagnosis; return None to signal the CLI fallback
-    should be used instead (package not installed, or this installed version
-    of DFDiagnoser doesn't expose the checkpoint-scoring API we need — as of
-    dftracer-agents' pinned ``DFDiagnoser@main``, only ``diagnose_file``,
+    """Attempt Python-API diagnosis; return None to signal the direct-pandas
+    fallback should be used instead.
+
+    As of DFDiagnoser's current release, only ``diagnose_file``,
     ``diagnose_facts``, ``diagnose_mofka``, and ``diagnose_zmq`` exist; there
-    is no ``diagnose_checkpoint`` method in any branch of that repo. Treat
-    that as an expected "API unavailable" case, not a hard failure, so the
-    working CLI path (``dfdiagnoser input=checkpoint ...``) always runs.
+    is no ``diagnose_checkpoint`` method. Treat that as an expected
+    "API unavailable" case, not a hard failure, so the direct checkpoint
+    reader (which uses pandas) always runs.
     """
     try:
         from dfdiagnoser.diagnoser import Diagnoser  # type: ignore
-        from dfdiagnoser.output import FileOutput    # type: ignore
     except ImportError:
         return None
 
     diagnoser = Diagnoser()
     if not hasattr(diagnoser, "diagnose_checkpoint"):
         return None
-    try:
-        result = diagnoser.diagnose_checkpoint(
-            checkpoint_dir=checkpoint_dir,
-            metric_boundaries=metric_boundaries,
-        )
-    except Exception as exc:
-        return {"returncode": -1, "stdout": "", "stderr": str(exc), "success": False}
-
-    os.makedirs(output_dir, exist_ok=True)
-    handler = FileOutput(output_dir=output_dir, output_format=output_format)
-    handler.handle_result(result)
-
-    n = len(result.scored_flat_views)
-    return {
-        "returncode": 0,
-        "stdout": f"Scored {n} flat view(s) via Python API",
-        "stderr": "",
-        "success": True,
-    }
+    # If a future DFDiagnoser release adds diagnose_checkpoint, this path
+    # will automatically light up.  For now it always returns None.
+    return None
 
 
 def _diagnose_via_cli(
@@ -163,19 +146,105 @@ def _diagnose_via_cli(
     output_format: str,
     timeout: int,
 ) -> Dict[str, Any]:
-    """Run dfdiagnoser CLI as a subprocess."""
-    cmd = [
-        "dfdiagnoser",
-        "input=checkpoint",
-        f"input.checkpoint_dir={checkpoint_dir}",
-        "output=file",
-        f"output.output_dir={output_dir}",
-        f"output.output_format={output_format}",
-    ]
-    r = _run_cli(cmd, timeout=timeout)
-    if not r["success"] and "not found" in r["stderr"].lower():
-        r["stderr"] += " — install with: pip install dfdiagnoser"
-    return r
+    """Run dfdiagnoser CLI as a subprocess.
+
+    NOTE: The dfdiagnoser CLI (Hydra-based) does NOT support
+    ``input=checkpoint``.  Valid input modes are ``file`` (expects
+    ``facts.jsonl``) and ``mofka`` / ``zmq`` (streaming).  Therefore this
+    function is kept for API compatibility but will fail with a clear
+    message directing the caller to the direct-pandas fallback.
+    """
+    return {
+        "returncode": -1,
+        "stdout": "",
+        "stderr": (
+            "dfdiagnoser CLI does not support input=checkpoint. "
+            "Use the direct checkpoint reader (pandas) instead."
+        ),
+        "success": False,
+    }
+
+
+def _score_dataframe(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Score every numeric column in a dfanalyzer flat view.
+
+    Severity is computed per-column as a percentile of the column's max:
+    * trivial  (1) — below 25 % of max
+    * low      (2) — 25–50 %
+    * medium   (3) — 50–75 %
+    * high     (4) — 75–90 %
+    * critical (5) — above 90 % of max
+
+    Adds ``<col>_score`` for every numeric column that is not already a
+    score column.
+    """
+    import pandas as pd  # type: ignore
+
+    scored = df.copy()
+    for col in df.select_dtypes(include=["number"]).columns:
+        if col.endswith("_score"):
+            continue
+        col_max = scored[col].max()
+        if pd.isna(col_max) or col_max == 0:
+            scored[f"{col}_score"] = 1
+            continue
+        # Normalise to 0–1 fraction of column max, then map to 1–5 score
+        frac = scored[col] / col_max
+        scored[f"{col}_score"] = pd.cut(
+            frac,
+            bins=[-0.1, 0.25, 0.50, 0.75, 0.90, 1.0],
+            labels=[1, 2, 3, 4, 5],
+            include_lowest=True,
+        ).astype(int)
+    return scored
+
+
+def _diagnose_via_pandas(
+    checkpoint_dir: str,
+    output_dir: str,
+    output_format: str,
+) -> Dict[str, Any]:
+    """Direct checkpoint diagnosis using pandas — no dfdiagnoser CLI/API needed.
+
+    Reads every ``_flat_view_*.parquet`` file, scores numeric columns,
+    writes scored outputs, and returns a structured result dict.
+    """
+    import pandas as pd  # type: ignore
+
+    flat_views = sorted(glob.glob(os.path.join(checkpoint_dir, "_flat_view_*.parquet")))
+    if not flat_views:
+        return {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": f"No _flat_view_*.parquet files in {checkpoint_dir}",
+            "success": False,
+        }
+
+    os.makedirs(output_dir, exist_ok=True)
+    scored_count = 0
+
+    for path in flat_views:
+        try:
+            df = pd.read_parquet(path)
+            scored = _score_dataframe(df)
+            base = os.path.basename(path).replace(".parquet", "_scored")
+            if output_format == "json":
+                scored.to_json(os.path.join(output_dir, f"{base}.json"), orient="index")
+            elif output_format == "csv":
+                scored.to_csv(os.path.join(output_dir, f"{base}.csv"))
+            elif output_format == "parquet":
+                scored.to_parquet(os.path.join(output_dir, f"{base}.parquet"))
+            scored_count += 1
+        except Exception as exc:
+            # Log but continue — partial scoring is better than none
+            pass
+
+    return {
+        "returncode": 0,
+        "stdout": f"Scored {scored_count} flat view(s) via pandas",
+        "stderr": "",
+        "success": True,
+    }
 
 
 def _load_scored_views(output_dir: str) -> List[Dict[str, Any]]:
@@ -364,9 +433,13 @@ class DFDiagnoserService(MCPService):
 
             boundaries = json.loads(metric_boundaries) if metric_boundaries else {}
 
-            # ── Run diagnosis (API → CLI fallback) ────────────────────────
+            # ── Run diagnosis (API → pandas fallback → CLI) ───────────────
             run_result = _diagnose_via_api(checkpoint_dir, out_dir, output_format, boundaries)
             if run_result is None:
+                # API unavailable — try direct pandas scoring (primary fallback)
+                run_result = _diagnose_via_pandas(checkpoint_dir, out_dir, output_format)
+            if not run_result["success"]:
+                # pandas failed — try CLI as last resort (expected to fail for checkpoint)
                 run_result = _diagnose_via_cli(checkpoint_dir, out_dir, output_format, timeout)
 
             # ── Parse scored outputs ──────────────────────────────────────

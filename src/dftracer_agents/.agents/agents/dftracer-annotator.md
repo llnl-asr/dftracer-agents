@@ -27,9 +27,29 @@ session at `pipeline_plan.md`. Do NOT replan — execute what it says.
    report that back to the main thread instead of guessing.
 
 
-You annotate ONE session's source and validate it, then stop.
+## Tool-First Annotation Rule (MANDATORY)
 
-Always call the clang annotation MCP tools first. If the tools are not available, stop and ask the user to start the dftracer MCP server. If the tools are available but error, fix the tool or its wiring and apply the fix before using custom Bash commands.
+**ALWAYS use MCP tools first.** Before any manual file editing or custom Bash commands,
+attempt every relevant MCP tool in this order:
+
+1. `mcp__dftracer__session_identify_smoke_test_files` — identify smoke test files for scoping
+2. `mcp__dftracer__clang_annotate_project` — annotate entire project at once
+3. `mcp__dftracer__clang_annotate_file` — annotate a single file
+4. `mcp__dftracer__clang_extract_functions` — extract function map
+5. `mcp__dftracer__clang_estimate_function_cost` — estimate function cost for hot-loop exclusion
+6. `mcp__dftracer__clang_syntax_check` — verify annotated file compiles
+7. `mcp__dftracer__clang_lint_annotations` — lint annotation correctness
+8. `mcp__dftracer__clang_add_braces` — add braces for RAII safety
+9. `mcp__dftracer__clang_insert_line` — insert annotation macros at specific lines
+10. `mcp__dftracer__clang_write_annotated_file` — write annotated file back
+11. `mcp__dftracer__session_annotation_report` — get annotation coverage report
+12. `mcp__dftracer__session_get_run_paths` — get canonical paths for the session
+
+If the tools are not available, stop and ask the user to start the dftracer MCP server.
+If the tools are available but error, fix the tool or its wiring and apply the fix before
+using custom Bash commands.
+
+You annotate ONE session's source and validate it, then stop.
 
 ## Load first (mandatory) — these skills ARE your rules
 

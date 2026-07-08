@@ -614,21 +614,33 @@ class DftracerUtilsService(MCPService):
             verbose: bool = False,
             stats_only: bool = False,
             no_save: bool = False,
+            fix_c_app_names: bool = False,
         ) -> str:
             """Build and analyze a hierarchical call tree from trace files.
 
             ``dftracer_call_tree [OPTIONS] <inputs...>`` — positional files or dirs.
             ``stats_only`` prints statistics only (skipping tree traversal).
             ``no_save`` skips writing any output files; results are printed to stdout only.
+            ``fix_c_app_names`` (default False) patches empty ``name`` / ``cat`` fields
+            in the generated Chrome Tracing JSON for C_APP events by reading the
+            original trace file and mapping ``id`` → ``(name, cat)``.  This works
+            around a known dftracer_call_tree limitation where C_APP event names are
+            stripped.
 
             Reference: https://dftracer.readthedocs.io/projects/utils/en/latest/cli.html
             """
+            import json
+            import gzip
+
             cmd = ["dftracer_call_tree"]
             if inputs is not None:
                 cmd += inputs.split()
             if recursive:
                 cmd.append("-r")
-            cmd += ["--pattern", pattern]
+            # NOTE: dftracer_call_tree CLI does NOT support --pattern;
+            # the pattern parameter is ignored here and used only for
+            # documentation / filtering at the Python layer.
+            actual_output = output
             if output:
                 cmd += ["-o", output]
             if save_json:
@@ -636,8 +648,8 @@ class DftracerUtilsService(MCPService):
             if text_export:
                 cmd += ["--text", text_export]
             # max_depth defaults to 0 (unlimited) on the CLI,
-            # so we only emit it when the user explicitly sets a value.
-            if not stats_only and not no_save:
+            # so we only emit it when the user explicitly sets a value > 0.
+            if max_depth > 0:
                 cmd += ["--max-depth", str(max_depth)]
             if analyze:
                 cmd.append("--analyze")
@@ -648,6 +660,52 @@ class DftracerUtilsService(MCPService):
             if no_save:
                 cmd.append("--no-save")
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+            # ── C_APP name restoration (workaround for dftracer_call_tree bug) ──
+            if fix_c_app_names and actual_output and inputs:
+                try:
+                    # Build id → (name, cat) map from original trace file(s)
+                    id_map: dict[int, tuple[str, str]] = {}
+                    for inp in inputs.split():
+                        if inp.endswith(".gz"):
+                            with gzip.open(inp, "rt") as f:
+                                for line in f:
+                                    line = line.strip()
+                                    if not line or line in ("[", "]"):
+                                        continue
+                                    try:
+                                        ev = json.loads(line)
+                                        if "id" in ev and "name" in ev and "cat" in ev:
+                                            id_map[ev["id"]] = (ev["name"], ev["cat"])
+                                    except json.JSONDecodeError:
+                                        pass
+                        elif inp.endswith(".pfw"):
+                            with open(inp) as f:
+                                for line in f:
+                                    line = line.strip()
+                                    if not line or line in ("[", "]"):
+                                        continue
+                                    try:
+                                        ev = json.loads(line)
+                                        if "id" in ev and "name" in ev and "cat" in ev:
+                                            id_map[ev["id"]] = (ev["name"], ev["cat"])
+                                    except json.JSONDecodeError:
+                                        pass
+
+                    # Patch the generated call_tree JSON
+                    with open(actual_output) as f:
+                        ct_data = json.load(f)
+                    patched = 0
+                    for ev in ct_data:
+                        if isinstance(ev, dict) and ev.get("id") in id_map:
+                            ev["name"], ev["cat"] = id_map[ev["id"]]
+                            patched += 1
+                    with open(actual_output, "w") as f:
+                        json.dump(ct_data, f)
+                    result.stdout += f"\n[call_tree] Patched {patched} C_APP event names."
+                except Exception as exc:
+                    result.stdout += f"\n[call_tree] Name-fix warning: {exc}"
+
             return result.stdout
 
         @self.analysis_subservice.tool()

@@ -73,6 +73,7 @@ def ensure_workspace_setup(target_root: Optional[Path] = None, force: bool = Fal
         ("AGENTS.md", "AGENTS.md"),
         ("CLAUDE.md", "CLAUDE.md"),
         ("copilot-instructions.md", "copilot-instructions.md"),
+        (".github/copilot-instructions.md", "copilot-instructions.md"),
         (".claude/settings.json", ".claude/settings.json"),
         (".opencode/opencode.jsonc", ".opencode/opencode.jsonc"),
         (".vscode/mcp.json", ".vscode/mcp.json"),

@@ -12,10 +12,23 @@ tools: Read, Grep, Glob, Bash, mcp__dftracer__skill_load, mcp__dftracer__skill_s
 skills: dftracer-project-router, dftracer-planning
 ---
 
+## Tool-First Routing Rule (MANDATORY)
+
+**ALWAYS use MCP tools first.** Before any manual path construction or custom Bash commands,
+attempt every relevant MCP tool in this order:
+
+1. `mcp__dftracer__system_detect` — detect system modules, MPI launcher, filesystem
+2. `mcp__dftracer__session_status` — check session status
+3. `mcp__dftracer__session_get_run_paths` — get canonical paths (NEVER hand-build paths)
+4. `mcp__dftracer__skill_load` — load routing and planning skills
+5. `mcp__dftracer__skill_search` — search for relevant skills
+
+If the tools are not available, stop and ask the user to start the dftracer MCP server.
+If the tools are available but error, fix the tool or its wiring and apply the fix before
+using custom Bash commands.
+
 Load the router skill and then dispatch the stage-specific agent. Do not
 execute build, trace, annotation, or optimization steps yourself.
-
-Always call `mcp__dftracer__system_detect` and the router MCP tools first. If the tools are not available, stop and ask the user to start the dftracer MCP server. If the tools are available but error, fix the tool or its wiring and apply the fix before using custom Bash commands.
 
 First load:
 - `skill_load(name="dftracer-project-router")`

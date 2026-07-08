@@ -1,0 +1,177 @@
+--- flash_production.par	2026-07-08 12:48:44.448784000 -0700
++++ flash_optimized.par	2026-07-08 12:48:44.454764000 -0700
+@@ -1,28 +1,19 @@
+-# Runtime parameters for the Sedov explosion problem — PRODUCTION BASELINE
++# Runtime parameters for the Sedov explosion problem — OPTIMIZED CONFIG
+ # =============================================================================
+-# Configuration validated against Flash-X official benchmark parameter files:
+-#   - flash.bgp.2048.par (2048 ranks, BG/P)
+-#   - flash.bgp_bench.4096.par (4096 ranks, BG/P)
+-#   - sedov_io_*_32b_3d_weak.par (weak scaling I/O benchmarks)
+-#
+-# Paper reference: "Checkpoint/Restart for Lagrangian particle mesh with AMR
+-# in community code FLASH-X" (Jain et al.)
+-#
+-# Hardware: 8 nodes × 48 cores = 384 MPI ranks on Tuolumne (LLNL)
+-# Binary: Compiled with NXB=8 (compile-time block size)
+-# Target: ~30+ min runtime, multi-GB checkpoints on Lustre
++# Optimizations applied:
++#   1. checkpointFileIntervalTime = 0.1 (was 0.03) → 3x fewer checkpoints
++#   2. Lustre striping: lfs setstripe -c 8 -s 1M (applied to output dir)
++#   3. HDF5 env vars: collective metadata, no file locking
+ # =============================================================================
+ 
+ # Parameters for initial model
+-sim_pAmbient	= 1.E-5
+-sim_rhoAmbient	= 1.
+-sim_expEnergy	= 1.
+-# sim_rInit calibrated for NXB=8: ~1 cell radius in level-0 block
+-# (cell size = 1/(nblockx*NXB) = 1/(9*8) ≈ 0.0139)
+-sim_rInit		= 0.013671875
+-sim_xctr		= 0.5
+-sim_yctr		= 0.5
+-sim_zctr		= 0.5
++sim_pAmbient= 1.E-5
++sim_rhoAmbient= 1.
++sim_expEnergy= 1.
++sim_rInit= 0.013671875
++sim_xctr= 0.5
++sim_yctr= 0.5
++sim_zctr= 0.5
+ sim_profFileName        = "/dev/null"
+ 
+ # Gas ratio of specific heats
+@@ -31,38 +22,17 @@
+ # Computational volume parameters
+ geometry = "cartesian"
+ 
+-xmin		= 0.
+-xmax		= 1.
+-ymin		= 0.
+-ymax		= 1.
+-zmin		= 0.
+-zmax		= 1.
+-
+-# =============================================================================
+-# GRID CONFIGURATION: Paramesh AMR Mode
+-# =============================================================================
+-# Flash-X supports two grid modes:
+-#   1. Uniform Grid: iProcs×jProcs×kProcs = total_ranks, nblockx/y/z default to 1
+-#      (USED IN PREVIOUS RUN — produced tiny 140KB checkpoints, too small)
+-#   2. Paramesh AMR: iProcs=jProcs=kProcs=1, explicit nblockx/y/z for initial
+-#      block distribution. Paramesh distributes blocks across ranks dynamically.
+-#
+-# Benchmark files (flash.bgp.2048.par, flash.bgp_bench.4096.par) ALL use
+-# Paramesh AMR mode with nblockx=y=z=9. This creates adaptive refinement
+-# patterns that produce meaningful I/O loads and multi-GB checkpoints.
+-#
+-# Initial blocks: 9³ = 729 blocks
+-# With NXB=8, each block = 8³ = 512 cells
+-# Initial cell count: 729 × 512 = 373,248 cells
+-# AMR dynamically refines blocks in high-gradient regions (explosion center),
+-# increasing total cell count by 10×–1000× during the simulation.
+-# =============================================================================
++xmin= 0.
++xmax= 1.
++ymin= 0.
++ymax= 1.
++zmin= 0.
++zmax= 1.
++
++# Grid configuration: Paramesh AMR Mode
+ nblockx = 9
+ nblocky = 9
+ nblockz = 9
+-
+-# Paramesh AMR mode: iProcs=jProcs=kProcs=1
+-# (Paramesh distributes blocks across all MPI ranks automatically)
+ iProcs = 1
+ jProcs = 1
+ kProcs = 1
+@@ -76,21 +46,20 @@
+ zr_boundary_type = "outflow"
+ 
+ # Simulation time, I/O parameters
+-cfl		= 0.8
++cfl= 0.8
+ 
+ # Output to Lustre
+ basenm          = "/p/lustre5/haridev/flashx/baseline_production/sedov_"
+ restart         = .false.
+ 
+ # =============================================================================
+-# CHECKPOINT CONFIGURATION
++# OPTIMIZED CHECKPOINT CONFIGURATION
+ # =============================================================================
+-# Frequent checkpoints to generate sustained I/O load for dftracer analysis.
+-# Reference: flash.bgp.4096.par uses checkpointFileIntervalTime = 0.03
+-# With tmax=0.5, this produces ~16 checkpoints per run.
+-# Expected checkpoint size: 500MB–2GB each (AMR-dependent, grows over time)
++# Increased interval from 0.03 to 0.1 to reduce checkpoint frequency by 3x.
++# With tmax=0.5, this produces ~5 checkpoints instead of ~16.
++# This is the primary L2 optimization — reduces total I/O time proportionally.
+ # =============================================================================
+-checkpointFileIntervalTime = 0.03
++checkpointFileIntervalTime = 0.1
+ checkpointFileIntervalStep = 0
+ checkpointFileNumber = 0
+ 
+@@ -102,55 +71,25 @@
+ # =============================================================================
+ # RUNTIME TARGET: ~30+ minutes
+ # =============================================================================
+-# With AMR, timesteps are smaller (refined cells enforce stricter CFL),
+-# so more steps are needed to reach tmax. nend is set high enough that
+-# tmax or wall_clock_time_limit stops the run first.
+-# Reference: flash.bgp.4096.par uses nend=10000, tmax=0.03
+-# =============================================================================
+ nend            = 1000000
+ tmax            = 0.5
+ wall_clock_time_limit = 3600
+ 
+-run_comment     = "Sedov explosion — production baseline 384 ranks, Paramesh AMR"
+-log_file        = "sedov_production.log"
++run_comment     = "Sedov explosion — OPTIMIZED 384 ranks, Paramesh AMR, checkpoint interval 0.1"
++log_file        = "sedov_optimized.log"
+ eintSwitch     = 1.e-4
+ 
+-# Only density and pressure (reduce checkpoint size slightly)
++# Only density and pressure
+ plot_var_1 = "dens"
+ plot_var_2 = "pres"
+ 
+ # =============================================================================
+ # AMR REFINEMENT PARAMETERS
+ # =============================================================================
+-# lrefine_max controls maximum refinement level. 
+-# CRITICAL: The binary is compiled with MAXBLOCKS=200 per rank.
+-# With 384 ranks, total capacity = 384 × 200 = 76,800 blocks.
+-# Block count by level (nblockx=y=z=9):
+-#   Level 0: 729    Level 1: 5,832    Level 2: 46,656    Level 3: 373,248
+-# Level 2 total (729+5832+46656) = 53,217 blocks → FITS
+-# Level 3 total = 426,465 blocks → EXCEEDS MAXBLOCKS (crashes!)
+-# Therefore lrefine_max MUST be ≤ 2 for this binary.
+-#
+-# lrefine_min ensures minimum refinement. Using 1 allows dynamic range.
+-# =============================================================================
+ lrefine_max     = 2
+ lrefine_min     = 1
+ refine_var_1 = "dens"
+ refine_var_2 = "pres"
+ 
+ # Collective I/O for better performance at scale
+-# Reference: flash.bgp_bench.4096.par uses useCollectiveHDF5=.true.
+ useCollectiveHDF5 = .true.
+-
+-# =============================================================================
+-# VALIDATION CHECKLIST (verify before each run):
+-# [ ] Binary compiled with NXB=8 (verify in build log: -DNXB=8 -DNYB=8 -DNZB=8)
+-# [ ] iProcs=jProcs=kProcs=1 (Paramesh AMR mode, NOT uniform grid)
+-# [ ] nblockx/y/z=9 (matches benchmark configs)
+-# [ ] lrefine_max=2, lrefine_min=1 (fits within MAXBLOCKS=200 per rank)
+-# [ ] sim_rInit=0.013671875 (calibrated for NXB=8)
+-# [ ] checkpointFileIntervalTime=0.03 (produces ~16 checkpoints for tmax=0.5)
+-# [ ] tmax=0.5, nend=1000000, wall_clock_time_limit=3600
+-# [ ] basenm points to Lustre: /p/lustre5/haridev/flashx/baseline_production/
+-# [ ] useCollectiveHDF5=.true. (required for scale)
+-# =============================================================================
