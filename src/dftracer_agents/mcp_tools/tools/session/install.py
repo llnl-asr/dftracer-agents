@@ -697,14 +697,143 @@ def _install_dftracer_pip_direct(
 
         # Pass DFTRACER_MPI_IMPL override via DFTRACER_CMAKE_ARGS so dftracer's
         # dep cmake skips its own probe and forwards the correct impl to brahma.
-        # Also pass BRAHMA_MPI_IMPL directly to override brahma's -v parsing.
-        # Detect the actual MPI implementation from the compiler path or env.
+        # Without this flag, brahma's cmake does not generate #define BRAHMA_MPI_IMPL_CRAYMPICH
+        # (etc.) in the generated brahma_config.hpp header file, causing all MPI-IO functions
+        # to be excluded by #if defined(BRAHMA_MPI_IMPL_CRAYMPICH) preprocessor gates.
+        # Strategy: prefer session_detect's stored mpi_impl.impl, fall back to path-based
+        # detection for all major MPI implementations (not just OpenMPI).
+
         _mpi_impl_override = ""
-        if "openmpi" in (_mpicc + pip_env.get("MPICC", "")).lower():
-            _mpi_impl_override = "OPENMPI"
+
+        # Option 1: Read from session state (session_detect already did this work)
+        mpi_impl_info = features.get("mpi_impl", {})
+        if isinstance(mpi_impl_info, dict) and mpi_impl_info.get("impl"):
+            _impl_name = mpi_impl_info.get("impl", "").upper()
+            # Map detected impl name to CMAKE flag
+            _impl_map = {
+                "OPENMPI": "OPENMPI",
+                "MPICH": "MPICH",
+                "CRAYMPICH": "CRAYMPICH",
+                "MVAPICH": "MVAPICH",
+                "INTELMPI": "INTELMPI",
+            }
+            _mpi_impl_override = _impl_map.get(_impl_name, "")
+
+        # Option 2: Fall back to path-based detection for all MPI implementations
+        # (in case session_detect was not run or mpi_impl is missing from session state)
+        if not _mpi_impl_override:
+            _mpicc_str = (_mpicc + pip_env.get("MPICC", "")).lower()
+            if "openmpi" in _mpicc_str:
+                _mpi_impl_override = "OPENMPI"
+            elif "craympich" in _mpicc_str or "cray" in _mpicc_str:
+                _mpi_impl_override = "CRAYMPICH"
+            elif "mvapich" in _mpicc_str:
+                _mpi_impl_override = "MVAPICH"
+            elif "impi" in _mpicc_str or "intel" in _mpicc_str:
+                _mpi_impl_override = "INTELMPI"
+            elif "mpich" in _mpicc_str:
+                # Generic MPICH (catches plain mpich without cray/mvapich prefix)
+                _mpi_impl_override = "MPICH"
+
         if _mpi_impl_override:
             _existing = pip_env.get("DFTRACER_CMAKE_ARGS", "")
             _new_args = f"-DDFTRACER_MPI_IMPL={_mpi_impl_override}"
+            pip_env["DFTRACER_CMAKE_ARGS"] = (
+                (_existing + " " + _new_args).strip() if _existing else _new_args
+            )
+
+        # Also pass BRAHMA_MPI_VERSION (numeric version: major*100000 + minor*100 + patch)
+        # so brahma's cmake uses the correct implementation version instead of falling back
+        # to the MPI standard version (e.g., 300100 for MPI 3.1) which is outside brahma's
+        # supported ranges for all implementations. Without this, brahma's preprocessor gates
+        # (#if BRAHMA_MPI_IMPL_CRAYMPICH && BRAHMA_MPI_VERSION >= 900001) exclude all
+        # MPI-IO interception functions.
+        _brahma_mpi_ver = 0
+
+        # Option 1: Read from session state (session_detect already computed this)
+        if isinstance(mpi_impl_info, dict) and mpi_impl_info.get("brahma_int"):
+            _brahma_mpi_ver = mpi_impl_info.get("brahma_int", 0)
+            if isinstance(_brahma_mpi_ver, str):
+                try:
+                    _brahma_mpi_ver = int(_brahma_mpi_ver)
+                except (ValueError, TypeError):
+                    _brahma_mpi_ver = 0
+
+        # Option 2: Fall back to computing the version for each MPI implementation
+        # via the compiler wrapper (-v output) if not found in session state
+        if _brahma_mpi_ver == 0 and _mpi_impl_override:
+            import subprocess as _sp_mpi_ver, re as _re_mpi_ver
+            try:
+                _mpicc_exe = pip_env.get("MPICC") or _mpicc or ""
+                if not _mpicc_exe:
+                    # Try to find it in PATH
+                    import shutil as _shutil_find_mpi
+                    _mpicc_exe = _shutil_find_mpi.which("mpicc") or ""
+
+                if _mpicc_exe:
+                    _ver_out = _sp_mpi_ver.run(
+                        [_mpicc_exe, "-v"],
+                        capture_output=True, text=True, timeout=10
+                    ).stderr + _sp_mpi_ver.run(
+                        [_mpicc_exe, "--version"],
+                        capture_output=True, text=True, timeout=10
+                    ).stdout
+
+                    # Parse version for each known MPI implementation
+                    if _mpi_impl_override == "OPENMPI":
+                        # OpenMPI: "Open MPI vX.Y.Z" or "Open MPI X.Y.Z"
+                        _m = _re_mpi_ver.search(r"Open MPI v?(\d+)\.(\d+)\.(\d+)", _ver_out)
+                        if _m:
+                            _brahma_mpi_ver = (
+                                int(_m.group(1)) * 100000
+                                + int(_m.group(2)) * 100
+                                + int(_m.group(3))
+                            )
+                    elif _mpi_impl_override == "CRAYMPICH":
+                        # Cray MPICH: "Cray MPICH version X.Y.Z" or similar
+                        _m = _re_mpi_ver.search(r"version\s+(\d+)\.(\d+)\.(\d+)", _ver_out, _re_mpi_ver.IGNORECASE)
+                        if _m:
+                            _brahma_mpi_ver = (
+                                int(_m.group(1)) * 100000
+                                + int(_m.group(2)) * 100
+                                + int(_m.group(3))
+                            )
+                    elif _mpi_impl_override == "MVAPICH":
+                        # MVAPICH: "MVAPICH2 vX.Y.Z" or "MVAPICH vX.Y"
+                        _m = _re_mpi_ver.search(r"MVAPICH\d?\s+v?(\d+)\.(\d+)(?:\.(\d+))?", _ver_out, _re_mpi_ver.IGNORECASE)
+                        if _m:
+                            _brahma_mpi_ver = (
+                                int(_m.group(1)) * 100000
+                                + int(_m.group(2)) * 100
+                                + (int(_m.group(3)) if _m.group(3) else 0)
+                            )
+                    elif _mpi_impl_override == "INTELMPI":
+                        # Intel MPI: "Intel(R) MPI Library X.Y" or similar
+                        _m = _re_mpi_ver.search(r"Intel.*MPI.*(\d+)\.(\d+)(?:\.(\d+))?", _ver_out, _re_mpi_ver.IGNORECASE)
+                        if _m:
+                            _brahma_mpi_ver = (
+                                int(_m.group(1)) * 100000
+                                + int(_m.group(2)) * 100
+                                + (int(_m.group(3)) if _m.group(3) else 0)
+                            )
+                    elif _mpi_impl_override == "MPICH":
+                        # MPICH: "MPICH vX.Y.Z" or "mpich version X.Y"
+                        _m = _re_mpi_ver.search(r"MPICH\s+v?(\d+)\.(\d+)(?:\.(\d+))?", _ver_out, _re_mpi_ver.IGNORECASE)
+                        if _m:
+                            _brahma_mpi_ver = (
+                                int(_m.group(1)) * 100000
+                                + int(_m.group(2)) * 100
+                                + (int(_m.group(3)) if _m.group(3) else 0)
+                            )
+            except Exception:
+                # If probe fails, _brahma_mpi_ver remains 0 and brahma will fall back
+                # to its own detection (which may not work correctly for non-OpenMPI)
+                pass
+
+        # Pass the brahma version via cmake args if we determined it
+        if _brahma_mpi_ver > 0:
+            _existing = pip_env.get("DFTRACER_CMAKE_ARGS", "")
+            _new_args = f"-DBRAHMA_MPI_VERSION={_brahma_mpi_ver}"
             pip_env["DFTRACER_CMAKE_ARGS"] = (
                 (_existing + " " + _new_args).strip() if _existing else _new_args
             )

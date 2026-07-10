@@ -251,11 +251,14 @@ def register_annotation_api_tools(mcp: FastMCP) -> None:
             return _ok(
                 "C metadata macro",
                 language="c",
-                macro='DFTRACER_C_METADATA("key", "value")',
+                macro='DFTRACER_C_METADATA(name, "key", "value")',
                 notes=(
+                    "3-arg macro: name is a bare, unique C identifier (NOT a "
+                    "string literal) used internally for ##name token-pasting; "
+                    "key/value are string literals. "
                     "Attach a string key-value pair to the current process trace. "
                     "Call after DFTRACER_C_INIT(). "
-                    "Example: DFTRACER_C_METADATA(\"app\", \"IOR\");"
+                    "Example: DFTRACER_C_METADATA(dft_meta_app, \"app\", \"IOR\");"
                 ),
                 doc_url=f"{_DOCS_BASE}/c-api.html",
             )
@@ -263,11 +266,14 @@ def register_annotation_api_tools(mcp: FastMCP) -> None:
             return _ok(
                 "C++ metadata macro",
                 language="cpp",
-                macro='DFTRACER_CPP_METADATA("key", "value")',
+                macro='DFTRACER_CPP_METADATA(name, "key", "value")',
                 notes=(
+                    "3-arg macro: name is a bare, unique C++ identifier (NOT a "
+                    "string literal) used internally for ##name token-pasting; "
+                    "key/value are string literals. "
                     "Attach a string key-value pair to the current process trace. "
                     "Call after DFTRACER_CPP_INIT(). "
-                    "Example: DFTRACER_CPP_METADATA(\"app\", \"IOR\");"
+                    "Example: DFTRACER_CPP_METADATA(dft_meta_app, \"app\", \"IOR\");"
                 ),
                 doc_url=f"{_DOCS_BASE}/c-api.html",
             )

@@ -17,14 +17,26 @@ the macro insertion loop (Steps 2a/2b and 4 of annotate-c.yaml / annotate-cpp.ya
 
 In-memory state
 ---------------
-``clang_annotate_file`` accumulates all insertions in memory and writes to disk
-once via a single ``write_text`` call.  For workflows that need multiple passes
-(e.g. add braces, then annotate, then insert metadata), use the in-memory cache:
+``clang_annotate_file`` accumulates all insertions in memory and, **by
+default (``write_immediately=True``), writes them to disk immediately in the
+same call** via a single ``write_text``.  A single call is therefore
+sufficient to get real annotated content on disk — there is no separate step
+that can be silently forgotten. The response reports ``written_to_disk``,
+``bytes_written`` and ``disk_mtime_ns`` so a caller (or a reviewing agent)
+can verify bytes actually landed on disk instead of trusting insertion counts
+alone.
+
+For the rare deliberate multi-step pipeline that needs to validate before
+committing (e.g. add braces, annotate, syntax-check the in-memory result,
+*then* write so a validation failure never leaves a half-annotated file on
+disk), pass ``write_immediately=False`` to ``clang_annotate_file`` and use
+the in-memory cache explicitly:
 
 * Load a file:  ``clang_annotate_file`` (or ``clang_add_braces``) automatically
-  operates on the live file — all edits are in-memory until the final write.
+  operates on the live file — with ``write_immediately=False``, edits stay
+  in-memory until the final write.
 * After all tools have finished editing, call ``clang_write_annotated_file`` to
-  flush the result to disk.
+  flush the result to disk. This tool remains idempotent / no-op-safe to call.
 
 Line-shift safety
 -----------------
@@ -114,11 +126,45 @@ def _derive_comp(fn: dict) -> str:
 # ---------------------------------------------------------------------------
 # Module-level in-memory file cache
 # ---------------------------------------------------------------------------
-# Maps (run_id, filepath) → list[str] of lines (no trailing newline per line).
-# Populated by clang_annotate_file / clang_add_braces; flushed by
-# clang_write_annotated_file.  This allows multiple tools to collaborate on
-# the same file without intermediate disk writes.
-_FILE_CACHE: Dict[tuple, List[str]] = {}
+# Maps (run_id, filepath) → (disk_mtime_ns, list[str] of lines) (no trailing
+# newline per line).  Populated by clang_annotate_file / clang_add_braces;
+# flushed by clang_write_annotated_file.  This allows multiple tools to
+# collaborate on the same file without intermediate disk writes.
+#
+# CACHE VALIDITY (bug fixed 2026-07): the cache is keyed only on
+# (run_id, filepath), which stays constant even if the file on disk is
+# deleted and recreated with entirely different content (e.g. a source tree
+# reset/re-copy mid-session). If the cache were trusted blindly, a stale
+# in-memory entry from a *previous* (already-annotated) version of the file
+# could make ``clang_annotate_file`` report ``already_annotated: true``
+# against a fresh, unannotated file — silently no-oping a whole annotation
+# pass. To prevent this, every cache read is guarded by ``_cache_is_stale``,
+# which compares the cached mtime against the file's current on-disk mtime
+# and discards the entry (falling back to a fresh disk read) on any mismatch.
+_FILE_CACHE: Dict[tuple, tuple] = {}
+
+
+def _cache_is_stale(abs_path: "Path", cache_key: tuple) -> bool:
+    """Return True if abs_path's on-disk mtime no longer matches the cache.
+
+    Also evicts the stale entry so callers never need to remember to do so.
+    A missing/unstattable file or a missing cache entry is *not* stale by
+    this definition — callers check ``cache_key in _FILE_CACHE`` separately.
+    """
+    entry = _FILE_CACHE.get(cache_key)
+    if entry is None:
+        return False
+    cached_mtime, _lines = entry
+    try:
+        current_mtime = abs_path.stat().st_mtime_ns
+    except OSError:
+        # File vanished out from under us — cache is definitely untrustworthy.
+        _FILE_CACHE.pop(cache_key, None)
+        return True
+    if current_mtime != cached_mtime:
+        _FILE_CACHE.pop(cache_key, None)
+        return True
+    return False
 
 
 def register_clang_tools(mcp: FastMCP) -> None:
@@ -335,12 +381,27 @@ def register_clang_tools(mcp: FastMCP) -> None:
         init_args: str = "NULL, NULL, -1",
         comp_overrides: str = None,
         exclude_functions: str = None,
+        write_immediately: bool = True,
     ) -> str:
-        """Annotate a C/C++ source file with dftracer macros in a single in-memory pass.
+        """Annotate a C/C++ source file with dftracer macros AND write it to disk.
 
-        This is the preferred way to instrument a whole file.  It:
+        **DEFAULT BEHAVIOR (write_immediately=True, the common case): a single
+        call to this tool is enough.** It loads the file, computes every macro
+        insertion, applies them in memory, and then writes the result straight
+        to disk before returning — there is no separate "flush" step you must
+        remember to call. The response includes ``written_to_disk``,
+        ``bytes_written`` and ``disk_mtime_ns`` so the caller (or a reviewing
+        agent) can spot-check that real bytes landed on disk rather than
+        trusting the insertion counts alone. This closes a real failure mode:
+        an agent previously called the old in-memory-only version of this
+        tool, got a plausible "N insertions" response, and reported success to
+        the orchestrator without ever writing anything to disk.
 
-        1. Loads the current file content into memory (no intermediate writes).
+        Concretely, it:
+
+        1. Loads the current file content (from the in-memory cache if a
+           deferred, not-yet-written pass from a prior call is pending, else
+           from disk).
         2. Calls ``clang_extract_functions`` internally to get an authoritative
            function map with exact line numbers.
         3. Computes all insertion points:
@@ -358,12 +419,32 @@ def register_clang_tools(mcp: FastMCP) -> None:
            insertion does not shift the positions of subsequent ones — the classic
            bottom-to-top strategy.
         5. Applies every insertion to the in-memory line list.
-        6. Writes the file exactly once.
+        6. **Writes the file to disk immediately** (unless ``write_immediately``
+           is explicitly set to ``False`` — see escape hatch below).
 
         The file is modified inside the ``annotated/`` subfolder.  The original
         ``source/`` copy is never touched.  The operation is idempotent: if
         ``#include <dftracer/dftracer.h>`` is already present the file is
-        returned unchanged.
+        returned unchanged (and is still reported as ``written_to_disk: True``
+        since the annotated content is already on disk from an earlier pass).
+
+        **Escape hatch — ``write_immediately=False``:** set this only for a
+        deliberate multi-step compose-then-validate-then-write pipeline, e.g.
+        ``clang_add_braces`` → ``clang_annotate_file(write_immediately=False)``
+        → ``clang_syntax_check`` (validated against the in-memory result) →
+        ``clang_write_annotated_file`` once, so a syntax-check failure never
+        leaves a half-annotated file sitting on disk mid-pipeline. When this
+        flag is set, the result is held only in the module-level in-memory
+        cache (keyed by ``(run_id, filepath)``) and ``written_to_disk`` in the
+        response will be ``False`` — the caller MUST follow up with
+        ``clang_write_annotated_file`` to persist it, or the change is lost.
+        Leave the default (``True``) unless you have a concrete reason to
+        defer: the tradeoff of always-write is that a later validation step
+        failing could theoretically leave a syntax-broken file on disk
+        temporarily — but that is judged strictly safer than the previous
+        failure mode (an agent silently reporting success with nothing written
+        at all), because a broken file makes the very next build/smoke-test
+        step fail loudly, whereas a missing write fails silently forever.
 
         Args:
             run_id:     Session identifier returned by ``session_create``.
@@ -391,6 +472,11 @@ def register_clang_tools(mcp: FastMCP) -> None:
                         runtime, and annotating it can produce gigabytes of
                         trace noise that drowns out real I/O signal. Defaults
                         to ``None`` (no additional exclusions).
+            write_immediately: ``True`` (default) writes the annotated result
+                        to disk before returning — one call is sufficient.
+                        Set to ``False`` only for a deliberate multi-step
+                        compose pipeline (see escape hatch above); you must
+                        then call ``clang_write_annotated_file`` yourself.
 
         Returns:
             JSON string with keys:
@@ -402,6 +488,14 @@ def register_clang_tools(mcp: FastMCP) -> None:
                 * ``total_lines`` — line count of the file after annotation.
                 * ``already_annotated`` — ``True`` if the file was skipped
                   because dftracer macros were already present.
+                * ``written_to_disk`` — ``True`` if the annotated content is
+                  now on disk (always ``True`` unless ``write_immediately``
+                  was explicitly set to ``False``).
+                * ``bytes_written`` — size in bytes of the content written
+                  (or held in memory if deferred).
+                * ``disk_mtime_ns`` — on-disk mtime (ns) after the write, for
+                  a caller to spot-check with a fresh ``stat``; ``None`` when
+                  the write was deferred.
         """
         from .source_parser import add_braces_c, extract_functions, ClangNotFoundError
 
@@ -410,10 +504,16 @@ def register_clang_tools(mcp: FastMCP) -> None:
         if not abs_path.exists():
             return _err(f"File not found in annotated/: {filepath}")
 
-        # Idempotency guard — read from cache or disk
+        # Idempotency guard — read from cache or disk. The cache is only
+        # trusted if its recorded mtime still matches the file on disk;
+        # otherwise the file was replaced out from under us (e.g. a source
+        # tree reset) and we must fall back to a fresh disk read so we never
+        # report already_annotated against stale in-memory content.
         cache_key = (run_id, filepath)
+        _cache_is_stale(abs_path, cache_key)
         if cache_key in _FILE_CACHE:
-            text = "\n".join(_FILE_CACHE[cache_key])
+            _cached_mtime, _cached_lines = _FILE_CACHE[cache_key]
+            text = "\n".join(_cached_lines)
         else:
             text = abs_path.read_text(errors="replace")
 
@@ -426,6 +526,9 @@ def register_clang_tools(mcp: FastMCP) -> None:
                 total_lines=len(text.splitlines()),
                 already_annotated=True,
                 braces_added=0,
+                written_to_disk=True,
+                bytes_written=len(text.encode("utf-8", errors="replace")),
+                disk_mtime_ns=abs_path.stat().st_mtime_ns,
             )
 
         # ── Step 0: add braces to braceless control-flow bodies ──────────────
@@ -434,7 +537,8 @@ def register_clang_tools(mcp: FastMCP) -> None:
         # dangling-else or brace-mismatch syntax error.
         # Flush any in-memory cache to disk so add_braces_c sees current content.
         if cache_key in _FILE_CACHE:
-            abs_path.write_text("\n".join(_FILE_CACHE[cache_key]) + "\n")
+            _cached_mtime, _cached_lines = _FILE_CACHE[cache_key]
+            abs_path.write_text("\n".join(_cached_lines) + "\n")
             del _FILE_CACHE[cache_key]
 
         try:
@@ -634,15 +738,44 @@ def register_clang_tools(mcp: FastMCP) -> None:
             # Strip the UPDATE sentinel prefix before writing to the file.
             lines.insert(idx, txt.removeprefix("UPDATE:"))
 
-        # Store in cache AND write to disk (single write)
-        _FILE_CACHE[cache_key] = list(lines)
-        abs_path.write_text("\n".join(lines) + "\n")
-
+        content = "\n".join(lines) + "\n"
         annotated_count = len(functions) - len(skipped_functions)
-        return _ok(
+
+        if write_immediately:
+            # Write to disk first, then cache alongside the mtime that write
+            # produced — this keeps the cache entry provably in sync with disk
+            # until/unless something external touches the file again.
+            abs_path.write_text(content)
+            disk_mtime_ns = abs_path.stat().st_mtime_ns
+            _FILE_CACHE[cache_key] = (disk_mtime_ns, list(lines))
+            written_to_disk = True
+        else:
+            # Deliberate multi-step compose case (write_immediately=False):
+            # hold the result in the module-level cache only. Record the
+            # file's CURRENT on-disk mtime (unchanged by this call) so
+            # _cache_is_stale sees the cache as still valid on the next
+            # read, rather than evicting our freshly computed in-memory
+            # content. The caller MUST call clang_write_annotated_file (or
+            # re-call this tool with write_immediately=True) to persist it.
+            disk_mtime_ns = abs_path.stat().st_mtime_ns
+            _FILE_CACHE[cache_key] = (disk_mtime_ns, list(lines))
+            written_to_disk = False
+
+        msg = (
             f"Annotated {filepath}: {len(insertions)} line(s) inserted across "
             f"{annotated_count} function(s); {len(skipped_functions)} trivial "
-            f"function(s) skipped ({braces_added} brace pair(s) added).",
+            f"function(s) skipped ({braces_added} brace pair(s) added)."
+        )
+        if written_to_disk:
+            msg += " Written to disk."
+        else:
+            msg += (
+                " NOT yet written to disk (write_immediately=False) — call "
+                "clang_write_annotated_file to persist."
+            )
+
+        return _ok(
+            msg,
             filepath=filepath,
             insertions=len(insertions),
             functions=annotated_count,
@@ -651,6 +784,9 @@ def register_clang_tools(mcp: FastMCP) -> None:
             total_lines=len(lines),
             already_annotated=False,
             braces_added=braces_added,
+            written_to_disk=written_to_disk,
+            bytes_written=len(content.encode("utf-8", errors="replace")),
+            disk_mtime_ns=disk_mtime_ns if written_to_disk else None,
         )
 
     @mcp.tool()
@@ -836,7 +972,7 @@ def register_clang_tools(mcp: FastMCP) -> None:
             )
         ws = _ws(run_id)
         abs_path = ws / "annotated" / filepath
-        lines = _FILE_CACHE[cache_key]
+        _cached_mtime, lines = _FILE_CACHE[cache_key]
         abs_path.write_text("\n".join(lines) + "\n")
         del _FILE_CACHE[cache_key]
         return _ok(

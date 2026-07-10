@@ -99,3 +99,23 @@ sections:
 - include: allocations-ask-the-user-first-baseline-and-optimization-runs
 - include: run-length-make-the-run-long-enough-to-measure
 - include: dl-run-length-ask-for-a-time-budget-then-fix-the-epoch-count
+- title: Replicate count for every traced run (MANDATORY, standing default)
+  body: |
+    Every baseline or optimization-comparison run this agent collects traces for must be
+    executed a MINIMUM of 5 replicates under the same configuration — never a single trace.
+    This is a standing default for this agent, independent of what any specific session
+    plan says.
+
+    1. Run `session_run_with_dftracer` 5 times (same run_name, distinct replicate index in
+       the trace path, e.g. `<run_name>/rep0..rep4`) before calling this run "collected."
+    2. Extract the primary throughput/bandwidth metric per replicate and compute CV
+       (stddev/mean). If CV > ~10-15%, run 3 more replicates (8 total), recheck; if still
+       above the band, run 2 more (10 total).
+    3. Report p50/median, p95, min, max across replicates in the run record — never a bare
+       single number for a baseline or comparison run.
+    4. Smoke tests / single-process correctness checks are exempt (they are not used for a
+       performance comparison). Any run whose output feeds `comparator` or an optimization
+       decision is NOT exempt.
+    See the `flux-alloc` skill's "Replicates and percentile reporting" section for the full
+    rule and rationale (Lustre contention / network noise can make one run an outlier).
+

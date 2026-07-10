@@ -75,6 +75,60 @@ grep -c "^[a-zA-Z].*(.*)$\|^[a-zA-Z].* (\*" src/foo.c  # rough definition count
 grep -c "DFTRACER_C_FUNCTION_START" annotated/src/foo.c   # START count
 ```
 
+### Rule G — Verify the write, not just the response; grep is defense-in-depth
+
+`clang_annotate_file` now writes its result **to disk immediately by
+default** (`write_immediately=True`, the default — do not pass
+`write_immediately=False` unless you are deliberately doing a multi-step
+add-braces → annotate → syntax-check → write compose pipeline). A single
+call is sufficient: the response includes `written_to_disk: true`,
+`bytes_written`, and `disk_mtime_ns` confirming real bytes landed on disk.
+This is the **primary, structural fix** for the failure mode where an agent
+called the tool, got a plausible "N insertions" response, and reported full
+success to the orchestrator without anything ever being written to disk
+(because the old version only mutated an in-memory cache and required a
+separate, easily-forgotten `clang_write_annotated_file` call). That failure
+mode is now closed at the tool level, not by agent discipline.
+
+Two things remain worth checking as defense-in-depth, not as the primary
+safeguard:
+
+1. **Check `written_to_disk` in the response.** If it is `false`, you (or a
+   prior step) explicitly passed `write_immediately=False` — you MUST still
+   call `clang_write_annotated_file` before moving on, or the change is lost.
+2. **`already_annotated: true` ground-truthing.** `clang_annotate_file` keeps
+   an in-memory file cache (keyed by `run_id` + relative path) so multiple
+   tool calls can collaborate on one file without extra disk round-trips. The
+   cache is invalidated whenever the file's on-disk mtime changes underneath
+   it, but there is one situation this cannot fully protect against: if a
+   source tree is **deleted and re-copied** mid-session at the same path fast
+   enough, or via a path the MCP process never directly `stat()`s between
+   calls, a stale cache entry can still cause the tool to report
+   `already_annotated: true` (0 insertions) even though the file on disk
+   currently has **zero** dftracer macros. This happened during an h5bench
+   session where the source tree was reset mid-pipeline — the tool silently
+   no-op'd an entire annotation stage.
+
+   After ANY response that reports `already_annotated: true` (or a
+   suspiciously low insertion count), ground-truth it before trusting it:
+
+   ```bash
+   # C — expect at least one hit per already-annotated file
+   grep -rl "DFTRACER_C_INIT" annotated/
+
+   # C++
+   grep -rl "DFTRACER_CPP_INIT\|DFTRACER_CPP_FUNCTION" annotated/
+
+   # Python
+   grep -rl "DFTRACER_PY_INIT\|dftracer" annotated/*.py
+   ```
+
+   If grep finds **zero** matches despite `already_annotated: true`, the
+   cache is stale — re-run the annotation call. This is especially important
+   immediately after any source tree reset/re-copy/re-clone mid-session (e.g.
+   after a build failure recovery that wipes `source/` or `annotated/` and
+   repopulates it from scratch).
+
 ### Rule E — Error paths: END only before visible return/throw
 
 ```c

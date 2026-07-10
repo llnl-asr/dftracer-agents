@@ -35,8 +35,36 @@ from .python_cost import recommend as _cost_recommend, PY_ANNOTATION_SCORE_THRES
 # Metadata emission
 # --------------------------------------------------------------------------
 
+#: DFTRACER_C_METADATA / DFTRACER_CPP_METADATA both use ``##name`` token-pasting
+#: (see dftracer/include/dftracer/dftracer.h) to declare a local variable, so the
+#: macro signature is 3-arg: ``DFTRACER_C_METADATA(name, key, val)`` /
+#: ``DFTRACER_CPP_METADATA(name, key, value)``, where ``name`` is a bare C
+#: identifier (NOT a string literal) that must be unique within its scope.
+_C_IDENT_SANITIZE_RE = re.compile(r"[^0-9A-Za-z_]+")
+
+
+def _c_metadata_identifier(key: str, seen: set) -> str:
+    """Derive a unique, valid C identifier for a METADATA macro's ``name`` slot.
+
+    Prefixed with ``dft_meta_`` to avoid colliding with user variables; suffixed
+    with a numeric counter if the sanitized key repeats (e.g. two params that
+    only differ in punctuation) or is empty/starts with a digit.
+    """
+    base = _C_IDENT_SANITIZE_RE.sub("_", key).strip("_").lower()
+    if not base or base[0].isdigit():
+        base = f"p_{base}" if base else "p"
+    ident = f"dft_meta_{base}"
+    final = ident
+    n = 1
+    while final in seen:
+        n += 1
+        final = f"{ident}_{n}"
+    seen.add(final)
+    return final
+
+
 def _metadata_line(language: str, key: str, value: str, indent: str,
-                   expression: bool = False) -> str:
+                   expression: bool = False, seen_idents: set = None) -> str:
     """Render one metadata event.
 
     When *expression* is True the value is emitted as code rather than a quoted
@@ -47,10 +75,12 @@ def _metadata_line(language: str, key: str, value: str, indent: str,
     lang = language.lower()
     if lang == "c":
         val = value if expression else f'"{value}"'
-        return f'{indent}DFTRACER_C_METADATA("{key}", {val});'
+        name = _c_metadata_identifier(key, seen_idents if seen_idents is not None else set())
+        return f'{indent}DFTRACER_C_METADATA({name}, "{key}", {val});'
     if lang in ("cpp", "c++"):
         val = value if expression else f'"{value}"'
-        return f'{indent}DFTRACER_CPP_METADATA("{key}", {val});'
+        name = _c_metadata_identifier(key, seen_idents if seen_idents is not None else set())
+        return f'{indent}DFTRACER_CPP_METADATA({name}, "{key}", {val});'
     # Python: real API is log_metadata_event on the initialized log object.
     val = f"str({value})" if expression else f'"{value}"'
     return f'{indent}_dft_log.log_metadata_event("{key}", {val})'
@@ -91,7 +121,8 @@ def _insert_after_init(lines: List[str], language: str, params: Dict[str, Any],
 
     indent = re.match(r"\s*", lines[idx]).group(0)
     block = [f"{indent}// {_MARKER}" if lang != "python" else f"{indent}# {_MARKER}"]
-    block += [_metadata_line(language, k, str(v), indent, expressions)
+    seen_idents: set = set()
+    block += [_metadata_line(language, k, str(v), indent, expressions, seen_idents)
               for k, v in params.items()]
     return lines[: idx + 1] + block + lines[idx + 1:], ""
 
@@ -414,8 +445,11 @@ def register_validation_tools(mcp: FastMCP) -> None:
 
         Dialects:
 
-        * C      — ``DFTRACER_C_METADATA("key", "value");``
-        * C++    — ``DFTRACER_CPP_METADATA("key", "value");``
+        * C      — ``DFTRACER_C_METADATA(dft_meta_<key>, "key", "value");``
+          (3-arg macro; ``name`` is a bare, unique C identifier used for
+          ``##name`` token-pasting internally — NOT a string literal).
+        * C++    — ``DFTRACER_CPP_METADATA(dft_meta_<key>, "key", "value");``
+          (same 3-arg ``name, key, value`` shape as the C macro).
         * Python — ``_dft_log.log_metadata_event("key", "value")`` (the object
           returned by ``dftracer.initialize_log(...)``).
 

@@ -1,6 +1,8 @@
 # Memory Index
 
 - [Bug: analyze timeout bytes](bug_analyze_timeout_bytes.md) — MCP analyze crashed "can't concat str to bytes" on dask-teardown-hang traces; decode fix in dfanalyzer_service.py
+- [Bug: HIP tracing false positive](bug_hip_tracing_false_positive.md) — session_detect enabled DFTRACER_ENABLE_HIP_TRACING just from system ROCm presence, not app HIP usage; fixed to app-source-only
+- [Bug: annotator fabricated report](bug_annotator_fabricated_report.md) — dftracer-annotate-c subagent claimed full annotation success but nothing was written to disk; always grep-verify subagent write claims before next stage
 
 - [Project: IOR Optimization Study](project_ior_optimization.md) — Completed IOR 4.0.0 HDF5 optimization session on Tuolumne; key findings on VAST storage + ROMIO hints
 - [Project: Skills Reorg](project_skills_reorg.md) — .agents/skills canonical; MCP skill_list/search/load tools; prose Permissions sections; .claude/commands merged+removed

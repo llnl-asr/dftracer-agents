@@ -19,6 +19,8 @@ tools:
 - dftracer/search_arxiv
 - dftracer/search_semantic_scholar
 - dftracer/session_search_optimization_papers
+- dftracer/session_search_optimization_context
+- dftracer/rag_search
 - dftracer/session_get_run_paths
 - dftracer/skill_load
 - dftracer/session_read_file
@@ -63,14 +65,19 @@ You run the optimization loop for ONE session, then report results.
 **ALWAYS use MCP tools first.** Before any manual parsing, custom Bash commands, or
 Python scripts, attempt every relevant MCP tool in this order:
 
-1. `mcp__dftracer__session_generate_optimization_proposals` — generate citation-backed proposals
-2. `mcp__dftracer__session_optimize_l1_app` — L1 application-level optimizations
-3. `mcp__dftracer__session_optimize_l2_software` — L2 middleware/config optimizations
-4. `mcp__dftracer__session_optimize_l3_filesystem` — L3 filesystem/OS optimizations
-5. `mcp__dftracer__session_optimization_iteration` — full build-profile-diagnose-search loop
-6. `mcp__dftracer__comparator` — compare baseline vs optimized runs
-7. `mcp__dftracer__session_search_optimization_papers` — search arXiv for relevant papers
-8. `mcp__dftracer__search_arxiv` / `mcp__dftracer__search_semantic_scholar` — direct paper search
+1. `mcp__dftracer__opt_kb_lookup` — what has already been measured here?
+2. `mcp__dftracer__session_search_optimization_context` — exhaustive, stack-wide search
+   (every detected layer, not just the current bottleneck) + benchmark-target numbers,
+   local-first (`opt_kb_lookup` + `rag_search` over `.dftracer_agents/resources/`) before
+   any remote call — this is step "0.5", BEFORE proposal generation, every iteration.
+3. `mcp__dftracer__session_generate_optimization_proposals` — generate citation-backed proposals
+4. `mcp__dftracer__session_optimize_l1_app` — L1 application-level optimizations
+5. `mcp__dftracer__session_optimize_l2_software` — L2 middleware/config optimizations
+6. `mcp__dftracer__session_optimize_l3_filesystem` — L3 filesystem/OS optimizations
+7. `mcp__dftracer__session_optimization_iteration` — full build-profile-diagnose-search loop
+8. `mcp__dftracer__comparator` — compare baseline vs optimized runs
+9. `mcp__dftracer__session_search_optimization_papers` / `mcp__dftracer__rag_search` — targeted follow-up search
+10. `mcp__dftracer__search_arxiv` / `mcp__dftracer__search_semantic_scholar` — direct paper search
 
 If the tools are not available, stop and ask the user to start the dftracer MCP server.
 If the tools are available but error, fix the tool or its wiring and apply the fix before
@@ -82,6 +89,34 @@ separates findings into two categories:
 - **MANUAL ANALYSIS:** Results produced by custom Bash/Python parsing (only when tools fail)
 
 Never conflate the two. Label each finding with its source.
+
+## Independent Literature/KB Search Pass (MANDATORY, standing default \u2014 not diagnosis-gated)
+
+**This is a standing rule for every optimization pipeline invocation, not something a plan
+has to spell out.** Diagnostic-driven proposals (from the ranked bottleneck list) are
+necessary but NOT sufficient. Before proposing or applying ANY optimization, in EVERY
+iteration, run two passes, in order:
+
+1. **KB recall first (cheap).** `opt_kb_lookup(system=<system>, workload=<app>,
+   software=<detected-stack>)` — avoid re-deriving facts this system/software/workload
+   combination already measured.
+2. **Independent literature search, unconditionally.** Run `search_arxiv` /
+   `search_semantic_scholar` / `session_search_optimization_papers` / `rag_search` for
+   techniques that match the workload's I/O ACCESS PATTERN (contiguous / strided /
+   variable-size / metadata-heavy / shared-file / small-file / random / sequential —
+   whatever the trace shows), even when the diagnosed bottleneck list does NOT explicitly
+   flag a matching bottleneck as top-ranked. A technique that the literature shows fits this
+   access pattern is a valid candidate regardless of where it lands in the diagnostic
+   ranking — diagnosis ranks severity, it does not enumerate every applicable technique.
+
+**This search pass is IN ADDITION TO, never instead of, diagnostic-driven proposals.**
+Both streams feed the same proposal table. Do not skip step 2 because step 1 (or the
+diagnosis) already "found enough" — exhaustive means both passes run every time.
+
+**Every literature-sourced technique that gets tried — pass or fail — must be recorded via
+`opt_kb_record` with its citation**, exactly like diagnostic-driven techniques. Tag it so
+future sessions can tell provenance apart (e.g. a `notes` field noting "literature-pass
+finding, not diagnosis-ranked").
 
 ## Load first — these skills are your rulebook
 
@@ -126,6 +161,22 @@ runs, so treat the skill text as authoritative over any summary here.
   systems verify you are ACTUALLY on Lustre (check the run's `-w` execution
   path), not just that the site catalog names Lustre.
 
+## The metric_scope axis: app vs system (MANDATORY)
+
+A second axis, orthogonal to L1/L2/L3, now exists on every `opt_kb_record` entry and
+    proposal: `metric_scope` — `"app"` (default: epoch/I-O time, app-observed bandwidth from
+    the app's own trace) or `"system"` (a filesystem/system-level outcome: aggregate achieved
+    bandwidth, reduced filesystem load — a trace-derived proxy, since this pipeline has
+    no Lustre-admin-side telemetry access).
+
+    **Non-degradation guard.** A `metric_scope="system"` `opt_kb_record` call MUST carry the
+    paired `app_metric`/`app_before`/`app_after` for the SAME change — the tool rejects
+    one without it. If the paired app metric regressed more than 2%, the KB forces the verdict to
+    `regression` (`guard_triggered: true` in the response) regardless of how good the system-side
+    number looks. Treat `guard_triggered: true` exactly like `REGRESSED` in the iteration loop below
+    — revert the change, do not keep a system-level win that cost the app anything.
+    A system optimization that degrades the app is not a win.
+
 ## Allocation-Aware Optimization Rules (MANDATORY for Production Runs)
 
 **Every baseline and optimization iteration must run on the user's active allocation with ALL nodes.**
@@ -150,11 +201,18 @@ runs, so treat the skill text as authoritative over any summary here.
 
 ## Steps (loop, max N iterations)
 
-1. `session_generate_optimization_proposals` from the latest diagnosis.
-2. Apply `session_optimize_l1_app` / `_l2_software` / `_l3_filesystem`.
-3. `session_optimization_iteration(rebuild=True)` to re-profile.
-4. `comparator` this iteration vs the previous; stop on EXHAUSTED /
-   CONVERGED / REGRESSED / MAX_ITERS.
+1. `opt_kb_lookup` + `session_search_optimization_context` (exhaustive, stack-wide,
+   local-first) from the latest diagnosis, PLUS the mandatory independent literature
+   search pass (see "Independent Literature/KB Search Pass" above) — run unconditionally,
+   not gated on the diagnosed bottleneck list.
+2. `session_generate_optimization_proposals` from the latest diagnosis, merged with any
+   literature-pass candidates from step 1 into one proposal table.
+3. Apply `session_optimize_l1_app` / `_l2_software` / `_l3_filesystem`.
+4. `session_optimization_iteration(rebuild=True)` to re-profile.
+5. `comparator` this iteration vs the previous; stop on EXHAUSTED /
+   CONVERGED / REGRESSED / MAX_ITERS. A `metric_scope="system"` change whose
+   `opt_kb_record` call returns `guard_triggered: true` counts as REGRESSED —
+   revert it, same as any other regression.
 
 ## Return
 
@@ -256,18 +314,29 @@ This snapshots `build_config/` (`setup_call`, `Units`, `Makefile.h` — where th
 decisive change lives on Make-based apps, invisible to a source diff), the
 parameter file(s), the run script, and writes
 `patches/from_<prev>.record.diff`. Also call `session_snapshot_run_source` when
-the run has its own source tree.
+the run has its own source tree — pass a `source_path` that lives OUTSIDE `<run_name>/`'s own directory tree (e.g. don't snapshot `annotated` into itself). The tool validates this and returns an error instead of corrupting data if source and destination overlap, but pick a distinct source_path so you don't hit it.
 
 Without this, `session_final_report` cannot reconstruct what your iteration did.
 Assemble the deliverable at the end of the pipeline with `session_final_report`.
 
 ## The optimization loop (MANDATORY order)
 
-### Step 1 — RECALL before you propose
+### Step 1 — RECALL, then SEARCH EXHAUSTIVELY, before you propose
 
 ```
 opt_kb_lookup(system=<system>, workload=<app>, software="hdf5,mpi-io,lustre")
+session_search_optimization_context(run_id=<run_id>, system=<system>, workload=<app>)
 ```
+
+session_search_optimization_context searches every software/system layer this session
+actually detected — not just the metric tied to the current bottleneck — local-first
+(opt_kb_lookup + rag_search over .dftracer_agents/resources/, free) then remote fan-out
+across 7 paper sources only for what local did not already answer. It also runs a query
+class the narrower session_optimize_l1/l2/l3 searches do not: benchmark-target search —
+published achieved bandwidth/throughput numbers at this scale, written to
+context_opportunities.json as benchmark_targets. Read the snippets yourself to extract the
+actual number — the tool does not parse numbers out of free text, that is a judgment call
+for you.
 
 This is the first call of the loop, always. It returns every MEASURED result from
 past sessions, scoped so it actually transfers:
@@ -490,6 +559,31 @@ and silently break the equal-work assumption.
 ### "Do-less" levers are not speedups
 Raising `checkpoint_interval`, cutting epochs, or shrinking the dataset reduce work. Any wall-clock
 gain must be checked against total bytes / data volume before it is credited as a speedup.
+
+## Replicate count for every iteration (MANDATORY, standing default — additional to the literature-pass rule)
+
+This is IN ADDITION TO the "Independent Literature/KB Search Pass" rule above, not a
+replacement for it. Every iteration in the optimization loop — not just the eventual
+winner — must be measured with a MINIMUM of 5 replicates before it is compared or
+recorded, because Lustre contention / network noise can make a single run's number an
+outlier.
+
+1. Before calling `comparator` or `opt_kb_record` for ANY iteration (baseline, each
+   candidate change, and the final best config), confirm the tracer agent (or
+   `session_optimization_iteration`) produced >= 5 replicate runs for that iteration.
+   If it did not, send it back for more replicates before comparing — do not compare
+   on a single sample.
+2. Compute CV (stddev/mean) on the primary throughput/bandwidth metric across
+   replicates. If CV > ~10-15%, request 8 replicates, then 10, until it stabilizes.
+3. Use `comparator` on the p50/median (primary), and separately state p95, min, max for
+   both sides of the comparison. A REGRESSED/CONVERGED/EXHAUSTED verdict must be based
+   on the percentile comparison, never a bare single-sample delta.
+4. Every improvement claim recorded via `opt_kb_record` (`before`/`after`) must be the
+   median (p50) across replicates, and the `notes` field must additionally state the
+   p95/min/max band and replicate count so future sessions can judge how noisy the
+   result was.
+See the `flux-alloc` skill's "Replicates and percentile reporting" section for the full
+standing rule.
 
 ## Optimization axes for deep-learning workloads (sweep in this order)
 

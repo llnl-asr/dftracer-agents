@@ -1125,9 +1125,10 @@ def _detect_info(
 
     # Source scan for feature detection (cap at 5 MB to avoid huge repos)
     all_text = ""
-    scannable = {".c", ".h", ".cpp", ".cxx", ".cc", ".hpp", ".py", ".f90", ".f"}
+    scannable = {".c", ".h", ".cpp", ".cxx", ".cc", ".hpp", ".py", ".f90", ".f", ".hip", ".cu"}
+    scannable_names = {"CMakeLists.txt", "Makefile", "GNUmakefile", "configure.ac"}
     for f in files:
-        if f.suffix.lower() in scannable:
+        if f.suffix.lower() in scannable or f.name in scannable_names:
             try:
                 all_text += f.read_text(errors="ignore")
                 if len(all_text) > 5_000_000:
@@ -1146,9 +1147,11 @@ def _detect_info(
         "hdf5_in_source": hdf5_in_source,
         "hdf5_system":    hdf5_system,
         "hip":      bool(re.search(
-            r"hip/hip_runtime\.h|hipMalloc|hipMemcpy|hipLaunchKernelGGL|#include\s+[<\"]hip/",
+            r"hip/hip_runtime\.h|hipMalloc|hipMemcpy|hipLaunchKernelGGL|#include\s+[<\"]hip/"
+            r"|find_package\(\s*HIP\b|find_package\(\s*hip\b|enable_language\(\s*HIP\)"
+            r"|ROCM_PATH|HIP_PATH",
             all_text, re.I,
-        )),
+        )) or any(f.suffix.lower() == ".hip" for f in files),
         "hwloc":    hwloc_found,
         "posix_io": bool(re.search(r"\bopen\s*\(|\bfopen\s*\(|\bread\s*\(|\bwrite\s*\(", all_text)),
         "openmp":   bool(re.search(r"omp\.h|#pragma omp|import openmp", all_text, re.I)),
@@ -1158,8 +1161,13 @@ def _detect_info(
     rocm_info = _detect_rocm(source_dir=source_dir)
     ml_frameworks = _detect_ml_frameworks(all_text)
 
-    # HIP tracing: enable when either HIP source code patterns found OR ROCm stack present
-    hip_tracing_needed = features["hip"] or rocm_info["found"]
+    # HIP tracing: enable ONLY when the APP source actually references HIP/ROCm
+    # APIs (features["hip"], via source/CMake/.hip-file scan above). ROCm merely
+    # being installed on the node (rocm_info["found"]) is a system fact, not a
+    # signal that this app uses it — on APU clusters like Tuolumne every node has
+    # ROCm regardless of what the app does, so gating on rocm_info["found"] would
+    # turn on HIP tracing (and its overhead) for every pure-MPI/HDF5/POSIX app.
+    hip_tracing_needed = features["hip"]
     features["rocm"] = rocm_info
     features["ml_frameworks"] = ml_frameworks["frameworks"]
     features["ml_framework_details"] = ml_frameworks["details"]

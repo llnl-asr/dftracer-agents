@@ -40,11 +40,16 @@ attempt every relevant MCP tool in this order:
 
 1. `mcp__dftracer__session_identify_smoke_test_files` — identify smoke test files for scoping
 2. `mcp__dftracer__clang_annotate_project` — annotate entire C project at once
-3. `mcp__dftracer__clang_annotate_file` — annotate a single C file
+3. `mcp__dftracer__clang_annotate_file` — annotate a single C file; writes to disk
+   immediately by default (`write_immediately=True`) — for most files this ONE
+   call is sufficient, check `written_to_disk`/`bytes_written` in its response
 4. `mcp__dftracer__clang_extract_functions` — extract function map from C file
 5. `mcp__dftracer__clang_syntax_check` — verify annotated file compiles
 6. `mcp__dftracer__clang_lint_annotations` — lint annotation correctness
-7. `mcp__dftracer__clang_write_annotated_file` — write annotated file back
+7. `mcp__dftracer__clang_write_annotated_file` — only needed for the deliberate
+   `clang_add_braces` → `clang_annotate_file(write_immediately=False)` →
+   `clang_syntax_check` → write compose pipeline; do not call this reflexively
+   after every `clang_annotate_file` — it already wrote the file
 8. `mcp__dftracer__clang_insert_line` — insert annotation macros at specific lines
 
 If the tools are not available, stop and ask the user to start the dftracer MCP server.
@@ -166,6 +171,35 @@ Checks it enforces: every I/O / checkpoint / collective-comm function is
 instrumented; init and finalize both exist (a missing finalize truncates the
 trace); app-parameter metadata is emitted; annotated functions pass the cost gate
 (AI-API `dft_ai.*` regions are exempt); and every file still parses/compiles.
+
+## Verify the write, not just the response (defense-in-depth)
+
+`clang_annotate_file` writes to disk immediately by default
+(`write_immediately=True`) and reports `written_to_disk` / `bytes_written` /
+`disk_mtime_ns` in its response — check those fields rather than assuming a
+plausible-looking insertion count means the file changed on disk. This is now
+a structural guarantee, not something you have to remember to trigger with a
+separate call: do NOT call `clang_write_annotated_file` reflexively after every
+`clang_annotate_file` — it already wrote the file, and only exists for the
+deliberate `clang_add_braces` → `clang_annotate_file(write_immediately=False)`
+→ `clang_syntax_check` → write compose pipeline.
+
+Separately, `clang_annotate_project` / `clang_annotate_file` can report
+`already_annotated: true` (0 insertions) from a stale in-memory cache even when
+the file on disk currently has ZERO dftracer macros — this is most likely right
+after a source tree is reset/re-copied mid-session. Trusting that response
+blindly can make a whole annotation stage silently no-op.
+
+**Standing rule:** any time a tool call reports `already_annotated: true` (or
+an unexpectedly low insertion count), ground-truth it immediately with:
+
+```bash
+grep -rl "DFTRACER_C_INIT" annotated/
+```
+
+If grep finds nothing despite `already_annotated: true`, the cache is stale —
+re-run the annotation call, do not report success. See [[dftracer-annotate-general]]
+Rule G for the full explanation.
 
 ## Context economy — locate, don't read (MANDATORY)
 

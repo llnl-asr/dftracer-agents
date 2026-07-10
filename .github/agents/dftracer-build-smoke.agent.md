@@ -196,7 +196,7 @@ This snapshots `build_config/` (`setup_call`, `Units`, `Makefile.h` — where th
 decisive change lives on Make-based apps, invisible to a source diff), the
 parameter file(s), the run script, and writes
 `patches/from_<prev>.record.diff`. Also call `session_snapshot_run_source` when
-the run has its own source tree.
+the run has its own source tree — pass a `source_path` that lives OUTSIDE `<run_name>/`'s own directory tree (e.g. don't snapshot `annotated` into itself). The tool validates this and returns an error instead of corrupting data if source and destination overlap, but pick a distinct source_path so you don't hit it.
 
 Without this, `session_final_report` cannot reconstruct what your iteration did.
 Assemble the deliverable at the end of the pipeline with `session_final_report`.

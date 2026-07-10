@@ -1279,7 +1279,10 @@ def register_ai_tools(mcp: FastMCP) -> None:
         features = info.get("features", {})
         rocm_info = features.get("rocm", _detect_rocm())
         ml_frameworks = features.get("ml_frameworks", [])
-        hip_tracing_needed = features.get("hip_tracing_needed", rocm_info.get("found", False))
+        # Default False (not rocm_info["found"]): ROCm being installed on the node
+        # is a system fact, not evidence the app uses HIP — see detection.py's
+        # hip_tracing_needed derivation, which is source-based (features["hip"]).
+        hip_tracing_needed = features.get("hip_tracing_needed", False)
 
         # Scan source text for CUDA and distributed patterns
         all_text = ""

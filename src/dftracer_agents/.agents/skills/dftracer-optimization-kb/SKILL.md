@@ -41,6 +41,22 @@ one without it. If the paired app metric regressed more than 2.0%, the verdict i
 regardless of how good the system-side number looks. A system optimization
 that costs the app is not a win — never apply/keep one where this guard fired.
 
+## Standing workflow rule: diagnosis + independent literature pass, always
+
+Optimization proposals must combine **two sources every iteration, not one**:
+
+1. **Diagnostic-driven** — bottlenecks the ranked diagnosis list surfaces.
+2. **Independent literature/KB search pass** — `opt_kb_lookup` plus `search_arxiv` /
+   `search_semantic_scholar` / `session_search_optimization_papers` / `rag_search` for
+   techniques matching the workload's I/O access pattern (contiguous/strided/variable-size/
+   metadata-heavy/etc), run unconditionally — NOT gated on the diagnosis explicitly flagging
+   a matching bottleneck.
+
+This is a standing default for every optimization pipeline invocation (see the
+`dftracer-optimizer` agent template), not something a plan has to request. Every
+literature-sourced technique that gets tried, pass or fail, is recorded via `opt_kb_record`
+with its citation, same as diagnostic-driven techniques.
+
 ## Rules
 
 1. Record only **measured** results — `metric`, `before`, `after` are required.

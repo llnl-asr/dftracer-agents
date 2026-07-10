@@ -659,12 +659,50 @@ def _expected_paths(ws: Path) -> Dict[str, Any]:
     }
 
 
+def _paths_overlap(a: Path, b: Path) -> bool:
+    """Return True if *a* and *b* are the same path, or one is nested inside the other.
+
+    Resolves symlinks/`..` first so a relative or symlinked alias of the same
+    directory is still caught. Used to stop a snapshot copy from reading from
+    (or writing into) its own destination tree.
+    """
+    ra, rb = a.resolve(), b.resolve()
+    if ra == rb:
+        return True
+    try:
+        ra.relative_to(rb)
+        return True
+    except ValueError:
+        pass
+    try:
+        rb.relative_to(ra)
+        return True
+    except ValueError:
+        pass
+    return False
+
+
 def _snapshot_source(src: Path, dest: Path) -> Dict[str, Any]:
     """Copy *src* tree into *dest*, overwriting existing files.
 
     Uses ``rsync`` when available for speed; falls back to ``shutil.copytree``
     otherwise.  Returns a dict with ``file_count`` and ``success``.
+
+    Raises:
+        ValueError: If *src* and *dest* are the same path or one is nested
+            inside the other. Copying a directory into itself (directly or
+            via a subtree) silently corrupts data (rsync --delete purges the
+            "extra" entries it just recursed into; the shutil fallback rmtree's
+            *dest* first, which is also *src* or an ancestor of it, deleting
+            the very tree it was about to copy).
     """
+    if _paths_overlap(src, dest):
+        raise ValueError(
+            f"session_snapshot_run_source: refusing to copy — source "
+            f"({src}) and destination ({dest}) overlap (same path or one "
+            f"nested inside the other). Pass a source_path that lives outside "
+            f"the destination run's own directory tree."
+        )
     import subprocess as _sp
     dest.mkdir(parents=True, exist_ok=True)
     try:
@@ -2875,6 +2913,18 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             prev_run_name: If given, generates a patch from
                 ``<workspace>/<prev_run_name>/source/`` to the new snapshot.
 
+        Raises:
+            None directly — if *source_path* is the same as, or nested inside
+            (or an ancestor of), the resolved destination
+            ``<workspace>/<run_name>/source/``, the tool returns an error
+            result instead of copying. Overlapping paths would make the copy
+            read from its own destination, corrupting the tree it's writing.
+            Pick a *source_path* that lives outside the destination run's own
+            directory (e.g. don't snapshot ``annotated`` into itself by
+            passing ``source_path="<WS>/annotated/source"`` when
+            ``run_name="annotated"`` — omit *source_path* and let the default
+            resolution handle it, or point at a different run's source).
+
         Returns:
             JSON with ``source_dir``, ``file_count``, and (if *prev_run_name*)
             ``patch_file``.
@@ -2895,7 +2945,10 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             return _err(f"Source path not found: {src}")
 
         dest = _run_source_dir(ws, run_name)
-        snap = _snapshot_source(src, dest)
+        try:
+            snap = _snapshot_source(src, dest)
+        except ValueError as e:
+            return _err(str(e), source=str(src), dest=str(dest))
         if not snap["success"]:
             return _err(f"Snapshot failed for {run_name}", source=str(src))
 

@@ -37,9 +37,14 @@ skill_load(name="dftracer-context-economy,dftracer-annotate-python,dftracer-anno
 attempt every relevant MCP tool in this order:
 
 1. `mcp__dftracer__session_identify_smoke_test_files` — identify smoke test files for scoping
-2. `mcp__dftracer__python_annotate_file` — annotate a single Python file with decorators
+2. `mcp__dftracer__python_annotate_file` — annotate a single Python file with decorators;
+   unlike the C/C++ clang tools this always writes to disk unconditionally at the
+   end of the call (no `write_immediately` flag exists here — there is no
+   deferred-write mode) — one call is sufficient for a file
 3. `mcp__dftracer__python_extract_functions` — extract function map from Python file
-4. `mcp__dftracer__python_write_annotated_file` — write annotated file back
+4. `mcp__dftracer__python_write_annotated_file` — rarely needed; only relevant if a
+   caller manually populated the in-memory Python file cache another way. Do not
+   call this reflexively after `python_annotate_file` — it already wrote the file
 
 If the tools are not available, stop and ask the user to start the dftracer MCP server.
 If the tools are available but error, fix the tool or its wiring and apply the fix before
@@ -147,6 +152,27 @@ Checks it enforces: every I/O / checkpoint / collective-comm function is
 instrumented; init and finalize both exist (a missing finalize truncates the
 trace); app-parameter metadata is emitted; annotated functions pass the cost gate
 (AI-API `dft_ai.*` regions are exempt); and every file still parses/compiles.
+
+## Ground-truth already_annotated responses (MANDATORY)
+
+The C/C++ clang annotation tools can report `already_annotated: true` (0
+insertions) from a stale in-memory cache even when the file on disk currently
+has ZERO dftracer macros — most likely right after a source tree is
+reset/re-copied mid-session. `python_annotate_file` reads the file fresh from
+disk on every call so it is not exposed to that specific cache bug, but the
+same standing discipline applies: never trust an `already_annotated: true` (or
+unexpectedly low decorator count) response without ground-truthing it.
+
+**Standing rule:** any time a tool call reports `already_annotated: true`,
+verify it immediately with:
+
+```bash
+grep -rl "dftracer_fn\|initialize_log" annotated/
+```
+
+If grep finds nothing despite `already_annotated: true`, re-run the
+annotation call — do not report success. See [[dftracer-annotate-general]]
+Rule G for the full explanation.
 
 ## Context economy — locate, don't read (MANDATORY)
 

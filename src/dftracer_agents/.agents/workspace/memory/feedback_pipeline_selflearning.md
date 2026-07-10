@@ -4,6 +4,7 @@ description: "dftracer pipeline design — session-first, planner writes section
 metadata: 
   node_type: memory
   type: feedback
+  originSessionId: 68b73d20-ef68-4fc3-84be-4dad17e80415
 ---
 
 Design rules for the dftracer agent pipeline (from user, 2026-07-07):
@@ -16,3 +17,5 @@ Design rules for the dftracer agent pipeline (from user, 2026-07-07):
 **Why:** step agents start cold; a detailed persisted plan avoids re-derivation, and skill feedback makes the system improve run over run.
 
 **How to apply:** edits live in `src/dftracer_agents/.agents/agents/*.md`; re-materialize with `ensure_agents_setup(force=True)`. See [[project_claude_agent_models]] for the model-resolution fix that makes these agents spawnable.
+
+5. **User has repeated this rule explicitly multiple times (2026-07-10, h5bench session):** self-learning is not optional or occasional — EVERY pipeline interaction that discovers something new (build quirks, config-schema differences, ROMIO/Lustre findings, per-workload sample-config choices, etc.) must persist it back into the right skill, and if it changes agent behavior, into the agent's own YAML template too, plus a new/fixed MCP tool for generic deterministic logic (Pipeline Policy rule 10). Don't treat this as a one-off ask for the current session — apply it by default on every future session without being asked again.

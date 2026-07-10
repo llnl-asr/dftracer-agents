@@ -288,7 +288,7 @@ This snapshots `build_config/` (`setup_call`, `Units`, `Makefile.h` — where th
 decisive change lives on Make-based apps, invisible to a source diff), the
 parameter file(s), the run script, and writes
 `patches/from_<prev>.record.diff`. Also call `session_snapshot_run_source` when
-the run has its own source tree.
+the run has its own source tree — pass a `source_path` that lives OUTSIDE `<run_name>/`'s own directory tree (e.g. don't snapshot `annotated` into itself). The tool validates this and returns an error instead of corrupting data if source and destination overlap, but pick a distinct source_path so you don't hit it.
 
 Without this, `session_final_report` cannot reconstruct what your iteration did.
 Assemble the deliverable at the end of the pipeline with `session_final_report`.
@@ -443,3 +443,23 @@ and silently break the equal-work assumption.
 ### "Do-less" levers are not speedups
 Raising `checkpoint_interval`, cutting epochs, or shrinking the dataset reduce work. Any wall-clock
 gain must be checked against total bytes / data volume before it is credited as a speedup.
+
+## Replicate count for every traced run (MANDATORY, standing default)
+
+Every baseline or optimization-comparison run this agent collects traces for must be
+executed a MINIMUM of 5 replicates under the same configuration — never a single trace.
+This is a standing default for this agent, independent of what any specific session
+plan says.
+
+1. Run `session_run_with_dftracer` 5 times (same run_name, distinct replicate index in
+   the trace path, e.g. `<run_name>/rep0..rep4`) before calling this run "collected."
+2. Extract the primary throughput/bandwidth metric per replicate and compute CV
+   (stddev/mean). If CV > ~10-15%, run 3 more replicates (8 total), recheck; if still
+   above the band, run 2 more (10 total).
+3. Report p50/median, p95, min, max across replicates in the run record — never a bare
+   single number for a baseline or comparison run.
+4. Smoke tests / single-process correctness checks are exempt (they are not used for a
+   performance comparison). Any run whose output feeds `comparator` or an optimization
+   decision is NOT exempt.
+See the `flux-alloc` skill's "Replicates and percentile reporting" section for the full
+rule and rationale (Lustre contention / network noise can make one run an outlier).

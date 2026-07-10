@@ -24,15 +24,37 @@ The binary names do NOT always match the workload label. Use this table every ti
 | append               | `h5bench_append`                   |
 | overwrite            | `h5bench_overwrite`                |
 | write_unlimited      | `h5bench_write_unlimited`          |
-| write_normal_dist    | `h5bench_write_var_normal_dist`    |
 | hdf5_iotest          | `h5bench_hdf5_iotest`              |
 | exerciser            | `h5bench_exerciser`                |
 
-**`write_normal_dist` is NOT `h5bench_write_var_normal` — the correct name is
-`h5bench_write_var_normal_dist`.** Always verify with:
+**CORRECTION (confirmed 2026-07-10 against hariharan-devarajan/h5bench @ master):**
+There is NO `write_normal_dist` / `h5bench_write_var_normal_dist` binary or config
+variant in this fork's current CMakeLists.txt or source tree — grepping the whole
+source tree for `normal_dist`/`var_normal`/`NORMAL` returns nothing. This entry was
+stale (likely inherited from a different h5bench fork/version) — do not plan around
+it; it does not exist. The real, buildable workload set from this fork's
+`add_executable(...)` calls is: write, write_unlimited, overwrite, append, read,
+hdf5_iotest, exerciser (7 total, not 8).
+
+Always verify with:
 ```bash
 ls <WS>/build_ann/h5bench_*
 ```
+
+### `hdf5_iotest` and `exerciser` are OFF by default — need explicit CMake flags
+
+`CMakeLists.txt` gates both behind options that default OFF:
+```
+option(H5BENCH_EXERCISER "Enable Exerciser benchmark" OFF)
+option(H5BENCH_METADATA  "Enable Metadata benchmark"  OFF)   # gates hdf5_iotest
+option(H5BENCH_ALL       "Enable all benchmarks"      OFF)   # turns both ON
+```
+A plain `cmake -S source -B build` (no extra flags) silently builds only 5 binaries
+(write, write_unlimited, overwrite, append, read) with no error or warning about the
+missing exerciser/hdf5_iotest targets. **Always pass `-DH5BENCH_ALL=ON`** (or the two
+individual `-DH5BENCH_EXERCISER=ON -DH5BENCH_METADATA=ON` flags) to get the full binary
+set, and verify all 7 are present after build — don't assume a clean `make` output means
+every target was configured.
 
 ---
 
@@ -66,6 +88,20 @@ sed -i 's/H5Aread_async(chid_t attr_id/H5Aread_async(hid_t attr_id/' \
 
 # Update session.json to point at <ws>/hdf5_1.14 and re-run session_install_dftracer.
 ```
+
+**Still present in 1.14.5:** confirmed 2026-07-10 that vanilla HDF5 1.14.5 (not just 1.14.3)
+still ships the same `chid_t` typo at `H5Apublic.h:926` — this is not yet fixed upstream.
+Apply the same sed patch regardless of which 1.14.x version is fetched; don't assume newer
+patch releases have resolved it.
+
+### dftracer build requires Cray PE runtime libs on LD_LIBRARY_PATH, not just at link time
+
+When dftracer/h5bench binaries are built with `cce/20.0.0`, running them later needs the same
+Cray runtime lib dirs on `LD_LIBRARY_PATH`, not just during the build:
+`/opt/cray/pe/cce/20.0.0/cce/x86_64/lib` and `/opt/cray/pe/cce/20.0.0/cce-clang/x86_64/lib`
+(for `libmodules.so.1`, `libfi.so.1`, `libcraymath.so.1`, `libf.so.1`). Write these into the
+same `setup_dftracer_env.sh` wrapper used for build, and source it before every run/smoke test
+too — not just before `session_install_dftracer`/`session_build_annotated`.
 
 Note: MPI compatibility warning — MPICH 9.0.1 is outside brahma's tested range;
 MPI-IO interception is disabled but POSIX and app-level annotation tracing work.
@@ -177,6 +213,49 @@ DFTRACER_C_INIT(NULL, NULL, NULL)
 
 ---
 
+### `DFTRACER_C_METADATA` / `DFTRACER_CPP_METADATA` are 3-arg macros, not 2-arg
+
+`annotate_add_app_metadata` (C dialect) previously emitted the 2-arg form
+`DFTRACER_C_METADATA("app", "h5bench_write")`, which fails to compile — the
+real macro in `dftracer/include/dftracer/dftracer.h` is
+`DFTRACER_C_METADATA(name, key, val)` (3-arg; `DFTRACER_CPP_METADATA` has the
+same 3-arg shape). `name` is a **bare C identifier**, not a string literal —
+it's used internally for `##name` token-pasting to declare a local variable,
+so it must be unique within scope.
+
+Confirmed 2026-07-10 on `h5bench_write.c`; manually patched to:
+```c
+DFTRACER_C_METADATA(dft_meta_app, "app", "h5bench_write");
+```
+Fixed permanently in the `annotate_add_app_metadata` MCP tool
+(`src/dftracer_agents/mcp_tools/tools/session/annotation_validate.py`), which
+now generates a unique `dft_meta_<key>`-style identifier per metadata call —
+no more hand-patching needed in future sessions.
+
+---
+
+### `hdf5_iotest.c` and `h5bench_exerciser.c` annotate cleanly
+
+Confirmed 2026-07-10: unlike `h5bench_write.c`, neither file triggers the
+`clang_add_braces` `assert()`/`else-if` brace-insertion issues above — no
+special handling needed for these two files.
+
+---
+
+### `clang_syntax_check` needs explicit include dirs for this session's toolchain
+
+In this session's environment, `clang_syntax_check` only validates cleanly
+when `extra_include_dirs` is passed pointing at BOTH:
+- the venv's dftracer headers, e.g. `<WS>/venv/lib/python3.13/site-packages/dftracer/include`
+- the session's source-built HDF5 include dir: `<WS>/hdf5_1.14/include`
+
+Without both, syntax check fails to resolve `dftracer/dftracer.h` and/or
+HDF5 headers even though the actual build succeeds (the build's own
+Makefile/CMake already wires these paths; `clang_syntax_check` does not
+inherit them automatically).
+
+---
+
 ## Config Format
 
 ### h5bench_write expects INI key=value, NOT the JSON sample files
@@ -239,6 +318,14 @@ For HDF5-specific optimization strategies, see [[software-hdf5]].
 
 Each entry records a config/hint/code change that was tried and failed.
 **Check this section before proposing any optimization for h5bench.**
+
+**Fork caveat (added 2026-07-10):** several entries below reference `write_normal_dist`
+/ `h5bench_write_var_normal_dist`, which does NOT exist in hariharan-devarajan/h5bench
+@ master (see the Binary Names correction above) — those entries were recorded against
+a different fork/version. The underlying ROMIO/Lustre/cb_nodes findings (colon-separated
+MPICH_MPIIO_HINTS syntax, aggregator-count tradeoffs, alignment-on-Lustre regressions,
+etc.) are still generally useful for `write`/`write_unlimited`/`overwrite`/`append`, but
+don't expect to reproduce the `write_normal_dist` runs themselves on this fork.
 
 ### ❌ DELAYED_CLOSE_TIMESTEPS=2 — segfault on multi-node MPI runs
 

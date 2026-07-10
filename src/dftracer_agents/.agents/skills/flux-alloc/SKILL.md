@@ -390,6 +390,27 @@ Queue note: 8-node `pbatch` jobs may sit in SCHED indefinitely; `pdebug` usually
 ## Run length: make the run long enough to measure
 
 A run whose training phase is a few seconds cannot resolve checkpoint, collective, or barrier
-effects — the deltas are inside run-to-run noise. Target **at least ~10 minutes of training**,
-and always take at least one replicate of the baseline and of the best variant so you can state
-the noise band. Report deltas against that band, not as bare percentages.
+effects — the deltas are inside run-to-run noise. Target **at least ~10 minutes of training**.
+
+## Replicates and percentile reporting (MANDATORY, standing rule — supersedes "one replicate")
+
+Lustre contention and network noise can make a single run's number an outlier. This is a
+**standing rule for every benchmark run used as a baseline OR as an optimization-comparison
+point** — not just for one session's plan, and not satisfied by "at least one replicate."
+
+1. **Minimum 5 replicates.** Every baseline run and every optimization-iteration run that
+   will be compared or reported must be repeated a **minimum of 5 times** under the same
+   configuration.
+2. **CV-adaptive escalation.** Compute the coefficient of variation (CV = stddev / mean) on
+   the primary throughput/bandwidth metric across replicates. If CV > ~10-15%, the noise band
+   is too wide to trust — increase to **8 replicates**, then to **10 replicates**, re-checking
+   CV each time, until it stabilizes below that band (or until 10 is reached, in which case
+   report the residual CV honestly rather than hiding it).
+3. **Percentile reporting, not a bare number.** Always report the metric as **p50 (median),
+   p95, min, and max** across the replicate set — never a single sample. A "best of N" or
+   "last run" number is not an acceptable substitute.
+4. **Percentile-based improvement claims only.** Any improvement/regression claim between a
+   baseline and an optimization variant must compare percentiles (e.g. "median improved 12%,
+   p95 improved 8%"), never a single-sample delta ("run A: 3.2 GB/s vs run B: 3.6 GB/s" is not
+   a valid claim on its own). Report the delta against the noise band established by the
+   replicate set, exactly as the general run-length guidance above says.

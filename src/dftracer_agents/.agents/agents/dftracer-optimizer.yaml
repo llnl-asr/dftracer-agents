@@ -42,6 +42,8 @@ sections:
 - title: Tool-First Optimization Rule (MANDATORY)
   body: "**ALWAYS use MCP tools first.** Before any manual parsing, custom Bash commands, or\nPython scripts, attempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__opt_kb_lookup` \u2014 what has already been measured here?\n2. `mcp__dftracer__session_search_optimization_context` \u2014 exhaustive, stack-wide search\n   (every detected layer, not just the current bottleneck) + benchmark-target numbers,\n   local-first (`opt_kb_lookup` + `rag_search` over `.dftracer_agents/resources/`) before\n   any remote call \u2014 this is step \"0.5\", BEFORE proposal generation, every iteration.\n3. `mcp__dftracer__session_generate_optimization_proposals` \u2014 generate citation-backed proposals\n4. `mcp__dftracer__session_optimize_l1_app` \u2014 L1 application-level optimizations\n5. `mcp__dftracer__session_optimize_l2_software` \u2014 L2 middleware/config optimizations\n6. `mcp__dftracer__session_optimize_l3_filesystem` \u2014 L3 filesystem/OS optimizations\n7. `mcp__dftracer__session_optimization_iteration` \u2014 full build-profile-diagnose-search loop\n8. `mcp__dftracer__comparator` \u2014 compare baseline vs optimized runs\n9. `mcp__dftracer__session_search_optimization_papers` / `mcp__dftracer__rag_search` \u2014 targeted follow-up search\n10. `mcp__dftracer__search_arxiv` / `mcp__dftracer__search_semantic_scholar` \u2014 direct paper search\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the\
     \ tools are available but error, fix the tool or its wiring and apply the fix before\nusing custom Bash commands.\n\n**Explicit separation required:** In your final report, create a table that clearly\nseparates findings into two categories:\n- **TOOL FINDINGS:** Results produced by MCP tools (optimization proposals, comparator deltas, paper search results)\n- **MANUAL ANALYSIS:** Results produced by custom Bash/Python parsing (only when tools fail)\n\nNever conflate the two. Label each finding with its source.\n"
+- title: Independent Literature/KB Search Pass (MANDATORY, standing default \u2014 not diagnosis-gated)
+  body: "**This is a standing rule for every optimization pipeline invocation, not something a plan\nhas to spell out.** Diagnostic-driven proposals (from the ranked bottleneck list) are\nnecessary but NOT sufficient. Before proposing or applying ANY optimization, in EVERY\niteration, run two passes, in order:\n\n1. **KB recall first (cheap).** `opt_kb_lookup(system=<system>, workload=<app>,\n   software=<detected-stack>)` \u2014 avoid re-deriving facts this system/software/workload\n   combination already measured.\n2. **Independent literature search, unconditionally.** Run `search_arxiv` /\n   `search_semantic_scholar` / `session_search_optimization_papers` / `rag_search` for\n   techniques that match the workload's I/O ACCESS PATTERN (contiguous / strided /\n   variable-size / metadata-heavy / shared-file / small-file / random / sequential \u2014\n   whatever the trace shows), even when the diagnosed bottleneck list does NOT explicitly\n   flag a matching bottleneck as top-ranked. A technique that the literature shows fits this\n   access pattern is a valid candidate regardless of where it lands in the diagnostic\n   ranking \u2014 diagnosis ranks severity, it does not enumerate every applicable technique.\n\n**This search pass is IN ADDITION TO, never instead of, diagnostic-driven proposals.**\nBoth streams feed the same proposal table. Do not skip step 2 because step 1 (or the\ndiagnosis) already \"found enough\" \u2014 exhaustive means both passes run every time.\n\n**Every literature-sourced technique that gets tried \u2014 pass or fail \u2014 must be recorded via\n`opt_kb_record` with its citation**, exactly like diagnostic-driven techniques. Tag it so\nfuture sessions can tell provenance apart (e.g. a `notes` field noting \"literature-pass\nfinding, not diagnosis-ranked\").\n"
 - title: "Load first \u2014 these skills are your rulebook"
   body: "Follow them directly (canonical bottleneck order, L1/L2/L3 strategy tables,\ncitations, the Lustre mandate all live there). They are updated as the pipeline\nruns, so treat the skill text as authoritative over any summary here.\n- `skill_load(name=\"dftracer-io-optimization\")` \u2014 Metric\u2192Optimization mapping,\n  L1/L2/L3 Strategy sections, Built-in Citations, and the Lustre-not-NFS\n  mandate.\n- `skill_load(name=\"dftracer-preload-run\")` \u2014 PFS rule: every optimization\n  iteration must write data to the system-detected PFS, never `/tmp` or home.\n- `skill_load(name=\"dftracer-system-detect\")` \u2014 use the detected PFS path when\n  configuring iteration runs.\n- The layer skill for each bottleneck you touch: `software-posix`,\n  `software-mpi`, `software-hdf5` (L2/L3 middleware/filesystem tuning) \u2014 read\n  the specific tuning + dftracer-tracing sections before applying a hint.\n"
 - title: Rules (judgment on top of the skills above)
@@ -55,8 +57,11 @@ sections:
 - title: Steps (loop, max N iterations)
   body: |
     1. `opt_kb_lookup` + `session_search_optimization_context` (exhaustive, stack-wide,
-       local-first) from the latest diagnosis.
-    2. `session_generate_optimization_proposals` from the latest diagnosis.
+       local-first) from the latest diagnosis, PLUS the mandatory independent literature
+       search pass (see "Independent Literature/KB Search Pass" above) — run unconditionally,
+       not gated on the diagnosed bottleneck list.
+    2. `session_generate_optimization_proposals` from the latest diagnosis, merged with any
+       literature-pass candidates from step 1 into one proposal table.
     3. Apply `session_optimize_l1_app` / `_l2_software` / `_l3_filesystem`.
     4. `session_optimization_iteration(rebuild=True)` to re-profile.
     5. `comparator` this iteration vs the previous; stop on EXHAUSTED /
@@ -88,6 +93,31 @@ sections:
 - include: allocations-ask-the-user-first-baseline-and-optimization-runs
 - include: run-length-make-the-run-long-enough-to-measure
 - include: dl-run-length-ask-for-a-time-budget-then-fix-the-epoch-count
+- title: Replicate count for every iteration (MANDATORY, standing default — additional to the literature-pass rule)
+  body: |
+    This is IN ADDITION TO the "Independent Literature/KB Search Pass" rule above, not a
+    replacement for it. Every iteration in the optimization loop — not just the eventual
+    winner — must be measured with a MINIMUM of 5 replicates before it is compared or
+    recorded, because Lustre contention / network noise can make a single run's number an
+    outlier.
+
+    1. Before calling `comparator` or `opt_kb_record` for ANY iteration (baseline, each
+       candidate change, and the final best config), confirm the tracer agent (or
+       `session_optimization_iteration`) produced >= 5 replicate runs for that iteration.
+       If it did not, send it back for more replicates before comparing — do not compare
+       on a single sample.
+    2. Compute CV (stddev/mean) on the primary throughput/bandwidth metric across
+       replicates. If CV > ~10-15%, request 8 replicates, then 10, until it stabilizes.
+    3. Use `comparator` on the p50/median (primary), and separately state p95, min, max for
+       both sides of the comparison. A REGRESSED/CONVERGED/EXHAUSTED verdict must be based
+       on the percentile comparison, never a bare single-sample delta.
+    4. Every improvement claim recorded via `opt_kb_record` (`before`/`after`) must be the
+       median (p50) across replicates, and the `notes` field must additionally state the
+       p95/min/max band and replicate count so future sessions can judge how noisy the
+       result was.
+    See the `flux-alloc` skill's "Replicates and percentile reporting" section for the full
+    standing rule.
+
 - title: Optimization axes for deep-learning workloads (sweep in this order)
   body: "1. **Overlap compute and I/O.** `dataloader_num_workers>0`, `persistent_workers=True`,\n   `prefetch_factor`, async checkpointing. Cheapest, usually the biggest win.\n   (Mohan et al., *Analyzing and Mitigating Data Stalls in DNN Training*, VLDB 2021,\n   https://arxiv.org/abs/2007.06775)\n2. **Pinned memory + CPU core affinity \u2014 as ONE change.** `pin_memory=True` only pays off when\n   each rank is bound to all cores of its GPU's die. Pinned to a single core, the copy thread\n   contends with dataloader workers and the benefit inverts. On an APU (e.g. AMD MI300A) CPU and\n   GPU share the die and HBM, so affinity determines memory locality, not just scheduling.\n   (PyTorch memory-pinning docs, https://docs.pytorch.org/docs/stable/data.html#memory-pinning)\n3. **File layout: minimize the NUMBER of reads and metadata calls.** Per-sample small files cause\n   an open/stat/close storm on the metadata server. Shard into few large files with an index.\n   (Devarajan et al., *DLIO:\
     \ A Data-Centric Benchmark for Scientific Deep Learning Applications*,\n   CCGrid 2021, https://ieeexplore.ieee.org/document/9499416)\n4. **System utilization.** PFS bandwidth (striping; Data-on-MDT for small files) and memory\n   bandwidth. Establish whether you are bandwidth- or compute-bound before tuning kernels.\n   (Williams et al., *Roofline: An Insightful Visual Performance Model*, CACM 2009,\n   https://doi.org/10.1145/1498765.1498785)\n5. **Compute last.** Mixed precision, kernel/library tuning, then algorithmic change.\n\n**Async checkpointing** is only a win when checkpoint write time is a real fraction of epoch\ntime \u2014 verify first. (Mohan et al., *CheckFreq*, USENIX FAST 2021,\nhttps://www.usenix.org/conference/fast21/presentation/mohan; Eisenman et al., *Check-N-Run*,\nUSENIX NSDI 2022, https://www.usenix.org/conference/nsdi22/presentation/eisenman)\n\n**Guard rail.** A wall-clock gain from writing fewer checkpoints, reading less data, or running\nfewer epochs is\
