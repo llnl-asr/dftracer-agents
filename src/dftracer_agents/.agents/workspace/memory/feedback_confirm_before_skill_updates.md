@@ -4,6 +4,7 @@ description: "Always confirm observations/fixes with the user BEFORE writing to 
 metadata: 
   node_type: memory
   type: feedback
+  
 ---
 
 Before updating ANY skill, MCP tool, agent definition, or lessons file, always
@@ -31,3 +32,12 @@ generic skill = general how-to, specific skill = deltas only. This aggressive
 capture is still gated by the confirmation rule above (propose, user confirms,
 then persist). Baked into all 16 agent defs (`.agents/agents/*.md`
 "Self-learning confirmation gate") and the `dftracer-lessons` skill.
+
+**Persist as you go, not just at session end (user instruction 2026-07-10):**
+Don't batch self-learning writes until a final report step. As soon as a
+lesson is confirmed (skill/agent-yaml/MCP-tool fix, a hook, a new standing
+rule), write it immediately — especially while waiting on a long-running
+background agent/job, since that idle time is exactly when to catch up on
+persistence rather than deferring it. If the user asks "are these updated
+into agents/skills/mcp?" mid-session, that's a signal gaps have accumulated —
+audit and close them right away instead of promising to do it at the end.

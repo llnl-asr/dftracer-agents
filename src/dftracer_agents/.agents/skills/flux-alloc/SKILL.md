@@ -235,6 +235,30 @@ flux alloc -N <N> -q <QUEUE> -t <TIME> --coral2-chassis=<C>
 flux alloc -N <N> -q <QUEUE> -t <TIME> --amd-gpumode=CPX
 ```
 
+## Never queue more jobs than the allocation can run concurrently (MANDATORY)
+
+**Before submitting ANY job into an allocation, check how many jobs are already queued/running in
+it and never exceed the number that can execute concurrently.** An 8-node allocation can run
+exactly ONE 8-node/768-rank job at a time — submitting a second one before the first completes
+just queues it, hogging no compute but polluting the job queue and (if a retry loop doesn't wait
+for completion before resubmitting) can runaway into thousands of queued jobs.
+
+**Why:** on 2026-07-10, a submission loop that didn't wait for job completion (and didn't cancel
+a stale/timed-out job) before retrying left 5 of 8 allocations with 600-760 queued `S`-state jobs
+each (~3,200 total) — all requesting the full allocation, so only one could ever run per
+allocation regardless of how many were queued. Recovered via `flux proxy <alloc> flux cancel
+--all` per affected allocation (NOT a global cancel across every allocation — scope it to the
+one instance you're clearing).
+
+**How to apply:**
+1. Before submitting, check occupancy: `flux proxy <alloc-id> flux jobs -a | grep -cE ' R | PD | S '`.
+   If it's already at (or above) the allocation's concurrent capacity, wait for the running job to
+   finish (poll, don't just resubmit) before submitting another.
+2. If a job appears stuck/timed-out, explicitly cancel it (`flux proxy <alloc-id> flux cancel <id>`)
+   before resubmitting — never submit a retry "on top of" a job you haven't confirmed is done.
+3. Never submit in a bare loop without a completion check between iterations — that is exactly
+   the pattern that caused the pileup above.
+
 ## Full-allocation parallel job spawner
 
 When the user asks to "use all available resources" or "spawn jobs to use the entire allocation":

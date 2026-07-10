@@ -1,0 +1,51 @@
+{
+  "run_id": "ior/20260710_172024",
+  "key": "STEP: write baseline calibration and collection",
+  "index": 9,
+  "agent": "dftracer-tracer",
+  "notes": "Calibration: DIM_1=2097152, output 577GB/2.7min. 5 replicates collection in progress, expected completion ~13.5 min. Config finalized, traces being captured.",
+  "status": "partial",
+  "tries": 2,
+  "retries": 1,
+  "failed_attempts": 1,
+  "successful_attempts": 0,
+  "exec_s": 74.278,
+  "wall_s": 2766.486,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 22.71,
+      "error": "",
+      "start_ns": 1783711378327562922,
+      "end_ns": 1783711401037988615
+    },
+    {
+      "number": 2,
+      "status": "partial",
+      "duration_s": 51.567,
+      "error": "Calibration successful (DIM_1=2097152 confirmed: 576GB/2.7min). Production baseline collection encountered flux job cancellations. 5 reps partially complete (96-97GB each, need re-run with full 577GB each). No trace files yet. Allocation status should be verified before retry.",
+      "start_ns": 1783714093246009024,
+      "end_ns": 1783714144813500375
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

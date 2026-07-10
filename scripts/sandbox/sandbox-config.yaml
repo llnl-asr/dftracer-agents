@@ -6,11 +6,11 @@ mounts:
         # Substitute $USER (and your checkout location) before use.
         - "rw:/usr/workspace/$USER/dftracer-agents/workspaces"
         # gemma models
-        # - "ro:/usr/workspace/lc-user/mapp/sandbox/models"
+        # - "ro:$HOME/mapp/sandbox/models"
         # llama.cpp build
-        # - "ro:/p/vast1/rountree/machines/tuolumne/gemma/build/bin"
+        # - "ro:$VAST_ROOT/machines/tuolumne/gemma/build/bin"
         # Clade Code binaries
         - "ro:/collab/usr/global/tools/sandbox/claude-binaries/"
         # Aider
-        # - "ro:/g/g24/rountree/.local/share/pipx/venvs/aider-chat"
+        # - "ro:$HOME/.local/share/pipx/venvs/aider-chat"
 

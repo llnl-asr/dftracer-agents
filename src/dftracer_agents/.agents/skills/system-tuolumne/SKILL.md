@@ -2,6 +2,12 @@
 
 AMD MI300A APU cluster at LLNL. Uses Cray PE with ROCm.
 
+See also [[software-mpifileutils]] — for any large-scale (multi-GB/TB, or >10k files)
+copy/sync/delete/compare/archive/restripe operation on `/p/lustre5`, use the mpifileutils
+tools (`dcp`/`dsync`/`drm`/`dwalk`/`dcmp`/`dtar`/`dstripe`/etc.) instead of serial
+`cp`/`rsync`/`rm -rf`/`diff -r`/`tar` — they parallelize the directory walk across MPI ranks,
+which is the actual bottleneck at this scale on a shared parallel filesystem.
+
 ## Key Constraints
 
 - **No sudo** — unprivileged user environment only.
@@ -593,6 +599,14 @@ fi
   [[software-hdf5]].
 - Set `MPICH_MPIIO_HINTS_DISPLAY=1` to echo the hints, but do NOT trust it —
   it prints the *requested* values, not what the runtime used.
+- **OST striping and `cb_nodes`/`CRAY_CB_NODES_MULTIPLIER` target write BANDWIDTH — they
+  are inert for metadata-time-bound (`open()`/`stat()`-storm) shapes** (2026-07-10,
+  measured on h5bench read/append/overwrite: metadata calls consumed ~97-99% of POSIX
+  time, only ~2% was data transfer). `open()`/`stat()` cost lives on the Lustre MDS, not
+  the OSTs an OST-stripe-count change affects — confirm with `lfs getstripe -d` and check
+  whether the diagnosed bottleneck is actually bandwidth vs. metadata-time before reaching
+  for this combo. `/p/lustre5`'s default Data-on-MDT PFL already covers small
+  metadata-heavy files.
 
 ## Permissions
 
@@ -716,3 +730,10 @@ Rules this cost us:
   [[dftracer-optimization-kb]].
 - Before proposing affinity work, check whether `pin_memory` is already enabled and whether the
   launcher already binds sensibly (`hwloc-bind --get`, `flux run --verbose`).
+
+### Lustre client readahead is already at max — don't propose tuning it
+
+`/p/lustre5` client-side readahead (`llite.*.max_read_ahead_mb`) is already set to 512 MB per
+client on Tuolumne compute nodes. `max_read_ahead_per_file_mb` is admin-only (`lctl set_param`
+returns Permission denied for unprivileged users). Don't propose user-space readahead tuning as
+an L3 optimization here — there is no headroom to gain and no permission to change it anyway.

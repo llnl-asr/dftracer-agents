@@ -5,6 +5,20 @@
     "SSL_CERT_FILE": "/etc/pki/tls/cert.pem",
     "CLAUDE_CODE_ENABLE_TELEMETRY": "1"
   },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/guard_rm_drm.sh",
+            "statusMessage": "Checking rm/drm target path..."
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "deny": [
       "Bash(sudo *)",
@@ -36,6 +50,9 @@
       "Bash(mv * workspaces/*)",
       "Bash(find workspaces/*)",
       "Bash(cat workspaces/*)",
+      "Bash(rm -rf workspaces/*)",
+      "Bash(rm -rf $PROJECT_ROOT/workspaces/*)",
+      "Bash(mv workspaces/* workspaces/*)",
       "Write(workspaces/*)",
       "Edit(workspaces/*)",
       "mcp__dftracer__aggregator",

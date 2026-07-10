@@ -1,0 +1,43 @@
+{
+  "run_id": "ior/20260710_172024",
+  "key": "STEP: HDF5 Baseline Run with Iterations (10-min target)",
+  "index": 6,
+  "agent": "dftracer-tracer",
+  "notes": "Redo HDF5 baseline with -i 7 iterations; single file reused across reps; 780 GiB \u00d7 7 passes; target 679s wall-clock",
+  "status": "superseded",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 69.274,
+  "wall_s": 69.274,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 69.274,
+      "error": "",
+      "start_ns": 1783709507060777662,
+      "end_ns": 1783709576334706396
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

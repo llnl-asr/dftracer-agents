@@ -29,6 +29,7 @@ skills:
 - dftracer-reference
 - flux-alloc
 - dftracer-profiling
+- software-mpifileutils
 sections:
 - include: load-your-plan-section-first-do-this-before-anything-else
 - title: Tool-First Trace Rule (MANDATORY)
@@ -118,4 +119,20 @@ sections:
        decision is NOT exempt.
     See the `flux-alloc` skill's "Replicates and percentile reporting" section for the full
     rule and rationale (Lustre contention / network noise can make one run an outlier).
+- title: Run-size calibration under a shared-filesystem quota (MANDATORY, standing default)
+  body: |
+    Before launching any multi-replicate baseline/optimization run at full node-count scale,
+    calibrate the config size in three steps, smallest first: (1) single-process run to get
+    bytes/rank, (2) 1-node run to sanity-check scaling, (3) ONE full-scale run (e.g. 8-node /
+    768-rank) sized to land in a 10-15 MINUTE wall-time window — not just "under the quota
+    budget." Only after that calibration confirms the size is right do you replicate to the
+    full replicate count (see the rule above).
+
+    Do not trust DIM_*/size values from an app's own sample configs — they are sized for
+    correctness/feature demonstration, not for a bounded, quota-constrained sweep. Recompute
+    bytes/rank x rank_count against both the wall-time target and the remaining filesystem
+    quota headroom (`quota -v`) before scaling up. Clean up calibration-run output immediately
+    once it has served its purpose — don't let it accumulate.
+    See `workload-h5bench` skill's "Failed Configurations" section (2026-07-10 entries) for a
+    concrete case where an unmodified sample config was ~16x oversized for this budget.
 

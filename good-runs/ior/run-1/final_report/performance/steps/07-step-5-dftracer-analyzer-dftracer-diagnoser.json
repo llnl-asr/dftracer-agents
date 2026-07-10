@@ -1,0 +1,51 @@
+{
+  "run_id": "ior/20260710_172024",
+  "key": "STEP 5: dftracer-analyzer / dftracer-diagnoser",
+  "index": 7,
+  "agent": "dftracer-tracer",
+  "notes": "Finishing splits for exerciser_v2 (all 5 reps) and hdf5_iotest_v2 (all 5 reps), then running diagnosis",
+  "status": "superseded",
+  "tries": 2,
+  "retries": 1,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 1036.121,
+  "wall_s": 2168.466,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 692.357,
+      "error": "",
+      "start_ns": 1783709576334736086,
+      "end_ns": 1783710268692183853
+    },
+    {
+      "number": 2,
+      "status": "superseded",
+      "duration_s": 343.763,
+      "error": "",
+      "start_ns": 1783711401038009126,
+      "end_ns": 1783711744801175878
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

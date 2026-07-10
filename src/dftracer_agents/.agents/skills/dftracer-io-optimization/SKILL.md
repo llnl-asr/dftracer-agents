@@ -19,6 +19,15 @@ manual methods. The canonical tool order is:
 If tools are unavailable, ask the user to start the dftracer MCP server.
 If tools error, fix the tool or wiring before using custom Bash/Python.
 
+### Pipeline eagerly — don't wait for the whole batch (MANDATORY, user instruction 2026-07-10)
+
+When a multi-workload or multi-replicate baseline is only partially complete, start
+analysis/diagnosis/optimization on whatever workloads ARE ready now — do not block the
+entire pipeline on the slowest or broken unit. Track which units are included in a given
+pass vs. still pending, and feed the pending ones in as they complete rather than
+re-running from scratch. State the partial coverage explicitly in every report so
+downstream synthesis doesn't mistake a partial result for the complete picture.
+
 ### Explicit Separation Requirement
 In every report, create a table separating:
 - **TOOL FINDINGS:** Results from MCP tools (dfanalyzer, dfdiagnoser, comparator)
@@ -280,6 +289,52 @@ When multiple bottleneck scores are >= 4, default to `time` as the most general 
 ## L1 Application Strategies
 
 These are source-code-level changes (applied under `<WS>/annotated/`). No system or middleware config changes at this layer.
+
+### MANDATORY: never change the app's actual I/O access pattern (standing rule, 2026-07-10)
+
+**Do not propose flipping a benchmark/app's access-pattern config (e.g. `MEM_PATTERN`/
+`FILE_PATTERN` INTERLEAVED→CONTIG, random→sequential, etc.) just because the alternate pattern
+measured faster elsewhere in the same session.** That changes what the workload actually does —
+it is not an optimization of the system's ability to serve the REAL pattern, and it can silently
+break application logic/correctness (the access pattern is often load-bearing for what the app
+computes, not an arbitrary benchmark knob). A finding like "write (INTERLEAVED) is slower than
+read (CONTIG)" is a valid DIAGNOSIS, not license to rewrite write's config to be CONTIG.
+
+Instead, keep the access pattern fixed and find ways to make THAT pattern faster:
+- **Buffering** — coalesce/batch small or scattered I/O into fewer, larger operations without
+  changing the logical order/shape of the accesses (see small_io section below).
+- **Caching** — keep hot data resident (OS page cache tuning, app-level LRU cache, HDF5 chunk
+  cache `H5Pset_cache`/`H5Pset_chunk_cache`) so repeated/overlapping accesses under the same
+  pattern don't re-fetch from the backing store.
+- **Prefetching** — issue reads/writes ahead of when the app logically needs them (asynchronous
+  I/O / HDF5 async VOL, `posix_fadvise(POSIX_FADV_WILLNEED)`, background threads) so the same
+  pattern overlaps with compute instead of blocking it.
+- **Stage-in / stage-out** — move data to faster intermediate storage (node-local NVMe, burst
+  buffer / Rabbit on Tuolumne, `/dev/shm`) before/after the real I/O phase, without altering the
+  pattern the app itself issues against that staged copy.
+- **Collective I/O / aggregator tuning** — ROMIO `cb_nodes`, `romio_cb_write`/`romio_ds_write`,
+  `CRAY_CB_NODES_MULTIPLIER` — changes HOW the same logical accesses are physically aggregated
+  and dispatched, not what the app logically does.
+- **Metadata/layout tuning** — `H5Pset_meta_block_size`, chunked vs. contiguous HDF5 storage
+  layout (when layout, not access pattern, is the tunable), paged file-space strategy.
+- **Filesystem layout** — Lustre striping (`lfs setstripe`) matched to the (unchanged) access
+  pattern's transfer size and concurrency.
+
+Before proposing an L1 lever, search the literature specifically for buffering/caching/
+prefetching/stage-in optimization techniques for the OBSERVED pattern (see `dftracer-optimizer`
+agent's paper-search tools) rather than reaching for a pattern swap. See
+[[dftracer-optimization-kb]] Rule 5 for the enforcement of this at record time.
+
+**This explicitly includes transfer-size / request-size sweeps (re-affirmed 2026-07-10).**
+Re-running a benchmark with a larger `-t`/transfer-size/block-size than the app or user actually
+issues is an access-pattern change, not a system optimization — the same category as an
+INTERLEAVED→CONTIG flip. "4 MB transfers get more bandwidth than 4 KB transfers" is a valid
+DIAGNOSTIC characterization (it bounds how much headroom the small-request pattern is leaving on
+the table), but it must never be reported as the "best config" or "the optimization" — the actual
+best config must keep the workload's real request size and instead apply one of the techniques
+above (ROMIO two-phase/collective buffering to coalesce many small requests into fewer physical
+I/Os, HDF5 chunk/page caching, OS readahead, burst-buffer/node-local stage-in) to serve THAT
+request size faster.
 
 ### small_io / small_read / small_write  (metric: bandwidth or iops)
 

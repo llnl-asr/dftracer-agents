@@ -286,6 +286,19 @@ echo '#include <dftracer/dftracer.h>' >> annotated/src/one_file.c
 make -C annotated/src 2>&1 | grep -i "error\|cannot find"
 ```
 
+#### 10e — Always resolve the dftracer.h include path before clang_syntax_check
+
+`clang_syntax_check` needs `-I<dftracer_include_dir>` or it reports false "file not
+found" errors on `#include <dftracer/dftracer.h>` even when the annotation is correct.
+Locate the include dir once per session (before the first syntax check, not per-file)
+and pass it on every `clang_syntax_check` / `clang_lint_annotations` call:
+```bash
+DFTRACER_INC=$(python3 -c \
+    "import importlib.util, pathlib; \
+     p=importlib.util.find_spec('dftracer'); \
+     print(pathlib.Path(p.origin).parent / 'include')")
+```
+
 ### C Quick checklist
 
 - [ ] **Build setup verified before first annotation** (Rule 10d)

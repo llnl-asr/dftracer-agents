@@ -414,7 +414,7 @@ def _ensure_flux_proxy_wrapper(command: str, ws: Path, script_name: str) -> str:
     if not m:
         return command
 
-    proxy_prefix = m.group(1)   # e.g. "flux proxy f3GW7fbdvodR"
+    proxy_prefix = m.group(1)   # e.g. "flux proxy <flux-jobid>"
     rest = m.group(2).strip()   # e.g. 'bash -c "module load ..."' or 'bash /path/to/script.sh'
 
     # If rest already references an existing "bash <script.sh>" invocation
@@ -1940,7 +1940,7 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         whole file.
 
         Args:
-            alloc_id: The allocation JOBID to proxy into (e.g. ``"f3Gb7i5BCZsM"``).
+            alloc_id: The allocation JOBID to proxy into (e.g. ``"<flux-jobid>"``).
             job_id: The inner job JOBID to wait for (e.g. ``"f6H3GwWJpo"``).
             poll_interval: Seconds between status polls. Defaults to ``30``.
             timeout: Maximum seconds to wait. Defaults to ``7200`` (2 hours).
@@ -2300,7 +2300,29 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         """
         ws = _ws(run_id)
         state = _load_state(run_id)
-        info = state.get("detection") or _detect_info(ws / "source")
+        # ALWAYS re-run detection fresh before installing, rather than trusting
+        # a possibly-stale stored `detection` block. HDF5/MPI may have been
+        # rebuilt (new version, moved prefix) since the last session_detect
+        # call, and installing dftracer against a stale detection silently
+        # rebuilds against the WRONG library -- the exact class of bug behind
+        # today's HDF5-async and MPI-IO-interception incidents. Detection is
+        # cheap; a wrong install is expensive to diagnose after the fact.
+        #
+        # Preserve any explicit hdf5_prefix/mpicc/mpicxx pins from the PRIOR
+        # detection so this refresh doesn't regress to auto-probing /usr --
+        # a prior session_detect call may have been given explicit overrides
+        # (e.g. a source-built HDF5 in the workspace) that must carry forward.
+        _prev = state.get("detection") or {}
+        _prev_hdf5_prefix = ((_prev.get("features") or {}).get("hdf5_system") or {}).get("prefix")
+        _prev_mpicc = (_prev.get("mpi_impl") or {}).get("mpicc")
+        _prev_mpicxx = (_prev.get("mpi_impl") or {}).get("mpicxx")
+        info = _detect_info(
+            ws / "source",
+            hdf5_prefix=_prev_hdf5_prefix,
+            mpicc=_prev_mpicc,
+            mpicxx=_prev_mpicxx,
+        )
+        _save_state(run_id, {"detection": info})
         features = info.get("features", {})
         bt = info.get("build_tool", state.get("build_tool", "unknown"))
 
@@ -2310,7 +2332,16 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         # --- MPI version check ---
         if features.get("mpi"):
             features_enabled.append("mpi")
-            mpi_info = _detect_system_mpi()
+            # Prefer the already-computed mpi_impl from session_detect (session
+            # state) over a fresh system probe -- session_detect is the single
+            # source of truth (it may have been given explicit mpicc/mpicxx
+            # overrides pinning the exact MPI build to use); re-probing here
+            # can disagree with it (e.g. misclassify craympich as generic
+            # mpich) and produce a false compatibility warning even when the
+            # session is already using a fully supported version.
+            mpi_info = info.get("mpi_impl") or {}
+            if not mpi_info.get("found"):
+                mpi_info = _detect_system_mpi()
             if mpi_info["found"]:
                 impl = mpi_info.get("impl", "unknown")
                 ver  = mpi_info.get("version", "unknown")
@@ -3034,7 +3065,7 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             run_name: Named run label — e.g. ``"baseline"``, ``"opt1"``.
                 Traces are stored under ``<workspace>/<run_name>/traces/raw/``.
                 Defaults to ``"baseline"``.
-            allocation_id: Optional Flux allocation ID (e.g. ``"f3Junw1CTMif"``).
+            allocation_id: Optional Flux allocation ID (e.g. ``"<flux-jobid>"``).
                 When provided, the command is wrapped with
                 ``flux proxy <alloc_id> flux run -N <nnodes> -n <ntasks> --exclusive``.
             nnodes: Number of nodes to use (required when allocation_id is set).
@@ -3068,6 +3099,7 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         query_type: str = "summary",
         index_dir: Optional[str] = None,
         extra_flags: str = "",
+        subpath: str = "",
     ) -> str:
         """Summarise dftracer traces using ``dftracer_info`` (dfanalyzer).
 
@@ -3093,6 +3125,13 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             index_dir: Absolute path to the index directory.  Defaults to
                 ``<compact>/idx/``.
             extra_flags: Additional space-separated flags for ``dftracer_info``.
+            subpath: Optional relative path appended under ``<compact>/`` before
+                scanning, e.g. ``"write/rep1"`` for sessions whose split traces
+                are folder-segregated by workload/replicate
+                (``<compact>/<workload>/<rep>/``) rather than flat.
+                ``dftracer_info -d`` is non-recursive, so without this the tool
+                reports "No files found" against a compact root that only
+                contains subdirectories. Leave empty for the flat/default layout.
 
         Returns:
             JSON string with keys ``status``, ``message``, ``run_name``,
@@ -3115,6 +3154,12 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 traces = legacy
             else:
                 return _err(f"{run_name}/traces/compact/ not found — run session_split_traces first")
+
+        if subpath:
+            candidate = traces / subpath
+            if not candidate.exists():
+                return _err(f"{run_name}/traces/compact/{subpath} not found")
+            traces = candidate
 
         idx = Path(index_dir) if index_dir else traces / "idx"
         idx.mkdir(parents=True, exist_ok=True)

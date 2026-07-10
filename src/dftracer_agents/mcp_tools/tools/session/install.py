@@ -584,6 +584,22 @@ def _install_dftracer_pip_direct(
     features = features or {}
     py = python_exe or sys.executable
 
+    # Always clear any stale dftracer install (site-packages + pip's wheel
+    # cache for dftracer) before rebuilding.  A stale compiled .so can carry
+    # over an old brahma wrapper shape or headers baked in from a prior HDF5/
+    # MPI combo, which silently survives a plain `pip install --upgrade` and
+    # makes rebuild iterations non-deterministic.  See workload-h5bench skill
+    # (2026-07-10) for the incident this fixes.
+    try:
+        import glob as _glob
+        import shutil as _shutil_clean
+        _site_glob = str(Path(py).parent.parent / "lib" / "python*" / "site-packages" / "dftracer*")
+        for _stale in _glob.glob(_site_glob):
+            _shutil_clean.rmtree(_stale, ignore_errors=True)
+        _run([py, "-m", "pip", "cache", "remove", "dftracer"], timeout=30)
+    except Exception:
+        pass
+
     # Start from the pre-built pip_env if detection produced one
     pip_env: Dict[str, str] = dict(features.get("dftracer_pip_env") or {})
 
@@ -608,6 +624,29 @@ def _install_dftracer_pip_direct(
     # Feature fallbacks (in case caller passed features without dftracer_pip_env)
     if features.get("mpi"):
         pip_env.setdefault("DFTRACER_ENABLE_MPI", "ON")
+    # Brahma's HDF5 async wrapper signature depends on the exact HDF5 version
+    # compiled against (HDF5 >= 1.13 macro-expands H5*_async(...) calls to
+    # prepend app_file/app_func/app_line, changing the real argument count).
+    # Without an explicit version forwarded to brahma's cmake, its dependency
+    # build silently assumes a default and the wrapper shape can mismatch,
+    # corrupting every hid_t argument at runtime (exit 0, no output file,
+    # HDF5-DIAG errors) -- confirmed 2026-07-10 on HDF5 1.14.5. Mirrors the
+    # same brahma_int / BRAHMA_MPI_VERSION forwarding pattern used for MPI
+    # below. dftracer only supports one exact patch version per HDF5
+    # major.minor line: 1.8.23, 1.10.5, 1.12.3, 1.14.5 (see software-hdf5
+    # skill) -- session_detect should already have validated the detected
+    # hdf5_system.version against that list.
+    _brahma_hdf5_ver = 0
+    _hdf5_version_str = (features.get("hdf5_system") or {}).get("version") or ""
+    if _hdf5_version_str:
+        try:
+            _hparts = [int(p) for p in _hdf5_version_str.split(".")[:3]]
+            while len(_hparts) < 3:
+                _hparts.append(0)
+            _brahma_hdf5_ver = _hparts[0] * 100000 + _hparts[1] * 1000 + _hparts[2]
+        except (ValueError, IndexError):
+            _brahma_hdf5_ver = 0
+
     if features.get("hdf5"):
         pip_env.setdefault("DFTRACER_ENABLE_HDF5", "ON")
         hdf5_prefix = (features.get("hdf5_system") or {}).get("prefix") or ""
@@ -658,8 +697,16 @@ def _install_dftracer_pip_direct(
                 except Exception:
                     pass
                 # And pass it as a first-class cmake arg (see below: SPACE-joined).
+                # HDF5_ROOT/CMAKE_PREFIX_PATH are passed EXPLICITLY as -D args (not
+                # left as env-var-only hints) so dftracer's find_package(HDF5) is
+                # forced to this exact source build and never falls through to its
+                # own auto-detection/system-probing path -- same "detect once,
+                # never let dftracer/brahma auto-detect" principle used for
+                # DFTRACER_MPI_IMPL below.
                 _hdf5_cmake = (
-                    f"-DHDF5_C_COMPILER_EXECUTABLE={_wrapper} -DHDF5_PREFER_PARALLEL=ON"
+                    f"-DHDF5_C_COMPILER_EXECUTABLE={_wrapper} -DHDF5_PREFER_PARALLEL=ON "
+                    f"-DHDF5_ROOT={hdf5_prefix} -DCMAKE_PREFIX_PATH={hdf5_prefix} "
+                    f"-DHDF5_NO_FIND_PACKAGE_CONFIG_FILE=ON"
                 )
                 _existing = pip_env.get("DFTRACER_CMAKE_ARGS", "")
                 pip_env["DFTRACER_CMAKE_ARGS"] = (
@@ -1199,10 +1246,40 @@ bool MPIDFTracer::stop_trace = false;
                 dc = dep_cmake.read_text()
                 # If we have a patched local brahma, redirect dftracer's cmake
                 # to use it instead of fetching v1.0.7 from GitHub.
+                # NOTE: dftracer's actual GIT_TAG for brahma is "v1.0.10", not
+                # "v1.0.7" -- the v1.0.7 string below never matched, so this
+                # redirect was silently a no-op. Kept for compatibility with
+                # any local checkout tagged v1.0.7-fix, but the real target is
+                # GIT_TAG v1.0.10 (see the second replace below).
                 if brahma_local_url:
                     dc = dc.replace(
                         "https://github.com/hariharan-devarajan/brahma.git v1.0.7",
                         f"{brahma_local_url} v1.0.7-fix",
+                    )
+                # Locally-patched brahma checkout that fixes the *_async HDF5
+                # wrapper signature bug (H5_DOXYGEN codegen mismatch -- see
+                # $HOME/dftracer-project/brahma commit
+                # 8d2775c "Fix HDF5 *_async wrapper signatures"). Redirect
+                # dftracer's actual GIT_REPOSITORY/GIT_TAG (v1.0.10) to this
+                # checkout when it exists, so every session picks up the fix
+                # until it lands upstream.
+                # Re-enabled (2026-07-10): confirmed the h5bench shim fix
+                # ALONE (with stock unpatched brahma v1.0.10) does NOT
+                # resolve the HDF5-DIAG errors -- identical error cascade
+                # reproduced. Both fixes are required together: the shim
+                # fix ensures h5bench calls the REAL HDF5 *_async symbols,
+                # and this local brahma patch ensures those real calls are
+                # intercepted with the correct (non-corrupting) signature.
+                _USE_LOCAL_BRAHMA_FIX = True
+                _local_brahma_fix_dir = _Path(
+                    "$HOME/dftracer-project/brahma"
+                )
+                if _USE_LOCAL_BRAHMA_FIX and _local_brahma_fix_dir.is_dir():
+                    dc = dc.replace(
+                        "GIT_REPOSITORY https://github.com/hariharan-devarajan/brahma.git\n"
+                        "    GIT_TAG v1.0.10",
+                        f"GIT_REPOSITORY file://{_local_brahma_fix_dir}\n"
+                        "    GIT_TAG bugfix/hdf5_async",
                     )
                 # Inject BRAHMA_MPI_VERSION into BRAHMA_CONFIGURE_ARGS so that
                 # brahma's cmake receives the true OpenMPI implementation version
@@ -1216,11 +1293,29 @@ bool MPIDFTracer::stop_trace = false;
                         f'";-DBRAHMA_MPI_VERSION={_brahma_mpi_ver}")\n'
                         'dftracer_install_external_project(brahma',
                     )
+                # NOTE: unlike MPI, HDF5 does NOT need a manually-injected
+                # BRAHMA_HDF5_VERSION flag -- dftracer's own dependency/CMakeLists.txt
+                # (github.com/llnl/dftracer, develop, dependency/CMakeLists.txt)
+                # already computes `_dftracer_dep_hdf5_version` internally via
+                # find_package(HDF5) using the identical major*100000+minor*100+patch
+                # formula (confirmed: 1.14.5 -> 101405) and forwards HDF5_ROOT /
+                # CMAKE_PREFIX_PATH to that find_package call itself. The ONLY
+                # requirement is that HDF5_ROOT/CMAKE_PREFIX_PATH (set above from
+                # hdf5_system.prefix) actually reach dftracer's own top-level cmake
+                # configure step. Build isolation stays ON (pip's default) -- do
+                # NOT pass --no-build-isolation, it conflicts with the parent
+                # project's own venv/site-packages by exposing them to the build.
+                # PEP 517 isolation only isolates the installed *package* set; it
+                # still inherits the env dict passed via `env=pip_env` below, which
+                # already carries HDF5_ROOT/CMAKE_PREFIX_PATH/DFTRACER_CMAKE_ARGS
+                # explicitly. Do not text-patch dependency/CMakeLists.txt for
+                # HDF5; that duplicates logic dftracer already has and can drift
+                # out of sync with upstream's actual variable names.
                 dep_cmake.write_text(dc)
 
             r = _run(
-                [py, "-m", "pip", "install", "-v", "--no-cache-dir", "--upgrade",
-                 str(clone_dir)],
+                [py, "-m", "pip", "install", "-v", "--no-cache-dir",
+                 "--upgrade", str(clone_dir)],
                 env=pip_env,
                 timeout=1800,
             )
@@ -1229,14 +1324,16 @@ bool MPIDFTracer::stop_trace = false;
             # Clone failed — fall back to direct git+ install (MPI_Errhandler issue
             # will cause build failure if using OPENMPI 4.1.x, but nothing we can do)
             r = _run(
-                [py, "-m", "pip", "install", "-v", "--no-cache-dir", "--upgrade",
+                [py, "-m", "pip", "install", "-v", "--no-cache-dir",
+                 "--upgrade",
                  f"git+https://github.com/llnl/dftracer.git@{dftracer_ref}"],
                 env=pip_env,
                 timeout=900,
             )
     else:
         r = _run(
-            [py, "-m", "pip", "install", "-v", "--no-cache-dir", "--upgrade",
+            [py, "-m", "pip", "install", "-v", "--no-cache-dir",
+             "--upgrade",
              f"git+https://github.com/llnl/dftracer.git@{dftracer_ref}"],
             env=pip_env,
             timeout=900,

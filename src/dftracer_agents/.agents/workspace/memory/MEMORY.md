@@ -29,3 +29,7 @@
 - [Feedback: Profiling at session create](feedback_profiling_at_session_create.md) — profile_bind right after session_create; OTEL env must live in ~/.vscode-server/server-env-setup — settings.json env DROPS OTEL_*, and ~/.profile is never sourced
 - [Project: ScaFFold optimization](project_scaffold_optimization.md) — LBANN ScaFFold PyTorch 3D U-Net; session scaffold/20260709_064800; ~30 min bounded runs, 8N×4GPU
 - [Feedback: Privacy / anonymous persistence](feedback_privacy_anonymous.md) — memory lives in src/ and is git-tracked; never persist usernames, user paths, job ids; verify with privacy_scan
+- [Feedback: Data cleanup / quota](feedback_data_cleanup_quota.md) — clean up run data immediately; check quota with user before exceeding; rm/drm blocked outside session scope
+- [Project: h5bench dftracer pipeline](project_h5bench_dftracer_pipeline.md) — 768-rank Tuolumne run; root-caused brahma extern-C mangling bug; 20TB/500GB quota budget; 10-15min run sizing
+- [project-ior-hdf5-optimization-dftracer-pipeline](project-ior-hdf5-optimization-dftracer-pipeline.md) — IOR 4.0.0 HDF5 dftracer pipeline session on Tuolumne — 512-rank baseline stable, exhaustive ROMIO/striping sweep found no lever beats the 4KB-transfer baseline
+- [feedback-app-pattern-swap-not-optimization](feedback-app-pattern-swap-not-optimization.md) — Never treat an app request/transfer-size or access-pattern sweep as "the optimization" — it's a diagnostic bound, not a system fix

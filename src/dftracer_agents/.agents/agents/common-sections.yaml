@@ -2,6 +2,44 @@
 # Edit here once; every agent that includes the section picks up the change
 # on the next agents_sync.
 sections:
+  ask-which-workloads-configs-to-focus-on:
+    title: "Ask the user which workloads/configs to focus on (MANDATORY, user instruction 2026-07-10)"
+    body: |
+      When discovering that an app has multiple runnable workloads/configurations/sub-apps
+      (e.g. h5bench ships write, read, append, overwrite, write_unlimited, hdf5_iotest,
+      exerciser as distinct binaries/configs; an app might expose multiple example configs,
+      problem sizes, or build variants), do NOT silently pick "all of them" or silently pick
+      a subset yourself. ASK the user early — during planning, before any build/run/baseline
+      work starts — which ones they want to focus on. Offer the discovered list and let them
+      select all or a subset (they may say "do all of them," which is a valid answer, but it
+      must be their choice, not an assumption).
+
+      This belongs in the planning stage specifically: as soon as the pipeline planner (or
+      whichever agent first enumerates the app's workloads/configs) has the list, surface it
+      to the user via a question before writing `pipeline_plan.md`'s per-workload sections.
+      Re-asking is not needed if the user already answered this for the current session
+      (e.g. already said "do all 7") — this is a session-scoped question, asked once at
+      discovery time, not per-step.
+  pipeline-eagerly-dont-wait-for-the-whole-batch:
+    title: "Pipeline eagerly — never block a stage on every unit finishing (MANDATORY, user instruction 2026-07-10)"
+    body: |
+      When a step operates over multiple units (workloads, replicates, files), start the
+      NEXT stage on whatever units have already completed rather than waiting for the
+      entire batch. This applies across stage boundaries too: analysis/diagnosis/optimization
+      should begin on the workloads/traces that are ready NOW, in parallel with earlier stages
+      still finishing the rest (recollecting a broken replicate, resizing an oversized config,
+      splitting a large trace, etc.).
+
+      1. Partition work into "ready" vs "still pending" before deciding what to do next — don't
+         treat a partially-complete batch as blocking.
+      2. Dispatch the downstream stage (analyzer -> diagnoser -> optimizer) on the ready subset
+         immediately. Track the pending subset separately and feed it in as it completes, rather
+         than re-running the whole pipeline from scratch later.
+      3. State clearly in every report which units were included and which are still pending, so
+         later synthesis (the final report) knows the coverage is partial, not silently treats a
+         partial result as the complete picture.
+      4. This is a standing default, not something to ask permission for each time — the user has
+         explicitly asked for eager/incremental pipelining as the normal mode of operation.
   allocations-ask-the-user-first-baseline-and-optimization-runs:
     title: 'Allocations: ASK the user first (baseline and optimization runs)'
     body: "Before any baseline or optimization run that needs nodes, ASK the user which they want:\n\n1. **Use an existing user-created allocation** via `flux proxy <JOBID> bash <wrapper>.sh ...`\n   (the user often keeps a standing allocation running; this is frequently the preference), or\n2. **Spawn a new allocation** (`flux batch -N <n> -q pdebug -t <mins> --wrap \"bash <wrapper>.sh ...\"`).\n\nDo not assume. If the user has named a JOBID, prefer it, and check its remaining time with\n`flux jobs -no \"{id} {state} {t_remaining}\" <JOBID>` before starting \u2014 a run that outlives the\nallocation is lost work.\n\n**Never block on a long `flux proxy` in the foreground.** The Bash tool caps at ~10 minutes and\nkilling the proxy client kills the job inside the allocation. Launch it with\n`run_in_background: true` (or `flux submit` inside the allocation) and poll.\n\nQueue note: 8-node `pbatch` jobs may sit in SCHED indefinitely; `pdebug` usually schedules at once.\n"

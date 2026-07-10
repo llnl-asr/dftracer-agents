@@ -1,287 +1,907 @@
 {
-  "scripts/compile.sh": {
-    "mtime": 1783584822.453099,
-    "ast_hash": "e3cfb7adaca4c3a35da56337a8e55c4a",
+  "__init__.py": {
+    "mtime": 1783645699.519081,
+    "ast_hash": "6c499dbfd6cad859da89bd80e50d4314",
     "semantic_hash": ""
   },
-  "scripts/run.sh": {
-    "mtime": 1783584822.455085,
-    "ast_hash": "e3cfb7adaca4c3a35da56337a8e55c4a",
+  "_version.py": {
+    "mtime": 1783658998.222806,
+    "ast_hash": "7b72300509d8924430aba70e63490423",
     "semantic_hash": ""
   },
-  "source/ScaFFold/__init__.py": {
-    "mtime": 1783584822.062986,
-    "ast_hash": "69e8a1eff8cdd2fce2565b6dc7a3f9d4",
+  "agent_templates.py": {
+    "mtime": 1783645699.527096,
+    "ast_hash": "b730c7a6f924f3dd3dbdc2d8e0d235ee",
     "semantic_hash": ""
   },
-  "source/ScaFFold/benchmark.py": {
-    "mtime": 1783584822.064069,
-    "ast_hash": "1b95fba60fbad2e9a7d70de59d60f1bc",
+  "agents.py": {
+    "mtime": 1783645699.529136,
+    "ast_hash": "2c10380fa08379f9a0dd31839f10e2d0",
     "semantic_hash": ""
   },
-  "source/ScaFFold/cli.py": {
-    "mtime": 1783584822.06605,
-    "ast_hash": "6e5b5edfdc371433124dbbb457d0bf45",
+  "bootstrap.py": {
+    "mtime": 1783645699.535149,
+    "ast_hash": "dbcc15a8cce6f24b1cf7b07c54bb7193",
     "semantic_hash": ""
   },
-  "source/ScaFFold/datagen/IteratedFunctionSystem.py": {
-    "mtime": 1783584822.082026,
-    "ast_hash": "3f2ea7cacd3f58dbecd0fe94972be14a",
+  "env_setup.py": {
+    "mtime": 1783663679.73867,
+    "ast_hash": "674ff36e5b60bbcb6dfbeab3d9232418",
     "semantic_hash": ""
   },
-  "source/ScaFFold/datagen/__init__.py": {
-    "mtime": 1783584822.084008,
-    "ast_hash": "69e8a1eff8cdd2fce2565b6dc7a3f9d4",
+  "harness_models.py": {
+    "mtime": 1783645699.550101,
+    "ast_hash": "8264964a37819a5442945b4fe11f10b2",
     "semantic_hash": ""
   },
-  "source/ScaFFold/datagen/category_search.py": {
-    "mtime": 1783584822.086034,
-    "ast_hash": "536c44e7201ea7c54504f60ca0b987c8",
+  "mcp_server.py": {
+    "mtime": 1783663679.877873,
+    "ast_hash": "c813935bd540b4d6779fa59002f13402",
     "semantic_hash": ""
   },
-  "source/ScaFFold/datagen/data_visualizer.py": {
-    "mtime": 1783584822.088059,
-    "ast_hash": "05e94d8e7a58580db4b0bd09892ff1b2",
+  "mcp_setup.py": {
+    "mtime": 1783645699.574144,
+    "ast_hash": "00d8b1eef9cb15e6a22294d47a4feda4",
     "semantic_hash": ""
   },
-  "source/ScaFFold/datagen/generate_fractal_points.py": {
-    "mtime": 1783584822.090987,
-    "ast_hash": "6e1255750a3d9fdd14fe1ed3c8c82767",
+  "mcp_tools/__init__.py": {
+    "mtime": 1783311791.288116,
+    "ast_hash": "865b90d5bcc3652112e571b53ea990b7",
     "semantic_hash": ""
   },
-  "source/ScaFFold/datagen/get_dataset.py": {
-    "mtime": 1783584822.093983,
-    "ast_hash": "0ee9172994644d7024ec2f26a7ae6afb",
+  "mcp_tools/mcp_service_factory.py": {
+    "mtime": 1783311791.290125,
+    "ast_hash": "1a8cc7d3345944d8406e762f3ece38b8",
     "semantic_hash": ""
   },
-  "source/ScaFFold/datagen/instance.py": {
-    "mtime": 1783584822.109018,
-    "ast_hash": "1c3dc4ff55add6902149d557cb8daba4",
-    "semantic_hash": ""
-  },
-  "source/ScaFFold/datagen/mask_detection.py": {
-    "mtime": 1783584822.111993,
-    "ast_hash": "b4bb9ea77e30675ef89d87a7208fccc6",
-    "semantic_hash": ""
-  },
-  "source/ScaFFold/datagen/volumegen.py": {
-    "mtime": 1783584822.114003,
-    "ast_hash": "b1cd95731891d295423b0fc42eb333d7",
-    "semantic_hash": ""
-  },
-  "source/ScaFFold/generate_fractals.py": {
-    "mtime": 1783584822.232019,
-    "ast_hash": "dc3db24693380f1d7a13e35a47822c70",
-    "semantic_hash": ""
-  },
-  "source/ScaFFold/package_data/__init__.py": {
-    "mtime": 1783584822.238243,
+  "mcp_tools/tools/__init__.py": {
+    "mtime": 1783311791.293111,
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": ""
   },
-  "source/ScaFFold/paths.py": {
-    "mtime": 1783584822.240102,
-    "ast_hash": "85993474ec8a4a87ec69972621412036",
+  "mcp_tools/tools/annotations/__init__.py": {
+    "mtime": 1783311791.295114,
+    "ast_hash": "b58a3073776d832eed7ba88e492380b7",
     "semantic_hash": ""
   },
-  "source/ScaFFold/unet/__init__.py": {
-    "mtime": 1783584822.366056,
-    "ast_hash": "88b0e80b15bf772ff81e96203f9a2089",
+  "mcp_tools/tools/annotations/annotate_c.py": {
+    "mtime": 1783311791.297111,
+    "ast_hash": "abb0faa6f756c9afd116f2c5174abac7",
     "semantic_hash": ""
   },
-  "source/ScaFFold/unet/unet_model.py": {
-    "mtime": 1783584822.367965,
-    "ast_hash": "6c59446de763753f066902203609a3a8",
+  "mcp_tools/tools/annotations/annotate_cpp.py": {
+    "mtime": 1783311791.298139,
+    "ast_hash": "3e9c6920b1b9f442585bdf3ebcbed834",
     "semantic_hash": ""
   },
-  "source/ScaFFold/unet/unet_parts.py": {
-    "mtime": 1783584822.369018,
-    "ast_hash": "f4693c7f64292f2482a24e3690e3eab2",
+  "mcp_tools/tools/annotations/annotate_python.py": {
+    "mtime": 1783311791.300136,
+    "ast_hash": "2e2b91a51898062110ad72e2ee9f4b84",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/__init__.py": {
-    "mtime": 1783584822.373988,
-    "ast_hash": "69e8a1eff8cdd2fce2565b6dc7a3f9d4",
+  "mcp_tools/tools/dftracer/__init__.py": {
+    "mtime": 1783311791.301824,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/checkpoint_validators.py": {
-    "mtime": 1783584822.375019,
-    "ast_hash": "684055d7277b7e78238f7e77abe86e5c",
+  "mcp_tools/tools/dftracer/dfanalyzer_service.py": {
+    "mtime": 1783645699.578889,
+    "ast_hash": "7a316c95736e24cac8225cb8a4a92cd9",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/checkpointing.py": {
-    "mtime": 1783584822.37604,
-    "ast_hash": "3ac1d98ec6eb1bbc41dbec2992038cc9",
+  "mcp_tools/tools/dftracer/dfdiagnoser_service.py": {
+    "mtime": 1783645699.581952,
+    "ast_hash": "2df37fb58f8dea22b60bce173a2c707f",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/collect_scheduler_info.py": {
-    "mtime": 1783584822.377114,
-    "ast_hash": "1629843c4ad14e2aeaad547831b97a41",
+  "mcp_tools/tools/dftracer/dftracer_plot_service.py": {
+    "mtime": 1783311791.313794,
+    "ast_hash": "5d1b662b547ce34148cf0a4a9ba6bfbf",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/config_utils.py": {
-    "mtime": 1783584822.378965,
-    "ast_hash": "86a51b331c20479f25258361891158a1",
+  "mcp_tools/tools/dftracer/dftracer_service.py": {
+    "mtime": 1783667033.191498,
+    "ast_hash": "264e82da0677efbe20f8a4a308cffc41",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/create_restart_script.py": {
-    "mtime": 1783584822.380012,
-    "ast_hash": "cf66d18914c48e8155ecefce37e067ec",
+  "mcp_tools/tools/dftracer/dftracer_utils_service.py": {
+    "mtime": 1783645699.596046,
+    "ast_hash": "4ab8275cac09dbe98dc8713a68c4b368",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/data_loading.py": {
-    "mtime": 1783584822.38105,
-    "ast_hash": "1ba97cb8a0cb764f4cbc77a99fc9341a",
+  "mcp_tools/tools/dftracer/docs_service.py": {
+    "mtime": 1783311791.32382,
+    "ast_hash": "28dc6fbdd42d5588bc0193ea92f2e5b7",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/data_types.py": {
-    "mtime": 1783584822.382114,
-    "ast_hash": "34a5dda5be2b2d5586c6534e555eb361",
+  "mcp_tools/tools/dftracer/skills_service.py": {
+    "mtime": 1783645699.604946,
+    "ast_hash": "d2a7cecf9aec992d1c388b21efc95c1e",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/dice_score.py": {
-    "mtime": 1783584822.383962,
-    "ast_hash": "e46eb8c7df278066e28d52b43a3baa1b",
+  "mcp_tools/tools/optimizations/__init__.py": {
+    "mtime": 1783663679.885656,
+    "ast_hash": "54c6a7899500b5c61ff2dde3af2268fa",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/distributed.py": {
-    "mtime": 1783584822.385014,
-    "ast_hash": "eda66698a771f546c572bbb41ffbcc2b",
+  "mcp_tools/tools/optimizations/context_search.py": {
+    "mtime": 1783663679.74169,
+    "ast_hash": "ca0dd7115e31029fa00a0f2193326fa7",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/evaluate.py": {
-    "mtime": 1783584822.386104,
-    "ast_hash": "36033de6c6c39302f2d897efb486bfe6",
+  "mcp_tools/tools/optimizations/diagnose.py": {
+    "mtime": 1783311791.366995,
+    "ast_hash": "55ebe8fd23988fdbf9ab232d81f3c846",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/losses.py": {
-    "mtime": 1783584822.387992,
-    "ast_hash": "c26125bead7a26b973fb63d7088f98af",
+  "mcp_tools/tools/optimizations/iteration.py": {
+    "mtime": 1783645699.623812,
+    "ast_hash": "50d67b5059b3e8649cfe5dca54bfc8d4",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/perf_measure.py": {
-    "mtime": 1783584822.389081,
-    "ast_hash": "e4a826981564bc43d73b029fd2bfb155",
+  "mcp_tools/tools/optimizations/knowledge_base.py": {
+    "mtime": 1783710829.53025,
+    "ast_hash": "4500c733a6835b1dd9b7bfecde19cb85",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/trainer.py": {
-    "mtime": 1783584822.39099,
-    "ast_hash": "f57b7001341903f67166e86633c9d295",
+  "mcp_tools/tools/optimizations/levels.py": {
+    "mtime": 1783645699.634764,
+    "ast_hash": "c8015bdeba2dd3888ddb4559d47263ab",
     "semantic_hash": ""
   },
-  "source/ScaFFold/utils/utils.py": {
-    "mtime": 1783584822.392017,
-    "ast_hash": "17f18f369ebfcadede6bd89c74f7b94e",
+  "mcp_tools/tools/optimizations/memory.py": {
+    "mtime": 1783311791.40805,
+    "ast_hash": "8a5d108d9ff46de38538c6ba44016a47",
     "semantic_hash": ""
   },
-  "source/ScaFFold/viz/__init__.py": {
-    "mtime": 1783584822.396041,
-    "ast_hash": "69e8a1eff8cdd2fce2565b6dc7a3f9d4",
+  "mcp_tools/tools/optimizations/orchestrator.py": {
+    "mtime": 1783311791.435963,
+    "ast_hash": "11cc55c600df4a9b2f4db933bb36c755",
     "semantic_hash": ""
   },
-  "source/ScaFFold/viz/standard_viz.py": {
-    "mtime": 1783584822.397123,
-    "ast_hash": "99633c9c2b4916feb9b49115a16b9ebd",
+  "mcp_tools/tools/optimizations/strategies.py": {
+    "mtime": 1783311791.445951,
+    "ast_hash": "1eb9fd3ec60c9eb936e017e3e2d3db70",
     "semantic_hash": ""
   },
-  "source/ScaFFold/worker.py": {
-    "mtime": 1783584822.399996,
-    "ast_hash": "8498070cabf7d93e03cd060638a34ecc",
+  "mcp_tools/tools/papers/__init__.py": {
+    "mtime": 1783311791.44687,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": ""
   },
-  "source/pyproject.toml": {
-    "mtime": 1783584822.407978,
-    "ast_hash": "95d34ed29595977acb2c1d959a8ea820",
+  "mcp_tools/tools/papers/academic_service.py": {
+    "mtime": 1783663679.895922,
+    "ast_hash": "060a026d9dd779844579751e6f658449",
     "semantic_hash": ""
   },
-  "source/scripts/install-matrix.sh": {
-    "mtime": 1783584822.413993,
-    "ast_hash": "26eccfff1be35c63fa698d7fbdd87174",
+  "mcp_tools/tools/papers/local_library_service.py": {
+    "mtime": 1783663679.747672,
+    "ast_hash": "fb530e55e6cf2706bcf5a81f13ff15bd",
     "semantic_hash": ""
   },
-  "source/scripts/install-tuolumne-torchpypi.sh": {
-    "mtime": 1783584822.415122,
-    "ast_hash": "630e530bf95b0ee9cc1d2d8af7e5c150",
+  "mcp_tools/tools/papers/rag_service.py": {
+    "mtime": 1783663679.748715,
+    "ast_hash": "efa92a7c48bdc3c5e337784c288ea882",
     "semantic_hash": ""
   },
-  "source/scripts/install-tuolumne.sh": {
-    "mtime": 1783584822.417044,
-    "ast_hash": "91d896d7d5e44b206e5468eb96f294c8",
+  "mcp_tools/tools/session/__init__.py": {
+    "mtime": 1783311791.451197,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": ""
   },
-  "source/.github/requirements.txt": {
-    "mtime": 1783584822.048022,
-    "ast_hash": "6834272d99e54befaa5a4cc5cf7544e5",
+  "mcp_tools/tools/session/annotation.py": {
+    "mtime": 1783645699.637848,
+    "ast_hash": "72bd5a952beaf31d40aef810c1ba2c9c",
     "semantic_hash": ""
   },
-  "source/.github/workflows/style.yml": {
-    "mtime": 1783584822.054278,
-    "ast_hash": "ba13acda9b7c72c566805a2fa2900828",
+  "mcp_tools/tools/session/annotation_ai.py": {
+    "mtime": 1783664716.557591,
+    "ast_hash": "e84b1525a979215db0cc8d1792ad57de",
     "semantic_hash": ""
   },
-  "source/CONTRIBUTING.md": {
-    "mtime": 1783584822.054115,
-    "ast_hash": "59e6a5d5d2a65b630a1482a74f30da47",
+  "mcp_tools/tools/session/annotation_clang.py": {
+    "mtime": 1783668047.06963,
+    "ast_hash": "9189b91926cfaf4d84307175b1eff943",
     "semantic_hash": ""
   },
-  "source/README.md": {
-    "mtime": 1783584822.058015,
-    "ast_hash": "0f320e3473dc99dd5781d481abc90f38",
+  "mcp_tools/tools/session/annotation_filter.py": {
+    "mtime": 1783372413.238784,
+    "ast_hash": "9749b67696b2fcd9eb695106798ca8f5",
     "semantic_hash": ""
   },
-  "source/ScaFFold/configs/benchmark_default.yml": {
-    "mtime": 1783584822.072018,
-    "ast_hash": "3a1984d8f482f6447ae4df24a4d59d5c",
+  "mcp_tools/tools/session/annotation_python.py": {
+    "mtime": 1783645699.654827,
+    "ast_hash": "4bfa911edd188513082f191d751524fe",
     "semantic_hash": ""
   },
-  "source/ScaFFold/configs/benchmark_testing.yml": {
-    "mtime": 1783584822.074014,
-    "ast_hash": "12c6da6873ee39142ba7ee6ee73a6431",
+  "mcp_tools/tools/session/annotation_validate.py": {
+    "mtime": 1783667021.149326,
+    "ast_hash": "bb2019d9561aee87f1d89b2e0663eec2",
     "semantic_hash": ""
   },
-  "source/docs/scaffold.rst": {
-    "mtime": 1783584822.408268,
-    "ast_hash": "ba74e5ab2e4f391edf37e5810663a713",
+  "mcp_tools/tools/session/build.py": {
+    "mtime": 1783311791.464231,
+    "ast_hash": "088f2ff6df210474151643049a19d58d",
     "semantic_hash": ""
   },
-  "source/requirements.txt": {
-    "mtime": 1783584822.408982,
-    "ast_hash": "5d3cfb6c3eecd2bd800bd4cb67d512ad",
+  "mcp_tools/tools/session/code_graph.py": {
+    "mtime": 1783645699.65895,
+    "ast_hash": "60ac181f2202f38afd47ae045c2cb25e",
     "semantic_hash": ""
   },
-  "source/ScaFFold/readme_figs/IFS_param_weights.png": {
-    "mtime": 1783584822.246118,
-    "ast_hash": "4e2502894db9ead4b25a07b221c8a495",
+  "mcp_tools/tools/session/config_search.py": {
+    "mtime": 1783663679.91167,
+    "ast_hash": "b276d22084c38be8dd7ed6967a0dc46a",
     "semantic_hash": ""
   },
-  "source/ScaFFold/readme_figs/IFS_params.png": {
-    "mtime": 1783584822.251026,
-    "ast_hash": "3db443d8ea07596e0359a377ae224fff",
+  "mcp_tools/tools/session/detection.py": {
+    "mtime": 1783664707.0146,
+    "ast_hash": "88a56ec92b24292914570645a3039745",
     "semantic_hash": ""
   },
-  "source/ScaFFold/readme_figs/affine_transformation.png": {
-    "mtime": 1783584822.254082,
-    "ast_hash": "f997721596771e707bf8e9c98fde26df",
+  "mcp_tools/tools/session/final_report.py": {
+    "mtime": 1783645699.675841,
+    "ast_hash": "93a2c23c75c9432c483beac023cdabc6",
     "semantic_hash": ""
   },
-  "source/ScaFFold/readme_figs/fractal_variations.png": {
-    "mtime": 1783584822.262998,
-    "ast_hash": "bc9db29e3ac61675282253a5cb11cd75",
+  "mcp_tools/tools/session/install.py": {
+    "mtime": 1783675995.189079,
+    "ast_hash": "b4eef3dd9079c3c0fba01191ff4c7c88",
     "semantic_hash": ""
   },
-  "source/ScaFFold/readme_figs/fractal_variations2.png": {
-    "mtime": 1783584822.322129,
-    "ast_hash": "bc18276cc5eca9bf9d902de914dad9b2",
+  "mcp_tools/tools/session/lessons_sync.py": {
+    "mtime": 1783645699.684844,
+    "ast_hash": "56af2d4382c0cc5f15c654a5d7d82107",
     "semantic_hash": ""
   },
-  "source/ScaFFold/readme_figs/fractal_variations2_cropped.png": {
-    "mtime": 1783584822.350144,
-    "ast_hash": "dcfd48a3588d0aca1fe6f9645b0b1f06",
+  "mcp_tools/tools/session/ml_pipeline.py": {
+    "mtime": 1783645699.686857,
+    "ast_hash": "361e10882d06c4210e202421278a3140",
     "semantic_hash": ""
   },
-  "source/ScaFFold/readme_figs/fractal_variations_new.png": {
-    "mtime": 1783584822.362177,
-    "ast_hash": "5178766d78b481a3fb88b3fa5625e8fb",
+  "mcp_tools/tools/session/mlflow_tracker.py": {
+    "mtime": 1783311791.472236,
+    "ast_hash": "1af7c793215fbddc9cc930b7e590f799",
+    "semantic_hash": ""
+  },
+  "mcp_tools/tools/session/pipeline_tools.py": {
+    "mtime": 1783645699.688937,
+    "ast_hash": "ff53f824faf8dbb7db2ff2aa5e6867e9",
+    "semantic_hash": ""
+  },
+  "mcp_tools/tools/session/privacy_tools.py": {
+    "mtime": 1783645699.690885,
+    "ast_hash": "7cbc7b2ff15b98cc8f4f9640a420bcfa",
+    "semantic_hash": ""
+  },
+  "mcp_tools/tools/session/profiling.py": {
+    "mtime": 1783645699.692906,
+    "ast_hash": "a1bd1c8ac9fae83674ac18128bef8681",
+    "semantic_hash": ""
+  },
+  "mcp_tools/tools/session/python_cost.py": {
+    "mtime": 1783645699.706885,
+    "ast_hash": "a19abb333a96f3b246996edd5dab7646",
+    "semantic_hash": ""
+  },
+  "mcp_tools/tools/session/session_tools.py": {
+    "mtime": 1783706187.219969,
+    "ast_hash": "96294a77f17196b6b24188fc8bbf9285",
+    "semantic_hash": ""
+  },
+  "mcp_tools/tools/session/source_parser.py": {
+    "mtime": 1783311791.479268,
+    "ast_hash": "40fe5523fbd81736c17888f8ec8d8d76",
+    "semantic_hash": ""
+  },
+  "mcp_tools/tools/session/workspace.py": {
+    "mtime": 1783645699.926788,
+    "ast_hash": "c414e6c4a2b69adfab86ab364d103119",
+    "semantic_hash": ""
+  },
+  "mcp_tools/tools/system/__init__.py": {
+    "mtime": 1783311791.497097,
+    "ast_hash": "665d3452112c8e8932591a423a9e4c2b",
+    "semantic_hash": ""
+  },
+  "mcp_tools/tools/system/system_service.py": {
+    "mtime": 1783663679.921682,
+    "ast_hash": "2b88089b004dadd4fecef7f828dd3299",
+    "semantic_hash": ""
+  },
+  "privacy.py": {
+    "mtime": 1783645699.931064,
+    "ast_hash": "6048a98e7ca4b5369a4a51f14a4ba54f",
+    "semantic_hash": ""
+  },
+  "profiling/__init__.py": {
+    "mtime": 1783645699.93275,
+    "ast_hash": "6838b1f8b32d9ecaa59dd1bfc3a353f6",
+    "semantic_hash": ""
+  },
+  "profiling/aggregate.py": {
+    "mtime": 1783645699.935726,
+    "ast_hash": "d5bd3c9a971080ab0b91081bd1773dbf",
+    "semantic_hash": ""
+  },
+  "profiling/client.py": {
+    "mtime": 1783645699.937809,
+    "ast_hash": "5d55df47440075cea6c64d08e3656ae2",
+    "semantic_hash": ""
+  },
+  "profiling/collector.py": {
+    "mtime": 1783645699.940757,
+    "ast_hash": "fcc1c18c222f4ec938e11f68ba5015c9",
+    "semantic_hash": ""
+  },
+  "profiling/mlflow_sink.py": {
+    "mtime": 1783645699.943689,
+    "ast_hash": "ebc651860130c250bf73672f5e224b4f",
+    "semantic_hash": ""
+  },
+  "profiling/otlp.py": {
+    "mtime": 1783645699.945743,
+    "ast_hash": "9b3ca39a99443121f9b36b6ad31a5602",
+    "semantic_hash": ""
+  },
+  "profiling/procscan.py": {
+    "mtime": 1783663679.927658,
+    "ast_hash": "d42a497ef8516b0c201840237c9327a9",
+    "semantic_hash": ""
+  },
+  "run_mcp_service.py": {
+    "mtime": 1783311791.533113,
+    "ast_hash": "b250c8f8e16847a79d6a4272fb8ad318",
+    "semantic_hash": ""
+  },
+  "skills.py": {
+    "mtime": 1783438494.295993,
+    "ast_hash": "2ab42fa01ab7151d2a4aa2cf105ff495",
+    "semantic_hash": ""
+  },
+  "stack.py": {
+    "mtime": 1783645699.955072,
+    "ast_hash": "c0a5b29fa77b6dbaa9e04a756d6f4ed4",
+    "semantic_hash": ""
+  },
+  ".agents/agents/dftracer-annotator.md": {
+    "mtime": 1783645698.760782,
+    "ast_hash": "21881220382d376c2bac978e0a7e3d2b",
+    "semantic_hash": ""
+  },
+  ".agents/agents/dftracer-build-smoke.md": {
+    "mtime": 1783645698.789786,
+    "ast_hash": "eda25e11441997ea4fd6f6ba84230a81",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-annotate-c/SKILL.md": {
+    "mtime": 1783706621.168631,
+    "ast_hash": "62c10fbc1f2c510d8b112438bd46807a",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-annotate-cpp/SKILL.md": {
+    "mtime": 1783311790.387828,
+    "ast_hash": "817222614c93250315c2f6e98e4d6d79",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-annotate-general/SKILL.md": {
+    "mtime": 1783668082.477431,
+    "ast_hash": "cfc6404a51b5431643f73d36abef0b99",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-annotate-process/SKILL.md": {
+    "mtime": 1783645698.885879,
+    "ast_hash": "0ae81b751117394641d329af50ecd179",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-annotate-project/SKILL.md": {
+    "mtime": 1783645698.899779,
+    "ast_hash": "5609d81bc02be93c75788103a0bc15a6",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-annotate-project/lessons.md": {
+    "mtime": 1783645698.901819,
+    "ast_hash": "135205965d4d4d1e82b1d6d05035a7e1",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-annotate-project/permissions.md": {
+    "mtime": 1783645698.904782,
+    "ast_hash": "1557f8ce415119640c22937fb071107a",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-annotate-project/pitfalls.md": {
+    "mtime": 1783645698.906785,
+    "ast_hash": "d58da66d87ac905ff6c82e2214e54b89",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-annotate-project/rules.md": {
+    "mtime": 1783645698.909769,
+    "ast_hash": "d122d4315fe7b509cd055d22869e87fc",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-annotate-python/SKILL.md": {
+    "mtime": 1783311790.403668,
+    "ast_hash": "d930d2d1bd13de3e8f23a1d2f6a5f288",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-annotation-lessons/LESSONS_LOG.md": {
+    "mtime": 1783645698.913823,
+    "ast_hash": "82e97869ae31778e116a13cc0c2d74dc",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-annotation-lessons/SKILL.md": {
+    "mtime": 1783645698.91581,
+    "ast_hash": "428ada9a9536fd8c4a61c577aa9b9d88",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-build-app/SKILL.md": {
+    "mtime": 1783645698.919963,
+    "ast_hash": "ea48aa997c5979381fc5b8a0a45049e8",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-build-app/lessons.md": {
+    "mtime": 1783645698.921998,
+    "ast_hash": "ab06921d490728fb21257f809d4cef8e",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-build-app/permissions.md": {
+    "mtime": 1783645698.926912,
+    "ast_hash": "591e0a8e7be4c63d2ee5e4ed3ae2b017",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-build-app/pitfalls.md": {
+    "mtime": 1783645698.92902,
+    "ast_hash": "33f3f0db7650a040293d4c02324d6747",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-build-app/rules.md": {
+    "mtime": 1783645698.938938,
+    "ast_hash": "398bfcf6321506aa8d8e87c57a901be3",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-build-dftracer/SKILL.md": {
+    "mtime": 1783645698.965751,
+    "ast_hash": "2c6e5269ba770265722fcec340193a88",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-build-dftracer/lessons.md": {
+    "mtime": 1783645698.970794,
+    "ast_hash": "c539b133ed360ed0b42ba4bcd5275162",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-build-dftracer/permissions.md": {
+    "mtime": 1783645698.973763,
+    "ast_hash": "98eea1a0822abd90a7ef2722f2bb7e54",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-build-dftracer/pitfalls.md": {
+    "mtime": 1783645698.976781,
+    "ast_hash": "6ef6451decf875a59cdd256b8c380896",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-build-dftracer/rules.md": {
+    "mtime": 1783645698.980748,
+    "ast_hash": "906ea15e4bc963e6c11c6718d9d7c02f",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-build-run/SKILL.md": {
+    "mtime": 1783311790.413836,
+    "ast_hash": "e6d258b327cdd73b2931acfe498e5f5f",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-cheatsheet/SKILL.md": {
+    "mtime": 1783645698.983934,
+    "ast_hash": "6e5e1627b40c3bff9fc2086213793fa0",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-context-economy/SKILL.md": {
+    "mtime": 1783645698.999171,
+    "ast_hash": "b74870d920eb389359f4557dd2524cae",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-diagnoser/SKILL.md": {
+    "mtime": 1783645699.005768,
+    "ast_hash": "500523b4e1c031e1aa27fcc45841cd2b",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-diagnoser/lessons.md": {
+    "mtime": 1783645699.00979,
+    "ast_hash": "8e13fc9e8691ad7b3c73b96e7a642595",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-diagnoser/permissions.md": {
+    "mtime": 1783645699.021743,
+    "ast_hash": "c733e2a8d9e7ddcf0a3b36fefd3a08f3",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-diagnoser/pitfalls.md": {
+    "mtime": 1783645699.024755,
+    "ast_hash": "0331d6321206b36b428365585aaef2e4",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-diagnoser/rules.md": {
+    "mtime": 1783645699.031833,
+    "ast_hash": "3445c518b6ab45a7776110a59b0ddbd3",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-install/SKILL.md": {
+    "mtime": 1783645699.034818,
+    "ast_hash": "0770a12a0bbc1005da2faef3a73f69af",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-io-optimization/SKILL.md": {
+    "mtime": 1783717600.527893,
+    "ast_hash": "5b4937c54b1ff232f1041ad9325334cf",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-lessons/SKILL.md": {
+    "mtime": 1783645699.040977,
+    "ast_hash": "8e0e2d73b98888a937e3dee9565a1896",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-ml-annotate/SKILL.md": {
+    "mtime": 1783645699.047775,
+    "ast_hash": "30555dfb792526ab926d85e4ba277a6b",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-optimization-kb/SKILL.md": {
+    "mtime": 1783717580.965576,
+    "ast_hash": "b2b7a4c81b7edab00ba4beb28b57da26",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-optimization-kb/software.md": {
+    "mtime": 1783710907.947631,
+    "ast_hash": "437202a910304aee156d18c6de00efeb",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-optimization-kb/system.md": {
+    "mtime": 1783710907.94948,
+    "ast_hash": "817b24c2479a1e660b504cb0491fd91c",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-optimization-kb/workload.md": {
+    "mtime": 1783710907.946479,
+    "ast_hash": "228cad4f2b340346f9dd8fa8749366a4",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-pipeline/SKILL.md": {
+    "mtime": 1783645699.07985,
+    "ast_hash": "e859086760655eb59219a02d89b69e5f",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-pipeline/dataloader_crash_debugging.md": {
+    "mtime": 1783317723.336748,
+    "ast_hash": "b76112565d8df0c3cd0095721b5bfadd",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-pitfalls/SKILL.md": {
+    "mtime": 1783311790.494275,
+    "ast_hash": "a245f7bc4c4f3ad371fa600c9514f484",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-planning/SKILL.md": {
+    "mtime": 1783317825.621624,
+    "ast_hash": "460c20a2e628bcba54de437d8981ba46",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-preload-run/SKILL.md": {
+    "mtime": 1783645699.0839,
+    "ast_hash": "5c600061676a336c47d1f0e4fbe63fac",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-privacy-guard/SKILL.md": {
+    "mtime": 1783645699.086972,
+    "ast_hash": "25fc15b2ff20a1b8b5f34c0e9a787801",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-profiling/SKILL.md": {
+    "mtime": 1783645699.092742,
+    "ast_hash": "b0c6076f31416c02450f8102f58ed816",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-project-router/SKILL.md": {
+    "mtime": 1783645699.100112,
+    "ast_hash": "867fd89a79f625a7621361bbc8fa1f70",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-project-router/lessons.md": {
+    "mtime": 1783645699.105155,
+    "ast_hash": "86a6cb67b6b368e36c6425c908385547",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-project-router/permissions.md": {
+    "mtime": 1783645699.10811,
+    "ast_hash": "2602ca298c47ccd5db4ab1326a55cf4a",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-project-router/pitfalls.md": {
+    "mtime": 1783645699.115101,
+    "ast_hash": "fa774a6d31ed3c682e078e924ebc4f98",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-project-router/rules.md": {
+    "mtime": 1783645699.125122,
+    "ast_hash": "430fe1b2df031b4f98fad8448d4facf2",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-references/SKILL.md": {
+    "mtime": 1783645699.136788,
+    "ast_hash": "c5948fb494208e7e3fca8de661f1149e",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-smoke-test/SKILL.md": {
+    "mtime": 1783645699.150789,
+    "ast_hash": "02ca497d33fe7c34e308512c558962f5",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-system-detect/SKILL.md": {
+    "mtime": 1783645699.155808,
+    "ast_hash": "cc7a6adabc87687eab0eb68676adc900",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-system-detect/lessons.md": {
+    "mtime": 1783645699.157811,
+    "ast_hash": "207b57ee96ce06dfb6f7ecc3f7d7abfa",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-system-detect/permissions.md": {
+    "mtime": 1783645699.160841,
+    "ast_hash": "9ec97c3b36779264e827ad2e850046c8",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-system-detect/pitfalls.md": {
+    "mtime": 1783645699.162827,
+    "ast_hash": "c87fcbafb32d787c8e29e82dea3f73fa",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-system-detect/rules.md": {
+    "mtime": 1783645699.164805,
+    "ast_hash": "d91522cd8a81220a020ea53a21d0b502",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-trace-utils/SKILL.md": {
+    "mtime": 1783645699.167152,
+    "ast_hash": "84db5e569d5150dde39bab8fc330fc81",
+    "semantic_hash": ""
+  },
+  ".agents/skills/flux-alloc/SKILL.md": {
+    "mtime": 1783713820.760512,
+    "ast_hash": "71d94bf9bae46ea54a634fcec70a2b0e",
+    "semantic_hash": ""
+  },
+  ".agents/skills/software-hdf5/SKILL.md": {
+    "mtime": 1783645699.171853,
+    "ast_hash": "cd4e3557c62db8cdcb353a55c8808d73",
+    "semantic_hash": ""
+  },
+  ".agents/skills/software-mpi/SKILL.md": {
+    "mtime": 1783645699.174778,
+    "ast_hash": "f3cd3f7aa1641e8ccee22ccfa093709e",
+    "semantic_hash": ""
+  },
+  ".agents/skills/software-mpifileutils/SKILL.md": {
+    "mtime": 1783711952.128098,
+    "ast_hash": "02d7457e9c0ba2da5001f9251471c6d8",
+    "semantic_hash": ""
+  },
+  ".agents/skills/software-pegasus/SKILL.md": {
+    "mtime": 1783389717.993748,
+    "ast_hash": "262f81f0c029b2f0a17d297f82453d3a",
+    "semantic_hash": ""
+  },
+  ".agents/skills/software-posix/SKILL.md": {
+    "mtime": 1783392478.363139,
+    "ast_hash": "315cd0edd9940679039c080c0b805fcb",
+    "semantic_hash": ""
+  },
+  ".agents/skills/system-container/SKILL.md": {
+    "mtime": 1783312842.970981,
+    "ast_hash": "83b58eb4a6fbf3fb20e531bc79bc4505",
+    "semantic_hash": ""
+  },
+  ".agents/skills/system-detect/SKILL.md": {
+    "mtime": 1783645699.176939,
+    "ast_hash": "6ca563a8922418a86303f38886103db0",
+    "semantic_hash": ""
+  },
+  ".agents/skills/system-tuolumne-rabbit/SKILL.md": {
+    "mtime": 1783392491.452898,
+    "ast_hash": "e2e0df0e10d932a4f3c33299938d3e00",
+    "semantic_hash": ""
+  },
+  ".agents/skills/system-tuolumne/SKILL.md": {
+    "mtime": 1783711985.23621,
+    "ast_hash": "ecc4836206c4a982de4bcf0ef86f3619",
+    "semantic_hash": ""
+  },
+  ".agents/skills/workload-flashx/SKILL.md": {
+    "mtime": 1783645699.184888,
+    "ast_hash": "5d41a2860179a42ca56a5e428cf3bfa0",
+    "semantic_hash": ""
+  },
+  ".agents/skills/workload-h5bench/SKILL.md": {
+    "mtime": 1783717425.529783,
+    "ast_hash": "00fdc5715e0dd869c21cba363f9b4759",
+    "semantic_hash": ""
+  },
+  ".agents/skills/workload-ior/SKILL.md": {
+    "mtime": 1783716017.253033,
+    "ast_hash": "e8cd97b953f46228bdd044d9c32d2a77",
+    "semantic_hash": ""
+  },
+  ".agents/skills/workload-scaffold/SKILL.md": {
+    "mtime": 1783645699.189983,
+    "ast_hash": "2c7c9d57cdff2de0b10362d3286bc518",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/AGENTS.md": {
+    "mtime": 1783644972.459148,
+    "ast_hash": "396abb649fbd7538c6ddfde4e7c1b7a8",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/CLAUDE.md": {
+    "mtime": 1783644972.478122,
+    "ast_hash": "b58996ded421fa54f8493ff36b60ff64",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/copilot-instructions.md": {
+    "mtime": 1783644972.469157,
+    "ast_hash": "396abb649fbd7538c6ddfde4e7c1b7a8",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/MEMORY.md": {
+    "mtime": 1783699509.04783,
+    "ast_hash": "926d8f61b81e2f3f9c00e855ebf04afb",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/bug_analyze_timeout_bytes.md": {
+    "mtime": 1783645699.224929,
+    "ast_hash": "76f7d2c5b76f34dc25750914df4bdba0",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/bug_annotator_fabricated_report.md": {
+    "mtime": 1783666867.480293,
+    "ast_hash": "e221821ee73b3dc29f6c6d489a7129a5",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/bug_hip_tracing_false_positive.md": {
+    "mtime": 1783664757.628615,
+    "ast_hash": "9eb56712dae7646212d0f961f9529483",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_always_source_hdf5.md": {
+    "mtime": 1783645699.230992,
+    "ast_hash": "0142170456bb8adddd4920e3759b4b8e",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_analysis_parallel_workers.md": {
+    "mtime": 1783645699.239901,
+    "ast_hash": "b91bed405f6c2631953ad0f25c5912cc",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_app_exec_cwd.md": {
+    "mtime": 1783645699.247027,
+    "ast_hash": "21bb4ed81c629fd40d808dcb179fb407",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_confirm_before_skill_updates.md": {
+    "mtime": 1783699497.125924,
+    "ast_hash": "6bc17bcfdca8be5ffbe2ecdd69b052f8",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_data_cleanup_quota.md": {
+    "mtime": 1783697007.874115,
+    "ast_hash": "ec60e00155ca57a26f4e17a6d19d8fc0",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_dftracer_aiml_venv.md": {
+    "mtime": 1783645699.266959,
+    "ast_hash": "b91608f4a513600a3de0ff5ffa99b67d",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_dftracer_install_env_vars.md": {
+    "mtime": 1783645699.268975,
+    "ast_hash": "71012745028dddbe2ec8ced8768724da",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_dftracer_install_rocm_mpi.md": {
+    "mtime": 1783645699.280924,
+    "ast_hash": "f4b070e8679240603082ff3f57b99123",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_flux_proxy_wrapper.md": {
+    "mtime": 1783645699.288981,
+    "ast_hash": "da21bac3497b84beff214f1030b60519",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_hdf5_dftracer_stack.md": {
+    "mtime": 1783645699.294572,
+    "ast_hash": "be2abb1ec52f971f7a4a731aa3e8f88f",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_hpc_python_env.md": {
+    "mtime": 1783645699.306877,
+    "ast_hash": "dc750f0a870546e29b607e285d071df8",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_lustre_io.md": {
+    "mtime": 1783645699.422905,
+    "ast_hash": "244230f22200b60d3aeb4c544b5df004",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_mpi4py_install.md": {
+    "mtime": 1783645699.435901,
+    "ast_hash": "da447fc0378dd6f1136efbd83aeed5ad",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_optimization_pipeline_traces.md": {
+    "mtime": 1783645699.443993,
+    "ast_hash": "437e98acb9586136b62297a595737789",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_pipeline_selflearning.md": {
+    "mtime": 1783664580.697478,
+    "ast_hash": "faac1b502b80aeca250c50657bd07a7c",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_privacy_anonymous.md": {
+    "mtime": 1783645699.449933,
+    "ast_hash": "db3ed619ed3cd56ecf84633f3cee3fb6",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_profiling_at_session_create.md": {
+    "mtime": 1783645699.452019,
+    "ast_hash": "f9323077e2dfd91d554d0b74aeef4f2a",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_torchrun_hpc_flags.md": {
+    "mtime": 1783645699.45487,
+    "ast_hash": "e4a96c07c181f86ade38a94282509eba",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_tuolumne_modules.md": {
+    "mtime": 1783645699.456942,
+    "ast_hash": "42201e53b606285c71d0c1c9b6d733b0",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_working_style.md": {
+    "mtime": 1783645699.459035,
+    "ast_hash": "33557bd59c8f91e3f559dab10fb0189c",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/project_claude_agent_models.md": {
+    "mtime": 1783645699.461894,
+    "ast_hash": "cbc810ed18b0d3d1dc87db3f0661f14b",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/project_flashx_optimization.md": {
+    "mtime": 1783645699.464872,
+    "ast_hash": "6a18651645943d373f4b1a23eb226887",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/project_h5bench_dftracer_pipeline.md": {
+    "mtime": 1783708723.041302,
+    "ast_hash": "f3679cc702b2bf2439202dc19736bf66",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/project_ior_optimization.md": {
+    "mtime": 1783645699.479919,
+    "ast_hash": "53d1792cd5fda0045e962ba2a4976ba0",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/project_package_restructure.md": {
+    "mtime": 1783645699.487018,
+    "ast_hash": "9fe21841f9100130d5c3358ad49ff5cb",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/project_scaffold_optimization.md": {
+    "mtime": 1783645699.499041,
+    "ast_hash": "ae24be8736dbb2f1bf88cd7d607edb01",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/project_skills_reorg.md": {
+    "mtime": 1783645699.503871,
+    "ast_hash": "d0ffaea0cc14412e5961e9dbbb2b29a1",
     "semantic_hash": ""
   }
 }

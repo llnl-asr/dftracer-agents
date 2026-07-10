@@ -1,0 +1,51 @@
+{
+  "run_id": "ior/20260710_172024",
+  "key": "STEP 6: dftracer-analyzer then dftracer-diagnoser",
+  "index": 14,
+  "agent": "dftracer-analyzer",
+  "notes": "HDF5 512-rank Lustre baseline, 773 trace files, ~3.9M events expected; testing cluster_n_workers=8 per user request, verifying against known race bug",
+  "status": "ok",
+  "tries": 2,
+  "retries": 1,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 1729.88,
+  "wall_s": 1729.88,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 761.986,
+      "error": "",
+      "start_ns": 1783714221105453372,
+      "end_ns": 1783714983091863823
+    },
+    {
+      "number": 2,
+      "status": "ok",
+      "duration_s": 967.894,
+      "error": "",
+      "start_ns": 1783714983091877863,
+      "end_ns": 1783715950985545769
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

@@ -1,0 +1,75 @@
+{
+  "run_id": "ior/20260710_172024",
+  "key": "STEP 5: dftracer-tracer",
+  "index": 4,
+  "agent": "dftracer-tracer",
+  "notes": "Root-cause HDF5 OOM (476 GB peak @ 768 ranks) and run safe calibration with 8-16 ranks/node",
+  "status": "superseded",
+  "tries": 5,
+  "retries": 4,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 1367.132,
+  "wall_s": 6241.642,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 571.783,
+      "error": "",
+      "start_ns": 1783706961594546604,
+      "end_ns": 1783707533377577230
+    },
+    {
+      "number": 2,
+      "status": "superseded",
+      "duration_s": 112.337,
+      "error": "",
+      "start_ns": 1783711265990883831,
+      "end_ns": 1783711378327517132
+    },
+    {
+      "number": 3,
+      "status": "ok",
+      "duration_s": 192.958,
+      "error": "",
+      "start_ns": 1783711744801193798,
+      "end_ns": 1783711937759373776
+    },
+    {
+      "number": 4,
+      "status": "superseded",
+      "duration_s": 276.604,
+      "error": "",
+      "start_ns": 1783712713182331077,
+      "end_ns": 1783712989786333669
+    },
+    {
+      "number": 5,
+      "status": "superseded",
+      "duration_s": 213.451,
+      "error": "",
+      "start_ns": 1783712989786344879,
+      "end_ns": 1783713203236994526
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

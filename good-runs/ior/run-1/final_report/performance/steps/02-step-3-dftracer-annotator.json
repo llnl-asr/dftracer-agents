@@ -1,0 +1,43 @@
+{
+  "run_id": "ior/20260710_172024",
+  "key": "STEP 3: dftracer-annotator",
+  "index": 2,
+  "agent": "dftracer-annotator",
+  "notes": "Annotate IOR C source (ior.c, aiori-POSIX.c, aiori-MPIIO.c, aiori-HDF5.c) in annotated/ tree",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 489.994,
+  "wall_s": 489.994,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 489.994,
+      "error": "",
+      "start_ns": 1783706073899568699,
+      "end_ns": 1783706563893670873
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

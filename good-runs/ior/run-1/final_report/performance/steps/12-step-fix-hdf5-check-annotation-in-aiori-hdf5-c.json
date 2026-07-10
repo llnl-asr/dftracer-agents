@@ -1,0 +1,43 @@
+{
+  "run_id": "ior/20260710_172024",
+  "key": "STEP: Fix HDF5_CHECK annotation in aiori-HDF5.c",
+  "index": 12,
+  "agent": "dftracer-fix-hdf5-check",
+  "notes": "Production OOM bug: 44 ENDs vs 12 STARTs; HDF5_CHECK wrongly treated as error-macro-with-hidden-return",
+  "status": "superseded",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 126.651,
+  "wall_s": 126.651,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 126.651,
+      "error": "",
+      "start_ns": 1783713966595498982,
+      "end_ns": 1783714093245999544
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

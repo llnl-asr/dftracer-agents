@@ -279,6 +279,32 @@ EOF
 mpirun -np 2 ./h5bench_write /tmp/h5bench.cfg /tmp/test.h5
 ```
 
+### `h5bench_read` needs a PRE-EXISTING file matching its config dims — it does not create one
+
+`h5bench_patterns/h5bench_read.c` (`main()`, `argv[2]` = "data file to read") opens
+`argv[2]` and expects a dataset already shaped per the config's `NUM_DIMS`/`DIM_1`/etc.
+Pointing it at a fresh/empty path does NOT fail loudly — it produces an HDF5
+error-storm (`H5Sget_simple_extent_dims`: "not a dataspace", `H5Dclose`: "not a
+dataset ID", `H5Gclose`: "not a group ID", ...) yet the process still **exits 0**
+and dftracer still writes a (bogus) trace. A baseline collection run can look
+"successful" (5/5 reps captured, non-empty trace) while every rep is silently
+measuring an error path, not real read I/O — always grep the run log for these
+signatures before trusting a `read` baseline.
+
+**Fix: always run a two-phase write-then-read pattern**, never point
+`h5bench_read` at a fresh/empty path:
+
+```bash
+# Phase 1 (untraced setup): create the file read.cfg expects, matching dims/pattern
+DFTRACER_ENABLE=0 ./h5bench_write write_for_read.cfg read.h5
+# Phase 2 (traced benchmark): now the file exists with the right shape
+DFTRACER_ENABLE=1 DFTRACER_LOG_FILE=... ./h5bench_read read.cfg read.h5
+```
+
+`write_for_read.cfg` should use `MEM_PATTERN=CONTIG`/`FILE_PATTERN=CONTIG` and the
+same `NUM_DIMS`/`DIM_1` as `read.cfg`. Only enable dftracer for phase 2 so the
+trace reflects the read benchmark, not the setup write.
+
 ---
 
 ## Dataset Sizing (memory threshold rule)
@@ -291,6 +317,32 @@ to/from the filesystem to avoid OS page-cache effects (see [[dftracer-annotation
 - Required total data: >502 GiB
 - `DIM_1=33554432` (32M float32) × 192 ranks × 4B × 4 timesteps = **768 GiB** ✓
 - `DIM_1=16777216` (16M float32) × 192 ranks × 4B × 4 timesteps = **384 GiB** ✗
+
+### Sample-config `DIM_1` values need real `du`-verified sanity math before trusting them — trace-log size is NOT a valid proxy
+
+A sample/prior-session config's `DIM_1` can be wrong by 10-16x for the rank count
+and node budget actually in use — do the bytes/rank × ranks arithmetic yourself
+before launching, and re-verify empirically:
+
+1. **Single-process test first**, then check the ACTUAL output file size with
+   `du -sh` on the real `.h5` file — not the reported "Total write size" line
+   alone, and never the dftracer trace-log size as a stand-in. The trace log
+   stays small (event metadata only, a few hundred MB) regardless of how large
+   the real dataset is — a ~200-300 MB trace can sit next to a 1.5+ TB `.h5`
+   output file. Trusting trace-log size as evidence of "the run was small" is
+   how a 16x-oversized config went undetected for a full baseline pass.
+2. **1-node test**, `du -sh` again, confirm linear scaling from the
+   single-process number.
+3. **8-node/768-rank test**, `du -sh` the real output file AND check the real
+   flux job elapsed wall time (`flux jobs -a`, the `TIME` column) at multiple
+   points while it runs — do not stop watching once the byte count looks close
+   to the target; keep polling until the job actually reaches `CD`/completed
+   state, since data volume can plateau (write phase done) while the job is
+   still running a slow finalize/verify phase for several more minutes.
+4. Only after all three stages confirm a sane size (target ~500-700 GB/run at
+   768 ranks to fit a 5-replicate floor inside a shared multi-workload Lustre
+   quota budget) and a real elapsed time in the intended window (10-15 min),
+   launch the full replicate set.
 
 ---
 
@@ -495,6 +547,98 @@ Format per entry:
   root_cause, do_not_use_when
 
 <!-- New failed-config entries are appended below by the optimization loop (Step 8d-iii-FAIL) -->
+
+- 2026-07-10 (RE-CONFIRMED — an earlier same-day entry mistakenly reversed this,
+  see below), h5bench, write, Lustre, Tuolumne, quota/runtime oversizing STILL
+  APPLIES: `write.cfg` (DIM_1=33554432, NUM_DIMS=2, DIM_2=2, TIMESTEPS=6,
+  unmodified h5bench sample value) at 768 ranks writes a REAL, non-sparse
+  `write.h5` of **~1.6-1.7TB per replicate** (confirmed via `du` on the actual
+  output file, not `ls` apparent size, not trace-log size) and takes 35-40+
+  minutes wall time — both far over a 10-15 min / budget-fit target. Two
+  reruns of this config on 2026-07-10 were killed mid-run after pushing
+  `/p/lustre5` from 79.3T to 86.5T in under 40 minutes. **DIM_1=33554432
+  genuinely needs shrinking (~/16 or more) — do not use as-is.**
+  root_cause of the confusion that produced the incorrect "corrected" entry
+  below: the dftracer TRACE log for this config is only ~227MB/rep (it's just
+  I/O call metadata — file/offset/size/duration per call — not the actual
+  data payload), which was wrongly read as "actual output is small." Always
+  check the real HDF5 output file size (`du -sh <output>.h5`, actual blocks,
+  not `ls -la` apparent/sparse size) to judge data volume — the trace log
+  size is NOT a proxy for it. do_not_use_when: never conclude a write-heavy
+  config is "fine" from trace-log size alone; check the app's own output file
+  on disk.
+- 2026-07-10, h5bench, exerciser, Lustre, Tuolumne, catastrophic oversizing,
+  `--numdims 2 --minels 67108864 67108864` (naive first CLI translation),
+  result: computed to ~36 PB/rank, root_cause: `h5bench_exerciser` does not
+  take a config file — every dimension needs an explicit `--minels`/`--maxcheck`
+  style flag and the real per-rank memory formula must be read directly from
+  `exerciser/h5bench_exerciser.c` before choosing values, do_not_use_when:
+  guessing exerciser flag values without reading the source formula first.
+
+## Known-good baseline configs (Tuolumne, 8 nodes x 96 ppn = 768 ranks, ~few-minute runs)
+
+**WARNING — trace-log size is NOT a proxy for real output data volume.** The
+"raw trace size" column below is the dftracer I/O-call log (~200 bytes/event
+metadata), not the actual bytes h5bench wrote to its output `.h5` file. Always
+verify with `du -sh <output>.h5` on the REAL output file (not `ls -la`
+apparent/sparse size) before calling a config "small." `write` below was
+wrongly judged safe from trace size alone on 2026-07-10 and turned out to
+write ~1.6TB/rep — see "Failed Configurations" above.
+
+| Workload | Config | Raw trace size/rep | Real output (.h5) size/rep | Notes |
+| --- | --- | --- | --- | --- |
+| write | `MEM_PATTERN=INTERLEAVED FILE_PATTERN=INTERLEAVED TIMESTEPS=6 COLLECTIVE_DATA=YES COLLECTIVE_METADATA=YES NUM_DIMS=2 DIM_1=33554432 DIM_2=2 DIM_3=1` | ~227MB | **~1.6-1.7TB (confirmed via `du`)** | STILL OVERSIZED — shrink DIM_1 before reuse, do not trust as "known-good" |
+| read | `MEM_PATTERN=CONTIG FILE_PATTERN=CONTIG READ_OPTION=STRIDED TIMESTEPS=4 COLLECTIVE_DATA=YES COLLECTIVE_METADATA=YES NUM_DIMS=1 DIM_1=33554432 DIM_2=1 DIM_3=1` | ~3MB | not re-verified — output dir already cleaned up before real size could be checked; event count (75k) is 3-4 orders of magnitude below write's, but treat as unconfirmed, not proven safe | |
+| append | `COLLECTIVE_DATA=YES COLLECTIVE_METADATA=YES READ_OPTION=FULL TIMESTEPS=4 NUM_DIMS=1 DIM_1=33554432 DIM_2=1 DIM_3=1` | ~1.2MB | not re-verified (same caveat as read) | |
+| overwrite | `COLLECTIVE_DATA=YES COLLECTIVE_METADATA=YES READ_OPTION=FULL TIMESTEPS=6 NUM_DIMS=1 DIM_1=33554432 DIM_2=1 DIM_3=1` | ~1.2MB | not re-verified (same caveat as read) | |
+| write_unlimited | `MEM_PATTERN=CONTIG FILE_PATTERN=CONTIG COMPRESS=YES COLLECTIVE_DATA=YES COLLECTIVE_METADATA=YES TIMESTEPS=6 NUM_DIMS=1 DIM_1=33554432 DIM_2=1 DIM_3=1` | ~6.4MB | not re-verified (same caveat as read) | |
+| hdf5_iotest | INI: `steps=24 arrays=5 rows=512 columns=512 process-rows=32 process-columns=24 scaling=weak dataset-rank=4 layout=contiguous mpi-io=collective` | n/a | ~395GB/rep, ~7-10min elapsed (measured via flux job accounting) | within the 10-15 min target despite large volume — high sustained bandwidth on this Lustre config |
+| exerciser | `h5bench_exerciser --numdims 2 --minels 5523 5523 --nsizes 1` | n/a | ~383GB/rep, ~20-21min elapsed (measured via flux job accounting) | over the 10-15 min target — shrink `--minels` further (try ~1500-2000 instead of 5523) for a stricter target next time |
+
+**Observation:** `write`'s trace event count (18.7M) is 250-660x every sibling workload's —
+consistent with it also being the only workload confirmed to write real multi-TB data
+volume (interleaved 2D collective writes generate far more small I/O calls per byte than
+the mostly-contiguous-1D siblings). The trace-event-count disparity was a signal worth
+noticing, not something to explain away.
+
+## Diagnosed bottleneck shape (2026-07-10, dfanalyzer+dfdiagnoser, severity-scored)
+
+`read`, `append`, `overwrite` baselines (768/768 processes, full severity diagnosis) are all
+**metadata-time bound**, not bandwidth-bound: `posix_metadata_time_*_frac_parent` ≈ 0.97-0.99,
+i.e. open()/metadata calls consume nearly all POSIX-layer time, not the actual data transfer.
+This is a DIFFERENT bottleneck shape than flash_x's write-bandwidth case (which the
+`cb_nodes`+`CRAY_CB_NODES_MULTIPLIER` MPI-IO collective-buffering combo addresses — see the
+transferable finding at the top of this file). **Do not default to that combo for these
+workloads** — it's wrong-shape (targets bandwidth; only ~2% of POSIX time here is data
+transfer) and L3 OST striping is also inert here (open()/stat() cost lives on the Lustre
+MDS, not the OSTs — confirmed via `lfs getstripe -d`, and `/p/lustre5`'s default Data-on-MDT
+PFL already covers small metadata-heavy files).
+
+**CORRECTION (2026-07-10, dftracer-optimizer, via source inspection — an earlier same-day
+entry here wrongly proposed this as the fix):** `H5Pset_coll_metadata_write` +
+`H5Pset_all_coll_metadata_ops` is **already the baseline for read/append/overwrite** —
+`h5bench_read.c` L400-401, `h5bench_append.c` L490-491, `h5bench_overwrite.c` L466-467 all
+call both UNCONDITIONALLY in `set_pl()`, not gated on the `COLLECTIVE_METADATA` config key.
+(Contrast: `h5bench_write.c` L927 and `h5bench_write_unlimited.c` DO gate on the config —
+collective metadata IS a real, config-controlled lever for those two.) Since these 3
+workloads remain metadata-bound *despite* collective metadata already being on, the real
+bottleneck is the POSIX `open()/close()/__lxstat` storm across 768 ranks on a shared file,
+which collective metadata ops don't address. **Do not propose this lever for
+read/append/overwrite again — verify via source (`grep set_pl` in the app's own .c file)
+whether a lever is actually config-gated before assuming it's tunable.**
+
+The one real, paper-backed, not-yet-tested lever for this shape: `H5Pset_meta_block_size`
+(raise from the ~2KB HDF5 default to several MB) + `H5Pset_file_space_strategy(PAGE)` +
+`H5Pset_page_buffer_size` (Li et al. 2025, arXiv:2506.15114; Howison et al. 2010) — requires
+a source rebuild, not just a config/env change, so it's a DIFFERENT category of fix than the
+other levers on this page.
+
+**Caveat CONFIRMED (2026-07-10, re-verified across all 5 reps, not just rep1):** every
+`write_unlimited` replicate shows the same ~162/768-process capture (~6.3MB raw traces,
+1536 files, uniformly across reps 1-5) — this is a SYSTEMIC issue with this workload's
+config, not a one-off rep1 fluke. **Do not optimize write_unlimited until this is root
+caused** (check whether `COMPRESS=YES` + the unlimited-dimension/chunking combination is
+suppressing most ranks' I/O, or whether it's a trace-capture gap specific to this binary).
 
 ### ❌ romio_no_indep_rw=enable — unrecognized hint on cray-mpich 9.0.1
 

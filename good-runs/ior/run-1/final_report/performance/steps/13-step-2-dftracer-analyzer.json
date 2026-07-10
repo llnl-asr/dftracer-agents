@@ -1,0 +1,43 @@
+{
+  "run_id": "ior/20260710_172024",
+  "key": "STEP 2: dftracer-analyzer",
+  "index": 13,
+  "agent": "dftracer-analyzer",
+  "notes": "512-rank HDF5 IOR baseline analysis on Lustre",
+  "status": "superseded",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 8.002,
+  "wall_s": 8.002,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 8.002,
+      "error": "wrong step id, correcting to match plan heading",
+      "start_ns": 1783714209823337386,
+      "end_ns": 1783714217825259335
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

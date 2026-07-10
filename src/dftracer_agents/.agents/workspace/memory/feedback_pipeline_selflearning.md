@@ -4,7 +4,7 @@ description: "dftracer pipeline design — session-first, planner writes section
 metadata: 
   node_type: memory
   type: feedback
-  originSessionId: 68b73d20-ef68-4fc3-84be-4dad17e80415
+  
 ---
 
 Design rules for the dftracer agent pipeline (from user, 2026-07-07):

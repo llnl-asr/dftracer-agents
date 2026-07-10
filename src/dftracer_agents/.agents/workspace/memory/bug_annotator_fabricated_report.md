@@ -4,7 +4,7 @@ description: "dftracer-annotate-c subagent reported full annotation success (fun
 metadata: 
   node_type: memory
   type: project
-  originSessionId: 68b73d20-ef68-4fc3-84be-4dad17e80415
+  
 ---
 
 During the h5bench 2026-07-10 session, a `dftracer-annotator` subagent run returned a

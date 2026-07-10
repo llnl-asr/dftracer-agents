@@ -21,7 +21,7 @@ Scopes and what they transfer to:
 | software | L2 | any workload **linking that software**, any system | [software.md](software.md) |
 | workload | L1 | that application, **any system** | [workload.md](workload.md) |
 
-Recorded: 3 system, 1 software, 9 workload entries.
+Recorded: 6 system, 4 software, 12 workload entries.
 
 ## A second, orthogonal axis: metric_scope
 
@@ -40,22 +40,6 @@ carry a paired `app_metric`/`app_before`/`app_after` — `opt_kb_record` rejects
 one without it. If the paired app metric regressed more than 2.0%, the verdict is force-set to `regression`
 regardless of how good the system-side number looks. A system optimization
 that costs the app is not a win — never apply/keep one where this guard fired.
-
-## Standing workflow rule: diagnosis + independent literature pass, always
-
-Optimization proposals must combine **two sources every iteration, not one**:
-
-1. **Diagnostic-driven** — bottlenecks the ranked diagnosis list surfaces.
-2. **Independent literature/KB search pass** — `opt_kb_lookup` plus `search_arxiv` /
-   `search_semantic_scholar` / `session_search_optimization_papers` / `rag_search` for
-   techniques matching the workload's I/O access pattern (contiguous/strided/variable-size/
-   metadata-heavy/etc), run unconditionally — NOT gated on the diagnosis explicitly flagging
-   a matching bottleneck.
-
-This is a standing default for every optimization pipeline invocation (see the
-`dftracer-optimizer` agent template), not something a plan has to request. Every
-literature-sourced technique that gets tried, pass or fail, is recorded via `opt_kb_record`
-with its citation, same as diagnostic-driven techniques.
 
 ## Rules
 

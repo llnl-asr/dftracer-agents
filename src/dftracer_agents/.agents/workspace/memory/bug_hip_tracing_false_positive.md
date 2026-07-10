@@ -4,7 +4,7 @@ description: session_detect enabled DFTRACER_ENABLE_HIP_TRACING for non-HIP apps
 metadata: 
   node_type: memory
   type: project
-  originSessionId: 68b73d20-ef68-4fc3-84be-4dad17e80415
+  
 ---
 
 `session_detect` (src/dftracer_agents/mcp_tools/tools/session/detection.py, `_detect_info`)

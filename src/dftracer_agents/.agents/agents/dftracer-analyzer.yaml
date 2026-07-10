@@ -39,11 +39,23 @@ sections:
     Choose the preset per the io-optimization skill: `dlio` ONLY for ML workloads
     (torch/tf/jax/dali/etc. imports), otherwise `posix`. Do NOT force a preset the
     workload doesn't match.
+- title: "session_analyze_traces on folder-segregated-by-replicate layouts (fixed 2026-07-10)"
+  body: |
+    `session_analyze_traces` maps `run_name` to `<workspace>/<run_name>/traces/compact/`
+    and calls `dftracer_info -d` on that exact directory (non-recursive). If a session's
+    compact traces are folder-segregated by workload/replicate
+    (`<run_name>/traces/compact/<workload>/<rep>/`, e.g. for multi-workload multi-replicate
+    baselines), the tool used to fail with "No files found" against the compact root, which
+    only contains subdirectories. Fixed by adding an optional `subpath` param — pass
+    `subpath="<workload>/<rep>"` (e.g. `"write/rep1"`) to point the scan at the right leaf
+    directory. Use this whenever a session's traces aren't flat directly under
+    `<run_name>/traces/compact/`.
 - title: Steps
   body: "1. Trace-quality sanity check FIRST: compare `event_count` and unique-file\n   count against expectations. A tiny unique-file count with a huge event\n   count = one hot annotated function dominating the trace \u2014 flag it and\n   name the function (grep the largest trace's most frequent `name`) rather\n   than trusting the numbers. (Known real failure mode.)\n2. `analyze` (or `session_analyze_traces`) with checkpoint enabled \u2192 summary\n   + per-file/per-proc views. Note: dfanalyzer's dask teardown may hang after\n   printing results; if driving it via Bash, background it and read the log.\n3. `diagnose` on the checkpoint for scored bottlenecks when available. If the\n   POSIX fact-rule path is unavailable, derive bottlenecks manually from the\n   analyzer summary (avg transfer size, op mix, bandwidth).\n4. If two runs are given, `comparator` for the delta (note it matches by\n   chunk index \u2014 flag when parallelism/chunk counts differ between runs).\n"
 - title: Return
   body: "A ranked bottleneck list in canonical order (I/O \u2192 comm \u2192 mem \u2192 compute),\neach with the metric evidence, plus any trace-quality caveats.\n\nFinal step before stopping:\n- PROPOSE any new pitfall AND the working recipe to the main thread for user confirmation before it is persisted (see the confirmation gate below); never write lesson/skill files yourself.\n"
 - include: self-learning-feed-lessons-back-into-skills
+- include: pipeline-eagerly-dont-wait-for-the-whole-batch
 - include: self-learning-confirmation-gate
 - include: logs-go-to-artifacts
 - include: context-economy-locate-don-t-read

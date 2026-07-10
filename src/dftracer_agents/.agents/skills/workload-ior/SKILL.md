@@ -238,6 +238,24 @@ Build `src/` only (`make -C src -j8 install`); `contrib/cbif.c` fails on
 
 ---
 
+### clang_annotate_project bulk pass needs a post-pass sanity scan
+
+On IOR 4.0.0 the bulk `clang_annotate_project` pass produced END-after-return
+dead code in 6/12 annotated files, and once spliced `DFTRACER_C_FUNCTION_END();`
+literally into the middle of a `WARNF(...)` format-string argument (breaking the
+macro call across two lines → real clang syntax errors). Always grep-scan every
+annotated file for `return ...;\n *END();` ordering and manually inspect any
+file containing macro-wrapped `WARNF`/`ERRF`/`INFOF` calls near a `return`
+before trusting the bulk tool's output.
+
+`utilities.c` failed `clang_extract_functions` (returned 0 functions), so the
+bulk pass silently skipped 100% of its functions (only added the `#include`).
+Files like this need manual annotation via `clang_insert_line` for their real
+I/O functions (e.g. `SetHints`, `ReadStoneWallingIterations`,
+`StoreStoneWallingIterations`, `aligned_buffer_alloc/free`, `GetNumTasks*`).
+
+---
+
 ## Storage on Tuolumne is Lustre (/p/lustre5), NOT always VAST
 
 The VAST ROMIO rules below assume VAST NVMe. When the run dir is on
@@ -259,6 +277,23 @@ MPI interception (MPI_Reduce/Barrier/Bcast) + POSIX interception (lseek/write/re
   dir). Use `cluster_type=local cluster_n_workers=1` for a reliable FULL read (64
   procs / 8 nodes / 1.75M events / 71,275 POSIX ops in ~9s). Wipe stale `.dftindex`
   + `checkpoint/` before re-analyzing. Do NOT pass `cluster_cores` (invalid key).
+  **Re-confirmed 2026-07-10** at larger scale (779-file, 512-rank HDF5/Lustre baseline):
+  `cluster_n_workers=8` raced on TWO separate attempts (fresh `.dftindex` wipe
+  between them) and produced two different, both-wrong under-counts (2.96M and
+  8.69M ops vs the true 40.7M from `cluster_n_workers=1`). The race is not
+  file-count- or backend-specific — reproduces on both small-file POSIX and
+  HDF5/MPI-IO runs. Default to `cluster_n_workers=1` for any IOR trace set until
+  the dfanalyzer index build is made worker-safe (e.g. per-worker temp index
+  merged at the end, or a lock around `.dftindex` creation).
+- `mcp__dftracer__analyze` non-checkpoint mode (`checkpoint=False`/default) vs
+  checkpoint mode: on the same 779-file trace set, non-checkpoint reported
+  EXACTLY 2x the checkpoint-mode event/byte counts (896.5M vs 448.2M trace
+  events) with identical bandwidth/avg-transfer/job-time — looks like a
+  double-read or double-count bug in the non-checkpoint ingestion path.
+  Checkpoint-mode's file/process counts matched ground truth (779 files/514
+  procs vs the tracer's 773/512), so treat checkpoint mode as authoritative
+  until this is fixed. Worth a targeted code fix in `dfanalyzer_service.py`
+  (or wherever the two ingestion paths diverge), not just a skill note.
 - `mcp__dftracer__diagnose` currently errors `'Diagnoser' object has no
   attribute 'diagnose_checkpoint'` — API drift vs installed dfdiagnoser. Read
   the `checkpoint/_flat_view_*.parquet` + `_raw_stats_*.json` directly instead.
@@ -362,6 +397,51 @@ Format per entry:
   root_cause, do_not_use_when
 
 <!-- New failed-config entries are appended below by the optimization loop (Step 8d-iii-FAIL) -->
+
+---
+date: 2026-07-10
+app: https://github.com/llnl/ior (tag 4.0.0)
+workload: IOR HDF5 independent write/read, file-per-process (-F), real request size -t 4k
+filesystem: lustre (/p/lustre5)
+system: Tuolumne (AMD MI300A, cray-mpich/9.0.1), 512 ranks / 8 nodes
+bottleneck: small transfer size (4KB) — 40.7M POSIX ops in the baseline trace
+config_attempted: |
+  (a) MPI-IO data sieving: MPICH_MPIIO_HINTS="*:romio_ds_write=enable:romio_ds_read=enable"
+  (b) ROMIO collective/two-phase buffering: romio_cb_write=enable:romio_cb_read=enable + CRAY_CB_NODES_MULTIPLIER=2
+  (c) lfs setstripe -c 4 -S 4m on the output dir (kept at the workload's real -t 4k)
+  All held the app's real -t 4k transfer size fixed; only the underlying serving mechanism was tuned.
+result: ALL NEUTRAL-TO-NEGATIVE (no valid technique beat the plain -t 4k baseline)
+metrics_before: write 21737 MiB/s (CV 2.1%), read 12548 MiB/s (CV 2.4%), 5 replicates
+metrics_after: |
+  (a) data sieving: write 21385 (-1.6%), read 12341 (-1.6%)
+  (b) collective buffering: write 21416 (-1.5%), read 11739 (-6.4%)
+  (c) striping c4/S4m: write 21805 (+0.3%), read 12495 (-0.4%)
+delta: within run-to-run noise for (a)/(c); small real read regression for (b)
+root_cause: |
+  IOR with -F (file-per-process) writes 4KB transfers CONTIGUOUSLY within each
+  rank's own file, opened effectively on MPI_COMM_SELF (one rank, one
+  aggregator). Data sieving has no non-contiguous gaps to coalesce here, and
+  collective/two-phase buffering has no cross-rank aggregation opportunity
+  (each file has exactly one writer). Independently, the Lustre client already
+  coalesces the 4KB writes into large RPCs via its page cache before they ever
+  reach the OSTs, so write bandwidth is already near-peak and OST-layout
+  insensitive at this transfer size — none of the classic small-I/O-coalescing
+  levers have anything left to do. See FBench (arXiv 2606.30197): collective
+  I/O on Lustre can be up to 30x SLOWER than independent I/O for this exact
+  contiguous file-per-process shape.
+do_not_use_when: |
+  IOR (or similar) is running file-per-process (-F) with a CONTIGUOUS per-rank
+  access pattern on Lustre — data sieving, collective/two-phase buffering, and
+  forced striping are all ineffective levers for this shape regardless of the
+  raw transfer size being small. These techniques only pay off for shared-file,
+  non-contiguous, or genuinely small-and-scattered access patterns.
+
+CORRECTION to the 2026-06-24-adjacent striping finding below this entry: a
+separate -19% write regression from `lfs setstripe -c4 -S4m` was measured
+ONLY at an artificially inflated `-t 4m` transfer size (a pattern-swap
+characterization run, not a valid optimization — see dftracer-optimizer
+standing rule). Re-verified at the workload's real `-t 4k`: striping is
+NEUTRAL (+0.3% write), not regressed. The -19% figure does not apply at 4k.
 
 ---
 date: 2026-06-24

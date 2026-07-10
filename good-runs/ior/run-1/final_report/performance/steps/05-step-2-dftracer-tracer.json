@@ -1,0 +1,43 @@
+{
+  "run_id": "ior/20260710_172024",
+  "key": "STEP 2: dftracer-tracer",
+  "index": 5,
+  "agent": "dftracer-tracer",
+  "notes": "IOR baseline 8-node full-scale HDF5 run on Tuolumne; calibrate bandwidth then scale to 10-min runtime",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 421.572,
+  "wall_s": 421.572,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 421.572,
+      "error": "",
+      "start_ns": 1783707533377609890,
+      "end_ns": 1783707954949623388
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

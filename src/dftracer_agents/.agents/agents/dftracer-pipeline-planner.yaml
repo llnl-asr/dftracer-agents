@@ -42,6 +42,7 @@ sections:
     - `skill_load(name="dftracer-project-router")` for the routing policy.
     - `skill_load(name="dftracer-planning")` for progress/reporting rules.
     - `system_detect()` to record the target system (modules, MPI launcher, sudo).
+- include: ask-which-workloads-configs-to-focus-on
 - title: Produce a plan with these stages, each mapped to ONE executor subagent
   body: |
     | # | Stage | Executor subagent | Model | Notes to include in the plan |
@@ -88,6 +89,7 @@ sections:
 
     Final step before stopping:
     - PROPOSE any new pitfall AND the working recipe to the main thread for user confirmation before it is persisted (see the confirmation gate below); never write lesson/skill files yourself.
+- include: pipeline-eagerly-dont-wait-for-the-whole-batch
 - include: self-learning-confirmation-gate
 - include: logs-go-to-artifacts
 - include: context-economy-locate-don-t-read

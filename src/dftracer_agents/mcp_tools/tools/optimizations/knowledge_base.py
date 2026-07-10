@@ -598,16 +598,23 @@ def register_optimization_kb_tools(mcp: FastMCP) -> None:
                                      if p["citation_type"] in _CITATION_RANK else 9,
                                      str(p.get("level", ""))))
 
-        md = ["| # | Level | Bottleneck | Proposed change | Expected gain | Evidence | Type | Prior result here |\n",
-              "| --- | --- | --- | --- | --- | --- | --- | --- |\n"]
+        md = ["| # | Level | Bottleneck | Proposed change | Expected gain | Evidence | Type | Prior result here | Status | Why (if not applied) |\n",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"]
         for i, p in enumerate(accepted, 1):
             md.append(
                 f"| {i} | {p.get('level','')} | {p.get('bottleneck','')} "
                 f"| {p.get('change','')} | {p.get('expected_delta','')} "
-                f"| {p.get('citation','')} | {p['citation_type']} | {p['prior']} |\n"
+                f"| {p.get('citation','')} | {p['citation_type']} | {p['prior']} "
+                f"| {p.get('status','proposed')} | {p.get('skip_reason','')} |\n"
             )
         note = ("\nApply **one row at a time**, measure, then `opt_kb_record` the result "
-                "before moving to the next — otherwise the attribution is worthless.\n")
+                "before moving to the next — otherwise the attribution is worthless.\n"
+                "Every considered candidate belongs in this table, applied or not: set "
+                "`status` to `applied`/`not-applied`/`deferred` and fill `skip_reason` for "
+                "anything not applied (e.g. doesn't match the diagnosed bottleneck, no time/"
+                "budget this pass, superseded by a stronger same-layer candidate, KB already "
+                "shows it's a no-op here). Never omit a candidate from the table just because "
+                "you decided not to run it.\n")
         return _ok(f"{len(accepted)} accepted, {len(rejected)} rejected (uncited)",
                    markdown="".join(md) + note,
                    accepted=accepted, rejected=rejected)

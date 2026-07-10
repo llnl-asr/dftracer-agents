@@ -1,0 +1,43 @@
+{
+  "run_id": "ior/20260710_172024",
+  "key": "STEP: dftracer-validate-c fix aiori-HDF5.c END/START imbalance",
+  "index": 11,
+  "agent": "dftracer-validate-c",
+  "notes": "Fix 44 END vs 12 START mismatch in ior/20260710_172024 aiori-HDF5.c",
+  "status": "superseded",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 763.358,
+  "wall_s": 763.358,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 763.358,
+      "error": "",
+      "start_ns": 1783713203237045646,
+      "end_ns": 1783713966595466211
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}
