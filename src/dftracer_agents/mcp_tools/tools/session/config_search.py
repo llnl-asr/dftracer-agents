@@ -23,8 +23,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-# Re-use the low-level helpers from the papers service
-from ..papers.academic_service import _arxiv_search, _SSL_VERIFY
+# Re-use the low-level, rate-limited helpers from the papers service
+from ..papers.academic_service import _arxiv_search, _s2_search, _openalex_search, _SSL_VERIFY
 
 # ---------------------------------------------------------------------------
 # Sync wrappers around async paper search
@@ -54,56 +54,34 @@ def _search_papers_combined_sync(
     query: str,
     max_results_each: int = 3,
 ) -> Dict[str, Any]:
-    """Search both arXiv and Semantic Scholar synchronously.
+    """Search arXiv, Semantic Scholar, and OpenAlex synchronously.
 
-    Returns a dict with keys ``arxiv``, ``semantic_scholar``, ``combined_count``.
+    Uses the same rate-limited low-level helpers as the academic papers MCP
+    service, so this call respects Semantic Scholar's request budget even
+    though it is invoked from sync session tools. OpenAlex has no meaningful
+    rate limit and fills in when Semantic Scholar is throttled or down.
+
+    Returns a dict with keys ``arxiv``, ``semantic_scholar``, ``openalex``,
+    ``combined_count``.
     """
-    from ..papers.academic_service import _arxiv_search
+    async def _gather():
+        return await asyncio.gather(
+            _arxiv_search(query, max_results=max_results_each),
+            _s2_search(query, max_results=max_results_each),
+            _openalex_search(query, max_results=max_results_each),
+            return_exceptions=True,
+        )
 
-    arxiv_papers = _search_arxiv_sync(query, max_results=max_results_each)
-    # Semantic Scholar does not have a module-level async helper exposed,
-    # so we fall back to a simple httpx call here.
-    import httpx
-    S2_BASE = "https://api.semanticscholar.org/graph/v1"
-    S2_PAPER_FIELDS = (
-        "title,authors,year,abstract,citationCount,referenceCount,"
-        "url,externalIds,publicationDate,journal,openAccessPdf"
-    )
-    s2_papers: List[Dict[str, Any]] = []
-    try:
-        with httpx.Client(timeout=30, verify=_SSL_VERIFY) as client:
-            resp = client.get(
-                f"{S2_BASE}/paper/search",
-                params={
-                    "query": query,
-                    "limit": max_results_each,
-                    "fields": S2_PAPER_FIELDS,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            for p in data.get("data", []):
-                pdf_url = None
-                oa = p.get("openAccessPdf")
-                if oa:
-                    pdf_url = oa.get("url")
-                s2_papers.append({
-                    "title": p.get("title", ""),
-                    "authors": [a.get("name", "") for a in p.get("authors", [])],
-                    "year": p.get("year"),
-                    "abstract": p.get("abstract", ""),
-                    "citationCount": p.get("citationCount"),
-                    "url": p.get("url", ""),
-                    "pdf_url": pdf_url,
-                    "source": "Semantic Scholar",
-                })
-    except Exception:
-        pass  # S2 is best-effort
+    arxiv_papers, s2_papers, openalex_papers = _run_async(_gather())
+    arxiv_papers = arxiv_papers if isinstance(arxiv_papers, list) else []
+    s2_papers = s2_papers if isinstance(s2_papers, list) else []  # S2 is best-effort
+    openalex_papers = openalex_papers if isinstance(openalex_papers, list) else []
 
     return {
         "arxiv": arxiv_papers,
         "semantic_scholar": s2_papers,
-        "combined_count": len(arxiv_papers) + len(s2_papers),
+        "openalex": openalex_papers,
+        "combined_count": len(arxiv_papers) + len(s2_papers) + len(openalex_papers),
     }
 
 
@@ -333,7 +311,7 @@ def search_papers_for_config(
     # ------------------------------------------------------------------
     for q in queries:
         result = _search_papers_combined_sync(q, max_results_each=max_results_each)
-        for src in ("arxiv", "semantic_scholar"):
+        for src in ("arxiv", "semantic_scholar", "openalex"):
             for paper in result.get(src, []):
                 all_papers.append(paper)
                 # Extract parameters from title + abstract

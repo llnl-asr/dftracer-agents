@@ -127,8 +127,9 @@ _LESSONS_ANCHOR = "<!-- New entries are appended below this line by the pipeline
 
 #: Canonical directory containing local research papers relevant to ML/DL
 #: I/O optimization. Path is resolved relative to the project root (one level
-#: above the workspaces root) at call time.
-_LOCAL_PAPERS_SUBDIR = "resources/papers"
+#: above the workspaces root) at call time. Same hidden cache directory
+#: ``local_library_service.py``'s ``save_paper``/``rag_search`` use.
+_LOCAL_PAPERS_SUBDIR = ".dftracer_agents/resources/papers"
 
 #: Metadata for the local research papers — title, filename, key concepts,
 #: and which bottleneck categories they address.  Used by

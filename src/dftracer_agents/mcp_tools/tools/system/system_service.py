@@ -1,8 +1,9 @@
 """System detection and configuration MCP tools.
 
 Detects the current HPC/container system from the hostname (stripping trailing
-digits), looks it up in ``resources/systems.yaml``, and returns the module
-load sequence, environment variables, and MPI launcher for that system.
+digits), looks it up in ``.dftracer_agents/resources/systems.yaml``, and
+returns the module load sequence, environment variables, and MPI launcher for
+that system.
 
 Tools
 -----
@@ -27,7 +28,7 @@ from ...mcp_service_factory import MCPService, MCPServiceFactory
 # __file__ = <root>/src/dftracer_agents/mcp_tools/tools/system/system_service.py
 # parents[0]=system/ [1]=tools/ [2]=mcp_tools/ [3]=dftracer_agents/ [4]=src/ [5]=repo root
 _REPO_ROOT = Path(__file__).resolve().parents[5]
-_SYSTEMS_YAML = _REPO_ROOT / "resources" / "systems.yaml"
+_SYSTEMS_YAML = _REPO_ROOT / ".dftracer_agents" / "resources" / "systems.yaml"
 
 
 def _load_yaml_simple(path: Path) -> Dict[str, Any]:
@@ -181,7 +182,7 @@ def _base_hostname(hostname: Optional[str] = None) -> str:
 def get_current_system_env(hostname: Optional[str] = None) -> Dict[str, str]:
     """Return the env dict for the current system, with ${VAR} expanded.
 
-    Looks up ``resources/systems.yaml`` for the detected base hostname and
+    Looks up ``.dftracer_agents/resources/systems.yaml`` for the detected base hostname and
     resolves any ``${VAR}`` references against the current process
     environment (e.g. ``LD_LIBRARY_PATH: "/opt/x:${LD_LIBRARY_PATH}"``).
     Returns an empty dict if the system is unknown or has no ``env`` section.
@@ -239,7 +240,7 @@ def register_system_tools(mcp: FastMCP) -> None:
 
         Strips trailing digits from the hostname (e.g. tuolumne1003 →
         tuolumne) to find the system base name, then looks it up in
-        resources/systems.yaml. Returns the module load order, environment
+        .dftracer_agents/resources/systems.yaml. Returns the module load order, environment
         variables, MPI launcher, and any system-specific notes.
 
         If the system is not recognised, returns an 'unknown' message with
@@ -293,7 +294,7 @@ def register_system_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def system_list() -> str:
-        """List all known systems in resources/systems.yaml.
+        """List all known systems in .dftracer_agents/resources/systems.yaml.
 
         Returns:
             str: Markdown table of known systems with their descriptions and
@@ -302,7 +303,7 @@ def register_system_tools(mcp: FastMCP) -> None:
         data = _load_yaml_simple(_SYSTEMS_YAML)
         systems = data.get("systems", {})
         if not systems:
-            return "No systems configured in resources/systems.yaml."
+            return "No systems configured in .dftracer_agents/resources/systems.yaml."
         lines = [
             f"Known systems in `{_SYSTEMS_YAML.relative_to(_REPO_ROOT)}`:\n",
             "| Name | Description | sudo | MPI launcher |",
@@ -325,7 +326,7 @@ def register_system_tools(mcp: FastMCP) -> None:
         mpi_launcher: str = "mpirun",
         notes: str = "",
     ) -> str:
-        """Save or update a system's configuration in resources/systems.yaml.
+        """Save or update a system's configuration in .dftracer_agents/resources/systems.yaml.
 
         Call this to register a new system or update an existing one. The
         config is persisted across sessions so future `system_detect` calls

@@ -28,7 +28,31 @@ Core services
   Trace diagnosis tools that map symptoms to likely bottlenecks.
 
 ``AcademicPapers``
-  Paper search and retrieval helpers used by the optimization workflow.
+  Paper/article search and retrieval helpers used by the optimization
+  workflow, plus a local paper library. Searches seven sources — arXiv,
+  Semantic Scholar, OpenAlex, Crossref, CORE, DBLP, and general web search
+  (DuckDuckGo) — each independently client-side rate-limited so one source's
+  budget (notably Semantic Scholar's 1 request/second introductory tier)
+  never blocks the others. See :ref:`configuring-api-keys` for how to set
+  ``SEMANTIC_SCHOLAR_API_KEY``, ``CORE_API_KEY``, and ``OPENALEX_MAILTO`` —
+  all optional, every source falls back to anonymous access.
+
+  Search tools: ``search_arxiv``, ``search_semantic_scholar``,
+  ``search_openalex``, ``search_crossref``, ``search_core``, ``search_dblp``,
+  ``search_web``, ``search_papers_combined`` (fans out to every configured
+  source in parallel).
+
+  Fetch/rank tools: ``get_arxiv_paper``, ``get_semantic_scholar_paper``,
+  ``get_openalex_paper``, ``get_author_papers``, ``fetch_webpage_article``,
+  ``rank_papers_by_relevance``.
+
+  Local library tools — persist findings to ``resources/`` at the project
+  root (outside ``src/``, so never shipped in the pip package, and
+  git-ignored): ``save_paper`` (download a PDF, extract full text with
+  ``pypdf``), ``save_article`` (save a fetched web page as markdown),
+  ``search_local_resources`` (fuzzy search — title similarity + query-token
+  coverage — across every stored paper/article's full text), and
+  ``list_local_resources``.
 
 ``DFTracerSystem``
   System detection and system catalog helpers.

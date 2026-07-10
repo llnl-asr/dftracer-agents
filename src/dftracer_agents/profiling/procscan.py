@@ -7,12 +7,21 @@ that all look the same from the outside — a wedged port, a `start` that refuse
 * **orphan** — a supervisor (``dftracer-mcp-server --reload``) was killed, but the
   child that actually binds the port survived, reparented to init.
 * **untracked daemon** — someone ran ``dftracer-profile-collector`` by hand, or a
-  previous launcher wrote its pid files into a different ``DFTRACER_WORKSPACES``.
+  previous launcher wrote its pid files into a different ``DFTRACER_WORKSPACES``
+  (e.g. a different checkout, or an earlier run with different ports) — still
+  ours to clean, just not the run this invocation started.
 
 Only ``/proc`` knows the truth, so this module reads it and reconciles it against
 ``workspaces/_stack/*.pid``. It is deliberately conservative: a process is a
 candidate for cleanup only when its command line identifies it as one of *our*
-daemons **and** it belongs to the current user. Nothing else is ever a target.
+daemons **and** it belongs to the current user (``os.getuid()``) — never a
+process owned by anyone else, however it is invoked or however the ports were
+configured. Within that same-user boundary, ``clean --untracked`` reaps every
+one of the user's own leftover dftracer-agents daemons it finds, regardless of
+which checkout or which ports started them — a stack does not need to know
+about a sibling checkout's exact workspaces path or port numbers to recognize
+its processes as fair game, only that they belong to the same user and match
+this launcher's process fingerprint (see ``_classify_cmd``).
 
 Used by ``dftracer_agents_stack status`` and ``dftracer_agents_stack clean``.
 """
@@ -39,6 +48,15 @@ _MARKERS: Dict[str, tuple] = {
 #: Never a daemon, always a false positive: the launcher itself, this scanner,
 #: and any shell that merely mentions a daemon's name on its command line.
 _NEVER = ("dftracer_agents_stack", "profiling.procscan", "procscan.py")
+
+#: The launcher always points mlflow at ``<workspaces>/_mlflow/mlflow.db`` (see
+#: MLFLOW_DIR/MLFLOW_DB in dftracer_agents_stack) — a structural fingerprint
+#: that identifies "a dftracer-agents mlflow, from *some* checkout" without
+#: needing to know which one. "mlflow.server"/"mlflow server" markers are
+#: unambiguous on their own; the bare "gunicorn" marker is not (any Python web
+#: app can be gunicorn-served), so it additionally requires this fingerprint to
+#: avoid misclassifying an unrelated gunicorn process as our mlflow.
+_MLFLOW_STORE_FINGERPRINT = "_mlflow/mlflow.db"
 
 _PORT_RE = re.compile(r"--port[= ](\d+)")
 
@@ -79,18 +97,35 @@ def _classify_cmd(cmd: str) -> Optional[str]:
     if not cmd or any(n in cmd for n in _NEVER):
         return None
     for svc, markers in _MARKERS.items():
-        if any(m in cmd for m in markers):
+        for m in markers:
+            if m not in cmd:
+                continue
+            # "gunicorn" alone is ambiguous — any Python web app can be
+            # gunicorn-served — so require the mlflow store fingerprint too.
+            # The unambiguous markers ("mlflow.server"/"mlflow server") don't
+            # need it, which also covers the plain (non-gunicorn) dev server.
+            if svc == "mlflow" and m == "gunicorn" and _MLFLOW_STORE_FINGERPRINT not in cmd:
+                continue
             return svc
     return None
 
 
 def scan(workspaces: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Every live process of ours that looks like a stack daemon.
+    """Every live process of ours that looks like a stack daemon — any checkout.
+
+    Deliberately NOT scoped to a single ``DFTRACER_WORKSPACES``: a user who ran
+    the stack from two different checkouts (or the same checkout with two
+    different port configurations over time) has two independent sets of
+    daemons, and both are equally "ours to clean" — same user, same launcher
+    fingerprint, just a different run. Cross-user isolation is what matters and
+    is enforced unconditionally below via ``_owner(pid) != uid``; cross-checkout
+    processes are surfaced (as ``untracked``, see ``reconcile``) rather than
+    hidden, so ``clean --untracked`` can reap them too.
 
     Args:
-        workspaces: When given, an ``mlflow`` process only counts as ours if its
-            command line references this workspaces root. A site-wide MLflow
-            server sharing the node must never be classified as our orphan.
+        workspaces: Unused for filtering (kept for CLI/caller compatibility);
+            mlflow processes are now recognized structurally instead (see
+            ``_MLFLOW_STORE_FINGERPRINT``), which works across checkouts.
 
     Returns:
         Dicts with ``pid``, ``pgid``, ``ppid``, ``service``, ``port`` and ``cmd``.
@@ -106,9 +141,6 @@ def scan(workspaces: Optional[str] = None) -> List[Dict[str, Any]]:
         cmd = _cmdline(pid)
         svc = _classify_cmd(cmd)
         if svc is None:
-            continue
-        # gunicorn is how mlflow serves; only ours if it points at our store.
-        if svc == "mlflow" and workspaces and workspaces not in cmd:
             continue
         st = _stat_fields(pid) or {"ppid": 0, "pgid": 0}
         m = _PORT_RE.search(cmd)
@@ -134,7 +166,9 @@ def reconcile(run_dir: Path, workspaces: Optional[str] = None,
 
     Args:
         run_dir: The launcher's pid/sig directory.
-        workspaces: Scopes ``mlflow`` matching to our own tracking store.
+        workspaces: Unused for filtering; kept for CLI/caller compatibility
+            (see ``scan``). mlflow is now recognized structurally, so it is
+            found across checkouts too.
         ports: The configured port per service. A daemon of one of our services
             listening on the port we would use for it is **ours**, whatever the
             pid files say — a corrupted or deleted pid file must not turn our own
@@ -150,9 +184,12 @@ def reconcile(run_dir: Path, workspaces: Optional[str] = None,
             tracked-but-dead pid (a supervisor's surviving child), or sitting on
             the port we have configured for that service.
         ``untracked``
-            Everything else — a hand-started daemon, an MCP client's own stdio
-            server, a colleague's process. Reported, never killed without an
-            explicit ``clean --untracked``.
+            Everything else this user owns that still looks like one of our
+            daemons — a hand-started daemon, an MCP client's own stdio server,
+            or a leftover from a different checkout/port config of this same
+            stack. Never a process owned by another user (``scan`` excludes
+            those unconditionally). Reported, never killed without an explicit
+            ``clean --untracked``.
     """
     procs = scan(workspaces)
     ports = ports or {}

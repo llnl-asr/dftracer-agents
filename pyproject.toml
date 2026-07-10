@@ -24,6 +24,9 @@ dependencies = [
     # https://github.com/safishamsi/graphify
     "graphifyy>=0.9.11",
     "mlflow>=2.9",
+    # PDF text extraction for the local paper library (resources/papers/) so
+    # search_local_resources can fuzzy-search full paper bodies, not just titles.
+    "pypdf>=4.0",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +34,13 @@ dev = [
     "pytest>=7.0.0",
     "black>=24.0.0",
     "flake8>=7.0.0",
+]
+# Semantic (embedding-based) retrieval over the local paper library
+# (rag_search / rag_service.py). Pulls in torch via sentence-transformers, so
+# it's optional rather than a hard dependency — rag_search degrades to
+# lexical-only scoring when this isn't installed.
+embeddings = [
+    "sentence-transformers>=2.2",
 ]
 # Pipeline profiling: MLflow tracking + UI for per-step AI cost, tokens, timing
 # and retries. The OTLP collector itself is stdlib-only, so a session's
@@ -45,6 +55,7 @@ dftracer-install-skills = "dftracer_agents.skills:main"
 dftracer-install-agents = "dftracer_agents.agents:main"
 dftracer-bootstrap-workspace = "dftracer_agents.bootstrap:main"
 dftracer-configure-harness = "dftracer_agents.harness_models:main"
+dftracer-configure-env  = "dftracer_agents.env_setup:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

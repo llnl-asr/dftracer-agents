@@ -47,6 +47,21 @@ _SCOPES = ("workload", "software", "system")
 _LEVEL_TO_SCOPE = {"L1": "workload", "L2": "software", "L3": "system"}
 _SCOPE_TO_LEVEL = {v: k for k, v in _LEVEL_TO_SCOPE.items()}
 
+#: A second, orthogonal axis to `scope` (layer: workload/software/system —
+#: "who inherits this finding"). `metric_scope` answers a different question:
+#: "which metric moved" — the app's own trace (epoch/I-O time, app-observed
+#: bandwidth) vs a system-level outcome (aggregate achieved filesystem
+#: bandwidth, reduced filesystem load — currently computed as a trace-derived
+#: proxy; see dftracer-io-optimization SKILL.md for the caveat). A `system`
+#: metric_scope entry is only worth keeping if it did not come at the app's
+#: expense — enforced by the paired app_metric requirement on opt_kb_record.
+_METRIC_SCOPES = ("app", "system")
+
+#: A system metric is allowed to improve at the app's expense only within this
+#: tolerance (percent). Anything worse forces verdict="regression" regardless
+#: of how good the system-side number looks — the non-degradation guard.
+_APP_REGRESSION_TOLERANCE_PCT = 2.0
+
 #: Citation quality, best first. Proposals and entries are ranked by this.
 _CITATION_RANK = ("paper", "docs", "web", "session")
 
@@ -157,11 +172,13 @@ def _relevance(entry: Dict[str, Any], system: str, workload: str,
 
 
 def _lookup(system: str, workload: str, software: str, scope: str,
-            bottleneck: str, limit: int) -> List[Dict[str, Any]]:
+            bottleneck: str, limit: int, metric_scope: str = "") -> List[Dict[str, Any]]:
     rows = _load_kb()
     if scope:
         scope = _LEVEL_TO_SCOPE.get(scope.upper(), scope.lower())
         rows = [r for r in rows if r.get("scope") == scope]
+    if metric_scope:
+        rows = [r for r in rows if r.get("metric_scope", "app") == metric_scope]
     if bottleneck:
         pat = re.compile(re.escape(bottleneck), re.I)
         rows = [r for r in rows
@@ -207,19 +224,22 @@ def _find_prior(change: str, level: str, system: str, workload: str,
 def _render_rows(rows: List[Dict[str, Any]]) -> str:
     if not rows:
         return "_no prior experiments recorded for this scope_\n"
-    head = ("| Scope | System | Workload | Software | Change | Metric | Before | After "
-            "| Gain | Verdict | Citation |\n"
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
+    head = ("| Scope | Metric Scope | System | Workload | Software | Change | Metric | Before | After "
+            "| Gain | Verdict | App Metric | App Gain | Citation |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
     out = [head]
     for r in rows:
         gain = r.get("delta_pct")
         gain = f"{gain:+.1f}%" if isinstance(gain, (int, float)) else "n/a"
+        app_gain = r.get("app_delta_pct")
+        app_gain = f"{app_gain:+.1f}%" if isinstance(app_gain, (int, float)) else "-"
         out.append(
-            f"| {r.get('scope','')} | {r.get('system','') or '-'} "
+            f"| {r.get('scope','')} | {r.get('metric_scope','app')} | {r.get('system','') or '-'} "
             f"| {r.get('workload','') or '-'} | {r.get('software','') or '-'} "
             f"| {r.get('change','')} | {r.get('metric','')} "
             f"| {r.get('before','')} | {r.get('after','')} | {gain} "
-            f"| {r.get('verdict','')} | {r.get('citation','')} |\n"
+            f"| {r.get('verdict','')} | {r.get('app_metric','') or '-'} | {app_gain} "
+            f"| {r.get('citation','')} |\n"
         )
     return "".join(out)
 
@@ -276,6 +296,21 @@ def _render_to_skill() -> Dict[str, int]:
         "| workload | L1 | that application, **any system** | [workload.md](workload.md) |\n\n"
         f"Recorded: {counts.get('system',0)} system, {counts.get('software',0)} software, "
         f"{counts.get('workload',0)} workload entries.\n\n"
+        "## A second, orthogonal axis: metric_scope\n\n"
+        "`scope` (above) answers *who inherits* a finding. `metric_scope` answers a\n"
+        "different question — *which metric moved*:\n\n"
+        "| metric_scope | What it measures |\n"
+        "| --- | --- |\n"
+        "| `app` (default) | The app's own trace: epoch/I-O time, app-observed bandwidth. |\n"
+        "| `system` | A filesystem/system-level outcome: aggregate achieved bandwidth,\n"
+        "  reduced filesystem load — currently a trace-derived proxy, not real\n"
+        "  OST/MDT-side telemetry (this pipeline has no Lustre-admin monitoring access). |\n\n"
+        "**Non-degradation guard (MANDATORY):** a `metric_scope=\"system\"` entry MUST\n"
+        "carry a paired `app_metric`/`app_before`/`app_after` — `opt_kb_record` rejects\n"
+        f"one without it. If the paired app metric regressed more than "
+        f"{_APP_REGRESSION_TOLERANCE_PCT}%, the verdict is force-set to `regression`\n"
+        "regardless of how good the system-side number looks. A system optimization\n"
+        "that costs the app is not a win — never apply/keep one where this guard fired.\n\n"
         "## Rules\n\n"
         "1. Record only **measured** results — `metric`, `before`, `after` are required.\n"
         "   Record failures too: knowing a lever did nothing is a result.\n"
@@ -283,6 +318,8 @@ def _render_to_skill() -> Dict[str, int]:
         "   `session:<run_id>` marks a result measured in-house, never external evidence.\n"
         "3. Apply optimizations **one at a time** and measure each, or the attribution\n"
         "   is worthless.\n"
+        "4. A `metric_scope=\"system\"` entry always carries its paired app-metric proof\n"
+        "   — see the non-degradation guard above.\n"
     )
     return counts
 
@@ -298,6 +335,7 @@ def register_optimization_kb_tools(mcp: FastMCP) -> None:
         scope: str = "",
         bottleneck: str = "",
         limit: int = 20,
+        metric_scope: str = "",
     ) -> str:
         """STEP 1 of the optimization loop — what has already been tried here?
 
@@ -317,15 +355,21 @@ def register_optimization_kb_tools(mcp: FastMCP) -> None:
             system: e.g. ``"tuolumne"``.
             workload: e.g. ``"flash_x"``.
             software: e.g. ``"hdf5"``, ``"mpi-io"``, ``"lustre"``.
-            scope: ``"system"``/``"software"``/``"workload"`` (or ``L3``/``L2``/``L1``).
+            scope: ``"system"``/``"software"``/``"workload"`` (or ``L3``/``L2``/``L1``)
+                — the LAYER a finding applies to (who inherits it).
             bottleneck: substring filter on the recorded bottleneck/change.
             limit: max rows.
+            metric_scope: ``"app"``/``"system"`` — the orthogonal axis for WHICH
+                metric moved (app trace time/bandwidth vs system-level achieved
+                filesystem bandwidth/load). Leave blank to see both.
 
         Returns:
             JSON with ``count``, ``rows`` (each with ``delta_pct``, ``verdict``,
-            ``citation``), and ``markdown`` — a ready-to-paste table.
+            ``citation``, and — for ``metric_scope="system"`` rows — the paired
+            ``app_metric``/``app_delta_pct`` proving it didn't regress the app),
+            and ``markdown`` — a ready-to-paste table.
         """
-        rows = _lookup(system, workload, software, scope, bottleneck, limit)
+        rows = _lookup(system, workload, software, scope, bottleneck, limit, metric_scope)
         return _ok(f"{len(rows)} prior result(s)", count=len(rows), rows=rows,
                    markdown=_render_rows(rows))
 
@@ -345,6 +389,11 @@ def register_optimization_kb_tools(mcp: FastMCP) -> None:
         run_id: str = "",
         notes: str = "",
         citation_type: str = "",
+        metric_scope: str = "app",
+        app_metric: str = "",
+        app_before: Optional[float] = None,
+        app_after: Optional[float] = None,
+        app_lower_is_better: bool = True,
     ) -> str:
         """Record ONE measured optimization result into the cross-session KB.
 
@@ -358,24 +407,43 @@ def register_optimization_kb_tools(mcp: FastMCP) -> None:
         measurement with no external source.
 
         Args:
-            scope: ``"system"`` (L3) / ``"software"`` (L2) / ``"workload"`` (L1).
+            scope: ``"system"`` (L3) / ``"software"`` (L2) / ``"workload"`` (L1) —
+                the LAYER this finding applies to (who inherits it).
             change: the exact lever, e.g. ``"cb_nodes=16 + CRAY_CB_NODES_MULTIPLIER=2"``.
-            metric: what was measured, e.g. ``"critical-path write time (s)"``.
-            before / after: measured values.
+            metric: what was measured, e.g. ``"critical-path write time (s)"``
+                when ``metric_scope="app"``, or e.g. ``"aggregate achieved
+                filesystem bandwidth (GB/s)"`` when ``metric_scope="system"``.
+            before / after: measured values for ``metric``.
             citation: URL, DOI, or ``session:<run_id>``.
             citation_type: override the auto-classification when the URL heuristic
                 misreads it (``paper``/``docs``/``web``/``session``). The heuristic
                 will always have blind spots — a project page is documentation even
                 when its hostname says otherwise.
             system / workload / software: context keys used for recall.
-            lower_is_better: True for time/latency, False for bandwidth.
+            lower_is_better: True for time/latency, False for bandwidth — applies
+                to ``metric``.
             bottleneck: the bottleneck this addressed.
             run_id: session that produced the measurement.
             notes: caveats — e.g. "only effective after +parallelIO".
+            metric_scope: ``"app"`` (default — a metric from the app's own trace:
+                epoch/I-O time, app-observed bandwidth) or ``"system"`` (a
+                filesystem/system-level outcome: aggregate achieved bandwidth,
+                reduced filesystem load). This is a SEPARATE axis from ``scope``
+                — an L3 (filesystem) change can still target the app's own
+                metric; a ``metric_scope="system"`` entry specifically means the
+                thing being measured is a system-side number, not the app's.
+            app_metric / app_before / app_after / app_lower_is_better:
+                **REQUIRED when metric_scope="system"**. The paired app-level
+                measurement (e.g. epoch time) for the SAME change — this is how
+                the KB enforces that a system-metric win is never recorded
+                without proof it didn't cost the app anything. A system-scoped
+                entry whose app metric regressed beyond 2% is force-verdicted
+                ``"regression"`` regardless of how good the system number looks.
 
         Returns:
-            JSON with the stored ``entry`` including ``delta_pct`` and ``verdict``
-            (``win`` / ``no_change`` / ``regression``).
+            JSON with the stored ``entry`` including ``delta_pct``/``verdict``,
+            and — for ``metric_scope="system"`` — ``app_delta_pct``/``app_verdict``
+            and whether the non-degradation guard fired.
         """
         scope_n = _LEVEL_TO_SCOPE.get(scope.upper(), scope.lower())
         if scope_n not in _SCOPES:
@@ -387,6 +455,18 @@ def register_optimization_kb_tools(mcp: FastMCP) -> None:
         if scope_n == "workload" and not workload:
             return _err("workload-scoped entries require `workload`")
 
+        metric_scope_n = metric_scope.strip().lower() or "app"
+        if metric_scope_n not in _METRIC_SCOPES:
+            return _err(f"metric_scope must be one of {_METRIC_SCOPES}, got {metric_scope!r}")
+        if metric_scope_n == "system" and (
+            not app_metric.strip() or app_before is None or app_after is None
+        ):
+            return _err(
+                "metric_scope=\"system\" requires the paired app_metric/app_before/"
+                "app_after — a system-level optimization is only recordable together "
+                "with proof it did not regress the app (non-degradation guard)"
+            )
+
         delta = _pct(before, after, lower_is_better)
         if delta is None:
             verdict = "unknown"
@@ -396,6 +476,33 @@ def register_optimization_kb_tools(mcp: FastMCP) -> None:
             verdict = "regression"
         else:
             verdict = "no_change"
+
+        app_delta = None
+        app_verdict = None
+        guard_triggered = False
+        if metric_scope_n == "system":
+            app_delta = _pct(app_before, app_after, app_lower_is_better)
+            if app_delta is None:
+                app_verdict = "unknown"
+            elif app_delta <= -_APP_REGRESSION_TOLERANCE_PCT:
+                app_verdict = "regression"
+            elif app_delta >= 5:
+                app_verdict = "win"
+            else:
+                app_verdict = "no_change"
+            # The non-degradation guard: a system-side win recorded alongside an
+            # app-side regression is not a win — force the overall verdict to
+            # reflect the app cost, and say so in notes so it's never missed.
+            if app_verdict == "regression":
+                guard_triggered = True
+                verdict = "regression"
+                guard_note = (
+                    f"NON-DEGRADATION GUARD: system metric moved {delta}% but paired "
+                    f"app metric ({app_metric}) regressed {app_delta}% "
+                    f"(tolerance {_APP_REGRESSION_TOLERANCE_PCT}%) — verdict forced to "
+                    f"regression."
+                )
+                notes = f"{guard_note} {notes}".strip()
 
         entry = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -410,10 +517,16 @@ def register_optimization_kb_tools(mcp: FastMCP) -> None:
                               if citation_type.strip().lower() in _CITATION_RANK
                               else _classify_citation(citation)),
             "run_id": run_id, "notes": notes,
+            "metric_scope": metric_scope_n,
+            "app_metric": app_metric, "app_before": app_before, "app_after": app_after,
+            "app_delta_pct": app_delta, "app_verdict": app_verdict,
         }
         with _kb_path().open("a") as fh:
             fh.write(json.dumps(entry) + "\n")
-        return _ok(f"recorded {scope_n} result: {verdict} ({delta}%)", entry=entry)
+        msg = f"recorded {scope_n}/{metric_scope_n} result: {verdict} ({delta}%)"
+        if guard_triggered:
+            msg += " — NON-DEGRADATION GUARD reverted this to a regression"
+        return _ok(msg, entry=entry, guard_triggered=guard_triggered)
 
     @mcp.tool()
     def opt_kb_render() -> str:

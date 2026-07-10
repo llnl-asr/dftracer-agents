@@ -23,7 +23,9 @@ venv-test
 test/data/dftracer-sample
 package-lock.json
 workspaces/
-resources/
+# Hidden local cache (paper/article library, embeddings) — see
+# local_library_service.py. Never pushed to GitHub.
+.dftracer_agents/
 .cache
 .cargo-goose
 *.core
@@ -50,3 +52,4 @@ workspaces/_graph/
 # Personal / machine-local. Never commit: these embed absolute user paths.
 .env
 src/dftracer_agents/.agents/workspace/setup-state.json
+.github/agents/dftracer-optimizer.agent.md

@@ -181,6 +181,7 @@ def _run_startup_setup(args: argparse.Namespace) -> None:
     from dftracer_agents.harness_models import prepare_startup_configuration, summarize_harness_models
     from dftracer_agents.skills import ensure_setup, resolve_default_target
     from dftracer_agents.agents import ensure_agents_setup
+    from dftracer_agents.mcp_tools.tools.papers.local_library_service import ensure_resources_setup
 
     target_root = (
         _Path(args.skills_target).expanduser().resolve()
@@ -197,7 +198,8 @@ def _run_startup_setup(args: argparse.Namespace) -> None:
     # subagents (into .claude/agents/) for the same target. Always
     # report where each went and what happened, so a silent
     # "already_done" no-op is never mistaken for "setup didn't run".
-    for label, fn in (("Skills", ensure_setup), ("Agents", ensure_agents_setup), ("Workspace", ensure_workspace_setup)):
+    for label, fn in (("Skills", ensure_setup), ("Agents", ensure_agents_setup),
+                      ("Workspace", ensure_workspace_setup), ("Resources", ensure_resources_setup)):
         result = fn(target_root=target_root, force=args.force_setup)
         status = result.get("status")
         target = result.get("target", str(target_root))
@@ -381,12 +383,15 @@ def _build_diagnoser_server() -> FastMCP:
 
 
 def _build_papers_server() -> FastMCP:
-    from dftracer_agents.mcp_tools.tools.papers import academic_service
+    from dftracer_agents.mcp_tools.tools.papers import academic_service, local_library_service
 
     service = academic_service.AcademicPapersService()
+    library = local_library_service.LocalLibraryService()
 
     server = _new_server("AcademicPapers")
     for tool in asyncio.run(service.papers_subservice.list_tools()):
+        server.add_tool(tool)
+    for tool in asyncio.run(library.library_subservice.list_tools()):
         server.add_tool(tool)
     return server
 

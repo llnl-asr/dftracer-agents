@@ -47,6 +47,34 @@ I/O, compression with faster algorithms, or stripe tuning — never "write less.
 
 ---
 
+## MANDATORY: Two optimization axes — layer × metric_scope
+
+Every optimization sits on **two independent axes**, not one:
+
+| Axis | Values | Answers |
+| --- | --- | --- |
+| **layer** (`scope` in `opt_kb`) | L1 workload / L2 software / L3 system | *who inherits this finding* |
+| **metric_scope** | `app` (default) / `system` | *which metric moved* |
+
+`metric_scope="app"` means the measured metric came from the app's own trace —
+epoch time, I/O time, app-observed bandwidth. `metric_scope="system"` means a
+filesystem/system-level outcome — aggregate achieved bandwidth, reduced
+filesystem load. On this pipeline "system metric" is currently a **trace-derived
+proxy** (aggregate bytes/sec computed from the app's own trace), not real
+OST/MDT-side telemetry — there is no Lustre-admin monitoring access here. Don't
+present it as more precise than it is.
+
+**Non-degradation guard (MANDATORY).** A system-level optimization is only worth
+keeping if it did not cost the app anything. `opt_kb_record(metric_scope="system",
+...)` REQUIRES the paired `app_metric`/`app_before`/`app_after` for the SAME
+change — the tool rejects a system-scoped entry without it. If the paired app
+metric regressed more than 2%, the tool force-sets the verdict to `regression`
+(`guard_triggered: true`) regardless of how good the system-side number looks.
+**Treat `guard_triggered: true` exactly like a normal regression: revert the
+change.** A system optimization that degrades the app is never a win.
+
+---
+
 ## MANDATORY: Datasets Must Live on Lustre, Never NFS
 
 Application datasets (training data, fractals/checkpoints/runs, any file the
@@ -462,9 +490,14 @@ Do NOT apply these to lustre, vast, or local filesystems.
 Every optimization proposal presented to the user MUST include a verifiable citation with a URL (arXiv link, DOI, or stable webpage). Follow this search order for each unique bottleneck type:
 
 1. Check `PAPERS` from `optimization_context.json` first (already fetched during pipeline setup).
-2. Search arXiv: `dftracer__search_arxiv(query="<bottleneck_type> optimization HPC parallel I/O MPI", max_results=5, category="cs.DC")`
-3. Search Semantic Scholar / combined: `dftracer__search_papers_combined(query="<bottleneck_type> I/O tuning parallel filesystem", max_results=5)`
-4. For any promising arXiv hit, fetch the full record: `dftracer__get_arxiv_paper(paper_id="<arxiv_id>")`
+2. Check `context_opportunities.json` from `session_search_optimization_context` — exhaustive,
+   stack-wide, local-first search already run once per iteration (see "Start from what is
+   already known" above); its `opportunities`/`benchmark_targets` are already citation-backed.
+3. Local retrieval: `dftracer__rag_search(query="<bottleneck_type> optimization", bottleneck=..., system_config=...)`
+   — semantic + lexical ranking over `.dftracer_agents/resources/`, free, no network.
+4. Search arXiv: `dftracer__search_arxiv(query="<bottleneck_type> optimization HPC parallel I/O MPI", max_results=5, category="cs.DC")`
+5. Search Semantic Scholar / combined (7 sources): `dftracer__search_papers_combined(query="<bottleneck_type> I/O tuning parallel filesystem", max_results_each=5)`
+6. For any promising arXiv hit, fetch the full record: `dftracer__get_arxiv_paper(paper_id="<arxiv_id>")`
 
 For every citation record:
 - authors, title, venue/journal, year
@@ -475,23 +508,38 @@ For every citation record:
 
 ---
 
-## Start from what is already known
+## Start from what is already known — then search exhaustively, not just the bottleneck
 
 Before proposing anything, load [[dftracer-optimization-kb]] and call:
 
 ```
 opt_kb_lookup(system=<system>, workload=<app>, software="hdf5,mpi-io,lustre")
+session_search_optimization_context(run_id=<run_id>, system=<system>, workload=<app>)
 ```
 
-It returns MEASURED cross-session results, partitioned into system-centric (L3),
-software-centric (L2) and workload-centric (L1) findings, each with its citation,
-before/after numbers and caveats. Scope decides transferability: a system finding
-does not leave its machine; a workload finding does not leave its app; software
-findings travel across both.
+`opt_kb_lookup` returns MEASURED cross-session results, partitioned into
+system-centric (L3), software-centric (L2) and workload-centric (L1) findings,
+each with its citation, before/after numbers and caveats. Scope decides
+transferability: a system finding does not leave its machine; a workload finding
+does not leave its app; software findings travel across both.
+
+`session_search_optimization_context` goes further than the per-bottleneck
+searches below: it searches **every software/system layer this session actually
+detected** (MPI impl, HDF5, ROMIO, Lustre, ML frameworks — not just the metric
+tied to the current diagnosis), local-first (`opt_kb_lookup` + `rag_search` over
+`.dftracer_agents/resources/`, free, no network) before any remote fan-out across
+7 paper sources. It also runs a query class nothing else in this pipeline does:
+**benchmark-target search** — published achieved bandwidth/throughput numbers at
+this scale/filesystem, written to `context_opportunities.json` as
+`benchmark_targets`. Read the snippets yourself to pull out the actual number —
+the tool deliberately does not parse numbers out of free text; that judgment call
+belongs to you.
 
 Then render proposals with `opt_proposal_table` (uncited proposals are rejected),
 apply **one at a time**, measure, and `opt_kb_record` every result — including
-no-ops and regressions. Finish with `opt_kb_render` to publish into the KB skill.
+no-ops and regressions, and including `metric_scope`/paired app-metric for any
+system-level result (see the non-degradation guard above). Finish with
+`opt_kb_render` to publish into the KB skill.
 
 
 ---

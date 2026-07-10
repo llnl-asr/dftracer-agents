@@ -1,9 +1,9 @@
 {
-	"servers": {
-		"dftracer": {
-			"type": "http",
-			"url": "http://127.0.0.1:5000/mcp"
-		}
-	},
-	"inputs": []
+  "servers": {
+    "dftracer": {
+      "type": "http",
+      "url": "http://127.0.0.1:7000/mcp"
+    }
+  },
+  "inputs": []
 }

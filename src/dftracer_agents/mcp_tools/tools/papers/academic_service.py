@@ -11,9 +11,19 @@ Tools
 * ``search_semantic_scholar``   — keyword search on Semantic Scholar
 * ``get_semantic_scholar_paper``— fetch one S2 paper by ID
 * ``get_author_papers``         — retrieve an author's paper list from S2
-* ``search_papers_combined``    — parallel search on both sources at once
+* ``search_openalex``           — keyword search on OpenAlex (250M+ works, no key, no hard limit)
+* ``get_openalex_paper``        — fetch one OpenAlex work by ID/DOI
+* ``search_crossref``           — keyword search on Crossref (DOI metadata, no key)
+* ``search_core``               — full-text open-access search on CORE (needs CORE_API_KEY)
+* ``search_dblp``                — CS bibliography search on DBLP (no key)
+* ``search_web``                — general web search (DuckDuckGo) for docs/blogs/papers not in academic APIs
+* ``search_papers_combined``    — parallel search across all sources at once
 * ``fetch_webpage_article``     — fetch and extract any webpage/blog/article
 * ``rank_papers_by_relevance``  — rank papers by bottleneck + system-config relevance
+
+All outbound calls are client-side rate-limited per source (see ``_RATE_LIMITS``)
+so a single MCP process never exceeds each provider's stated request budget —
+most importantly Semantic Scholar's 1 request/second introductory limit.
 """
 from __future__ import annotations
 
@@ -34,8 +44,18 @@ from fastmcp import FastMCP
 
 from ...mcp_service_factory import MCPService, MCPServiceFactory
 
-ARXIV_BASE = "https://export.arxiv.org/api/query"
-S2_BASE    = "https://api.semanticscholar.org/graph/v1"
+ARXIV_BASE        = "https://export.arxiv.org/api/query"
+S2_BASE           = "https://api.semanticscholar.org/graph/v1"
+OPENALEX_BASE     = "https://api.openalex.org"
+CROSSREF_BASE     = "https://api.crossref.org"
+CORE_BASE         = "https://api.core.ac.uk/v3"
+DBLP_BASE         = "https://dblp.org/search/publ/api"
+DDG_HTML_BASE     = "https://html.duckduckgo.com/html/"
+
+# Polite-pool / auth identifiers — optional, improve reliability, never required.
+OPENALEX_MAILTO = os.environ.get("OPENALEX_MAILTO", "")
+CORE_API_KEY    = os.environ.get("CORE_API_KEY", "")
+S2_API_KEY      = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")
 
 # ---------------------------------------------------------------------------
 # SSL configuration for HPC / corporate-CA environments
@@ -76,6 +96,57 @@ def _ssl_verify() -> Union[bool, str]:
 
 
 _SSL_VERIFY = _ssl_verify()
+
+
+# ---------------------------------------------------------------------------
+# Client-side rate limiting, per source
+#
+# Every provider has its own budget (Semantic Scholar's introductory tier is
+# explicitly 1 request/second across all endpoints). Rather than trust every
+# call site to self-throttle, every outbound request goes through
+# ``_rate_limit(name)`` first, which enforces a minimum interval between
+# requests to that source across the whole process using one asyncio.Lock
+# per source name. Authenticated Semantic Scholar keys get a shorter
+# interval since the approved-key tier allows a higher rate.
+# ---------------------------------------------------------------------------
+
+_RATE_LIMITS: Dict[str, float] = {
+    # S2's key-holder tier is still capped at 1 req/s — the key raises the
+    # *daily* quota, not the per-second rate — so keep a healthy buffer
+    # above 1.0s regardless of whether a key is configured. Never race the
+    # limit on the client side.
+    "semantic_scholar": 1.2,
+    "arxiv":             3.0,   # arXiv's own "be polite" guidance
+    "openalex":          0.12,  # no hard limit, still be polite (~8 req/s)
+    "crossref":          0.12,  # same — polite pool via mailto
+    "core":              1.0,   # CORE free tier is modest
+    "dblp":              0.5,   # no published limit, self-throttle
+    "web_search":        1.0,   # avoid getting blocked by the search engine
+}
+
+_rate_locks: Dict[str, asyncio.Lock] = {}
+_rate_last_call: Dict[str, float] = {}
+
+
+async def _rate_limit(name: str) -> None:
+    """Block until it is safe to issue another request to *name*.
+
+    Enforces ``_RATE_LIMITS[name]`` seconds of minimum spacing between
+    requests to the same source, shared across all concurrent callers in
+    this process via a per-source lock.
+    """
+    interval = _RATE_LIMITS.get(name, 0.0)
+    if interval <= 0:
+        return
+    lock = _rate_locks.setdefault(name, asyncio.Lock())
+    async with lock:
+        loop = asyncio.get_event_loop()
+        now = loop.time()
+        wait = interval - (now - _rate_last_call.get(name, 0.0))
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _rate_last_call[name] = loop.time()
+
 
 S2_PAPER_FIELDS  = (
     "title,authors,year,abstract,citationCount,referenceCount,"
@@ -407,12 +478,245 @@ async def _arxiv_search(query: str, max_results: int = 5, sort_by: str = "releva
         search_query += f" AND cat:{category}"
     params = {"search_query": search_query, "max_results": max_results,
               "sortBy": sort_by, "sortOrder": "descending"}
+    await _rate_limit("arxiv")
     async with httpx.AsyncClient(timeout=30, verify=_SSL_VERIFY) as client:
         resp = await client.get(ARXIV_BASE, params=params)
         resp.raise_for_status()
     ns = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
     root = ET.fromstring(resp.text)
     return [_parse_arxiv_entry(e, ns) for e in root.findall("atom:entry", ns)]
+
+
+def _s2_headers() -> Dict[str, str]:
+    return {"x-api-key": S2_API_KEY} if S2_API_KEY else {}
+
+
+async def _s2_search(
+    query: str,
+    max_results: int = 5,
+    year_range: Optional[str] = None,
+    fields_of_study: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Low-level, rate-limited Semantic Scholar search; returns list of paper dicts."""
+    params: dict = {"query": query, "limit": max_results, "fields": S2_PAPER_FIELDS}
+    if year_range:
+        params["year"] = year_range
+    if fields_of_study:
+        params["fieldsOfStudy"] = fields_of_study
+    await _rate_limit("semantic_scholar")
+    async with httpx.AsyncClient(timeout=30, verify=_SSL_VERIFY) as client:
+        resp = await client.get(f"{S2_BASE}/paper/search", params=params, headers=_s2_headers())
+        resp.raise_for_status()
+        data = resp.json()
+    papers = []
+    for p in data.get("data", []):
+        pdf_url = p.get("openAccessPdf", {}).get("url") if p.get("openAccessPdf") else None
+        papers.append({
+            "title": p.get("title", ""),
+            "authors": [a.get("name", "") for a in p.get("authors", [])],
+            "year": p.get("year"),
+            "abstract": p.get("abstract", ""),
+            "citationCount": p.get("citationCount"),
+            "url": p.get("url", ""),
+            "pdf_url": pdf_url,
+            "journal": p.get("journal", {}).get("name") if p.get("journal") else None,
+            "source": "Semantic Scholar",
+        })
+    return papers
+
+
+def _reconstruct_openalex_abstract(inverted_index: Optional[Dict[str, List[int]]]) -> str:
+    """OpenAlex returns abstracts as an inverted index (word -> positions); rebuild plain text."""
+    if not inverted_index:
+        return ""
+    positions: List[Tuple[int, str]] = []
+    for word, idxs in inverted_index.items():
+        for i in idxs:
+            positions.append((i, word))
+    positions.sort(key=lambda x: x[0])
+    return " ".join(w for _, w in positions)
+
+
+async def _openalex_search(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+    """Low-level, rate-limited OpenAlex search; returns list of paper dicts."""
+    params: dict = {"search": query, "per_page": max_results}
+    if OPENALEX_MAILTO:
+        params["mailto"] = OPENALEX_MAILTO
+    await _rate_limit("openalex")
+    async with httpx.AsyncClient(timeout=30, verify=_SSL_VERIFY) as client:
+        resp = await client.get(f"{OPENALEX_BASE}/works", params=params)
+        resp.raise_for_status()
+        data = resp.json()
+    papers = []
+    for w in data.get("results", []):
+        oa = w.get("open_access") or {}
+        primary = w.get("primary_location") or {}
+        source = (primary.get("source") or {}) if primary else {}
+        papers.append({
+            "title": w.get("display_name", ""),
+            "authors": [
+                (a.get("author") or {}).get("display_name", "")
+                for a in w.get("authorships", [])
+            ],
+            "year": w.get("publication_year"),
+            "abstract": _reconstruct_openalex_abstract(w.get("abstract_inverted_index")),
+            "citationCount": w.get("cited_by_count"),
+            "url": w.get("id", ""),
+            "pdf_url": oa.get("oa_url") or primary.get("pdf_url"),
+            "journal": source.get("display_name"),
+            "doi": w.get("doi"),
+            "source": "OpenAlex",
+        })
+    return papers
+
+
+async def _crossref_search(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+    """Low-level, rate-limited Crossref search; returns list of paper dicts."""
+    params: dict = {"query": query, "rows": max_results}
+    if OPENALEX_MAILTO:
+        params["mailto"] = OPENALEX_MAILTO  # same polite-pool convention Crossref uses
+    await _rate_limit("crossref")
+    async with httpx.AsyncClient(timeout=30, verify=_SSL_VERIFY) as client:
+        resp = await client.get(f"{CROSSREF_BASE}/works", params=params)
+        resp.raise_for_status()
+        data = resp.json()
+    papers = []
+    for it in data.get("message", {}).get("items", []):
+        titles = it.get("title") or []
+        authors = [
+            " ".join(filter(None, [a.get("given"), a.get("family")]))
+            for a in it.get("author", [])
+        ] if it.get("author") else []
+        date_parts = (
+            (it.get("published") or it.get("published-print") or it.get("published-online") or {})
+            .get("date-parts", [[None]])
+        )
+        year = date_parts[0][0] if date_parts and date_parts[0] else None
+        container = it.get("container-title") or []
+        papers.append({
+            "title": titles[0] if titles else "",
+            "authors": authors,
+            "year": year,
+            "abstract": re.sub(r"<[^>]+>", "", it.get("abstract", "")) if it.get("abstract") else "",
+            "citationCount": it.get("is-referenced-by-count"),
+            "url": it.get("URL", ""),
+            "pdf_url": None,
+            "journal": container[0] if container else None,
+            "doi": it.get("DOI"),
+            "source": "Crossref",
+        })
+    return papers
+
+
+async def _core_search(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+    """Low-level, rate-limited CORE full-text search; returns list of paper dicts.
+
+    Requires ``CORE_API_KEY`` (free registration at core.ac.uk). Returns an
+    empty list — not an error — when no key is configured, so combined
+    searches degrade gracefully.
+    """
+    if not CORE_API_KEY:
+        return []
+    await _rate_limit("core")
+    # CORE 301-redirects /search/works -> /search/works/ (trailing slash).
+    async with httpx.AsyncClient(timeout=30, verify=_SSL_VERIFY, follow_redirects=True) as client:
+        resp = await client.get(
+            f"{CORE_BASE}/search/works",
+            params={"q": query, "limit": max_results},
+            headers={"Authorization": f"Bearer {CORE_API_KEY}"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    papers = []
+    for r in data.get("results", []):
+        authors = [a.get("name", "") for a in (r.get("authors") or [])]
+        papers.append({
+            "title": r.get("title", ""),
+            "authors": authors,
+            "year": r.get("yearPublished"),
+            "abstract": r.get("abstract", ""),
+            "citationCount": r.get("citationCount"),
+            "url": (r.get("sourceFulltextUrls") or [None])[0] or r.get("downloadUrl", ""),
+            "pdf_url": r.get("downloadUrl"),
+            "journal": (r.get("publisher") or None),
+            "doi": r.get("doi"),
+            "source": "CORE",
+        })
+    return papers
+
+
+async def _dblp_search(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+    """Low-level, rate-limited DBLP search; returns list of paper dicts (CS bibliography, no abstracts)."""
+    await _rate_limit("dblp")
+    async with httpx.AsyncClient(timeout=30, verify=_SSL_VERIFY) as client:
+        resp = await client.get(DBLP_BASE, params={"q": query, "format": "json", "h": max_results})
+        resp.raise_for_status()
+        data = resp.json()
+    hits = ((data.get("result") or {}).get("hits") or {}).get("hit") or []
+    papers = []
+    for h in hits:
+        info = h.get("info", {})
+        raw_authors = (info.get("authors") or {}).get("author")
+        if isinstance(raw_authors, list):
+            authors = [a.get("text", a) if isinstance(a, dict) else str(a) for a in raw_authors]
+        elif isinstance(raw_authors, dict):
+            authors = [raw_authors.get("text", "")]
+        else:
+            authors = []
+        papers.append({
+            "title": info.get("title", ""),
+            "authors": authors,
+            "year": info.get("year"),
+            "abstract": "",
+            "citationCount": None,
+            "url": info.get("ee") or info.get("url", ""),
+            "pdf_url": None,
+            "journal": info.get("venue"),
+            "doi": info.get("doi"),
+            "source": "DBLP",
+        })
+    return papers
+
+
+_DDG_RESULT_RE = re.compile(
+    r'<a rel="nofollow" class="result__a" href="([^"]+)">(.*?)</a>.*?'
+    r'class="result__snippet"[^>]*>(.*?)</a>',
+    re.DOTALL,
+)
+
+
+def _clean_ddg_html(fragment: str) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", "", fragment)).strip()
+
+
+async def _web_search_ddg(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+    """Low-level, rate-limited general web search via DuckDuckGo's HTML endpoint.
+
+    No API key required. Intended for finding papers, docs, and blog posts
+    that academic APIs don't index (vendor whitepapers, conference slide
+    decks, mailing-list threads, etc.) — not a replacement for the academic
+    sources above.
+    """
+    await _rate_limit("web_search")
+    async with httpx.AsyncClient(
+        timeout=30, verify=_SSL_VERIFY, follow_redirects=True,
+        headers={"User-Agent": _WEB_UA},
+    ) as client:
+        resp = await client.post(DDG_HTML_BASE, data={"q": query})
+        resp.raise_for_status()
+        body = resp.text
+    results = []
+    for m in _DDG_RESULT_RE.finditer(body):
+        url, title_html, snippet_html = m.groups()
+        results.append({
+            "title": _clean_ddg_html(title_html),
+            "url": html.unescape(url),
+            "snippet": _clean_ddg_html(snippet_html),
+            "source": "Web (DuckDuckGo)",
+        })
+        if len(results) >= max_results:
+            break
+    return results
 
 
 # ── Service class ─────────────────────────────────────────────────────────────
@@ -501,40 +805,15 @@ class AcademicPapersService(MCPService):
                 Formatted list of matching papers.
             """
             max_results = max(1, min(20, max_results))
-            params: dict = {"query": query, "limit": max_results, "fields": S2_PAPER_FIELDS}
-            if year_range:
-                params["year"] = year_range
-            if fields_of_study:
-                params["fieldsOfStudy"] = fields_of_study
-
-            async with httpx.AsyncClient(timeout=30, verify=_SSL_VERIFY) as client:
-                resp = await client.get(f"{S2_BASE}/paper/search", params=params)
-                resp.raise_for_status()
-                data = resp.json()
-
-            papers = data.get("data", [])
+            papers = await _s2_search(query, max_results, year_range, fields_of_study)
             if min_citations is not None:
                 papers = [p for p in papers if (p.get("citationCount") or 0) >= min_citations]
             if not papers:
                 return f"No Semantic Scholar papers found for query: '{query}'"
 
-            def _s2_common(p):
-                pdf_url = p.get("openAccessPdf", {}).get("url") if p.get("openAccessPdf") else None
-                return {
-                    "title": p.get("title", ""),
-                    "authors": [a.get("name", "") for a in p.get("authors", [])],
-                    "year": p.get("year"),
-                    "abstract": p.get("abstract", ""),
-                    "citationCount": p.get("citationCount"),
-                    "url": p.get("url", ""),
-                    "pdf_url": pdf_url,
-                    "journal": p.get("journal", {}).get("name") if p.get("journal") else None,
-                    "source": "Semantic Scholar",
-                }
-
             output = [f"Semantic Scholar results for '{query}' ({len(papers)} papers):\n"]
             for i, paper in enumerate(papers, 1):
-                output.append(f"[{i}] {_fmt_paper(_s2_common(paper))}\n")
+                output.append(f"[{i}] {_fmt_paper(paper)}\n")
             return "\n".join(output)
 
         @self.papers_subservice.tool()
@@ -548,10 +827,12 @@ class AcademicPapersService(MCPService):
             Returns:
                 Detailed paper information including references.
             """
+            await _rate_limit("semantic_scholar")
             async with httpx.AsyncClient(timeout=30, verify=_SSL_VERIFY) as client:
                 resp = await client.get(
                     f"{S2_BASE}/paper/{paper_id}",
                     params={"fields": S2_PAPER_FIELDS + ",references,citations"},
+                    headers=_s2_headers(),
                 )
                 if resp.status_code == 404:
                     return f"Paper not found: {paper_id}"
@@ -595,10 +876,12 @@ class AcademicPapersService(MCPService):
                 Author profile and list of their papers sorted by citation count.
             """
             max_results = max(1, min(20, max_results))
+            await _rate_limit("semantic_scholar")
             async with httpx.AsyncClient(timeout=30, verify=_SSL_VERIFY) as client:
                 search_resp = await client.get(
                     f"{S2_BASE}/author/search",
                     params={"query": author_name, "limit": 1, "fields": S2_AUTHOR_FIELDS},
+                    headers=_s2_headers(),
                 )
                 search_resp.raise_for_status()
                 authors = search_resp.json().get("data", [])
@@ -606,10 +889,12 @@ class AcademicPapersService(MCPService):
                     return f"No author found for: '{author_name}'"
                 author    = authors[0]
                 author_id = author["authorId"]
+                await _rate_limit("semantic_scholar")
                 papers_resp = await client.get(
                     f"{S2_BASE}/author/{author_id}/papers",
                     params={"limit": max_results, "fields": "title,year,citationCount,authors,url",
                             "sort": "citationCount"},
+                    headers=_s2_headers(),
                 )
                 papers_resp.raise_for_status()
                 papers = papers_resp.json().get("data", [])
@@ -630,29 +915,224 @@ class AcademicPapersService(MCPService):
             return "\n".join(lines)
 
         @self.papers_subservice.tool()
-        async def search_papers_combined(query: str, max_results_each: int = 3) -> str:
-            """Search both arXiv and Semantic Scholar simultaneously.
+        async def search_openalex(query: str, max_results: int = 5) -> str:
+            """Search OpenAlex for academic papers (250M+ works, no API key, no hard rate limit).
+
+            Args:
+                query: Search query string.
+                max_results: Number of results to return (1-25, default 5).
+
+            Returns:
+                Formatted list of matching papers with abstracts and URLs.
+            """
+            max_results = max(1, min(25, max_results))
+            papers = await _openalex_search(query, max_results)
+            if not papers:
+                return f"No OpenAlex papers found for query: '{query}'"
+            output = [f"OpenAlex search results for '{query}' ({len(papers)} papers):\n"]
+            for i, paper in enumerate(papers, 1):
+                output.append(f"[{i}] {_fmt_paper(paper)}\n")
+            return "\n".join(output)
+
+        @self.papers_subservice.tool()
+        async def get_openalex_paper(work_id: str) -> str:
+            """Fetch full details for one OpenAlex work.
+
+            Args:
+                work_id: OpenAlex work ID (e.g. "W2741809807"), full OpenAlex URL,
+                    or a DOI (e.g. "10.1145/3295500.3356173").
+
+            Returns:
+                Detailed paper information.
+            """
+            work_id = work_id.strip()
+            if work_id.startswith("10."):
+                url = f"{OPENALEX_BASE}/works/https://doi.org/{work_id}"
+            elif work_id.startswith("http"):
+                url = work_id
+            else:
+                url = f"{OPENALEX_BASE}/works/{work_id}"
+            params = {"mailto": OPENALEX_MAILTO} if OPENALEX_MAILTO else {}
+            await _rate_limit("openalex")
+            async with httpx.AsyncClient(timeout=30, verify=_SSL_VERIFY) as client:
+                resp = await client.get(url, params=params)
+                if resp.status_code == 404:
+                    return f"OpenAlex work not found: {work_id}"
+                resp.raise_for_status()
+                w = resp.json()
+            oa = w.get("open_access") or {}
+            primary = w.get("primary_location") or {}
+            source = (primary.get("source") or {}) if primary else {}
+            authors = [(a.get("author") or {}).get("display_name", "") for a in w.get("authorships", [])]
+            lines = [
+                f"**{w.get('display_name', 'Untitled')}**",
+                f"Authors: {', '.join(authors) or 'N/A'}",
+                f"Year: {w.get('publication_year', 'N/A')}",
+                f"Citations: {w.get('cited_by_count', 'N/A')}",
+            ]
+            if source.get("display_name"):
+                lines.append(f"Journal/Venue: {source['display_name']}")
+            if w.get("doi"):
+                lines.append(f"DOI: {w['doi']}")
+            abstract = _reconstruct_openalex_abstract(w.get("abstract_inverted_index"))
+            if abstract:
+                lines.append(f"\nAbstract:\n{abstract}")
+            pdf_url = oa.get("oa_url") or primary.get("pdf_url")
+            if pdf_url:
+                lines.append(f"\nPDF: {pdf_url}")
+            lines.append(f"OpenAlex URL: {w.get('id', '')}")
+            return "\n".join(lines)
+
+        @self.papers_subservice.tool()
+        async def search_crossref(query: str, max_results: int = 5) -> str:
+            """Search Crossref for academic papers by DOI metadata (no API key required).
+
+            Best for resolving venues, DOIs, and citation counts; abstracts are
+            often absent since Crossref indexes metadata, not full text.
+
+            Args:
+                query: Search query string.
+                max_results: Number of results to return (1-25, default 5).
+
+            Returns:
+                Formatted list of matching papers.
+            """
+            max_results = max(1, min(25, max_results))
+            papers = await _crossref_search(query, max_results)
+            if not papers:
+                return f"No Crossref papers found for query: '{query}'"
+            output = [f"Crossref search results for '{query}' ({len(papers)} papers):\n"]
+            for i, paper in enumerate(papers, 1):
+                output.append(f"[{i}] {_fmt_paper(paper)}\n")
+            return "\n".join(output)
+
+        @self.papers_subservice.tool()
+        async def search_core(query: str, max_results: int = 5) -> str:
+            """Search CORE for open-access full-text papers.
+
+            Requires a free CORE_API_KEY (register at https://core.ac.uk/services/api)
+            set in the environment. Best source when a full-text PDF is needed
+            rather than just an abstract.
+
+            Args:
+                query: Search query string.
+                max_results: Number of results to return (1-25, default 5).
+
+            Returns:
+                Formatted list of matching papers, or a setup message if no
+                CORE_API_KEY is configured.
+            """
+            if not CORE_API_KEY:
+                return (
+                    "CORE_API_KEY is not set. Register a free key at "
+                    "https://core.ac.uk/services/api and set CORE_API_KEY in the "
+                    "environment to enable full-text open-access search."
+                )
+            max_results = max(1, min(25, max_results))
+            papers = await _core_search(query, max_results)
+            if not papers:
+                return f"No CORE papers found for query: '{query}'"
+            output = [f"CORE search results for '{query}' ({len(papers)} papers):\n"]
+            for i, paper in enumerate(papers, 1):
+                output.append(f"[{i}] {_fmt_paper(paper)}\n")
+            return "\n".join(output)
+
+        @self.papers_subservice.tool()
+        async def search_dblp(query: str, max_results: int = 5) -> str:
+            """Search DBLP for computer-science publications (no API key required).
+
+            DBLP has no abstracts but is the most reliable source for CS venue/
+            conference metadata and author disambiguation.
+
+            Args:
+                query: Search query string.
+                max_results: Number of results to return (1-25, default 5).
+
+            Returns:
+                Formatted list of matching publications.
+            """
+            max_results = max(1, min(25, max_results))
+            papers = await _dblp_search(query, max_results)
+            if not papers:
+                return f"No DBLP publications found for query: '{query}'"
+            output = [f"DBLP search results for '{query}' ({len(papers)} publications):\n"]
+            for i, paper in enumerate(papers, 1):
+                output.append(f"[{i}] {_fmt_paper(paper)}\n")
+            return "\n".join(output)
+
+        @self.papers_subservice.tool()
+        async def search_web(query: str, max_results: int = 5) -> str:
+            """General web search (DuckDuckGo) for papers, docs, and articles not in academic APIs.
+
+            Use this to find vendor whitepapers, conference talk slides,
+            engineering blog posts, or mailing-list threads that academic
+            search engines don't index — a complement to, not a replacement
+            for, ``search_papers_combined``. Pair with ``fetch_webpage_article``
+            to pull full content from any result.
+
+            Args:
+                query: Search query string.
+                max_results: Number of results to return (1-20, default 5).
+
+            Returns:
+                Formatted list of web results (title, url, snippet).
+            """
+            max_results = max(1, min(20, max_results))
+            results = await _web_search_ddg(query, max_results)
+            if not results:
+                return f"No web results found for query: '{query}'"
+            output = [f"Web search results for '{query}' ({len(results)} results):\n"]
+            for i, r in enumerate(results, 1):
+                output.append(
+                    f"[{i}] **{r['title']}**\n{r['snippet']}\nURL: {r['url']}\n"
+                )
+            return "\n".join(output)
+
+        @self.papers_subservice.tool()
+        async def search_papers_combined(
+            query: str,
+            max_results_each: int = 3,
+            include_web: bool = False,
+        ) -> str:
+            """Search arXiv, Semantic Scholar, OpenAlex, Crossref, and DBLP simultaneously.
+
+            CORE is included automatically when CORE_API_KEY is configured.
+            All sources are queried in parallel and each is individually
+            rate-limited, so this call is safe to use even when Semantic
+            Scholar's 1 req/sec budget is tight — the other sources fill in
+            without waiting on it.
 
             Args:
                 query: Search query string.
                 max_results_each: Papers to fetch from each source (1-10, default 3).
+                include_web: Also run a general web search (DuckDuckGo) for
+                    non-academic sources like vendor docs and blog posts.
 
             Returns:
-                Combined results from both sources.
+                Combined, labeled results from every source.
             """
             max_results_each = max(1, min(10, max_results_each))
-            arxiv_task = search_arxiv(query, max_results=max_results_each)
-            s2_task    = search_semantic_scholar(query, max_results=max_results_each)
-            arxiv_result, s2_result = await asyncio.gather(
-                arxiv_task, s2_task, return_exceptions=True
-            )
+            tasks = {
+                "arXiv": search_arxiv(query, max_results=max_results_each),
+                "Semantic Scholar": search_semantic_scholar(query, max_results=max_results_each),
+                "OpenAlex": search_openalex(query, max_results=max_results_each),
+                "Crossref": search_crossref(query, max_results=max_results_each),
+                "DBLP": search_dblp(query, max_results=max_results_each),
+            }
+            if CORE_API_KEY:
+                tasks["CORE"] = search_core(query, max_results=max_results_each)
+            if include_web:
+                tasks["Web"] = search_web(query, max_results=max_results_each)
+
+            names = list(tasks.keys())
+            results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+
             output = [f"Combined academic paper search for: '{query}'\n{'='*60}\n"]
-            output.append("## arXiv Results")
-            output.append(str(arxiv_result) if not isinstance(arxiv_result, Exception)
-                          else f"arXiv error: {arxiv_result}")
-            output.append("\n## Semantic Scholar Results")
-            output.append(str(s2_result) if not isinstance(s2_result, Exception)
-                          else f"Semantic Scholar error: {s2_result}")
+            for name, result in zip(names, results):
+                output.append(f"## {name} Results")
+                output.append(str(result) if not isinstance(result, Exception)
+                              else f"{name} error: {result}")
+                output.append("")
             return "\n".join(output)
 
         @self.papers_subservice.tool()

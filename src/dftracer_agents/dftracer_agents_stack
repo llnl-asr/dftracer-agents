@@ -58,6 +58,21 @@ REPO_ROOT="${DFTRACER_STACK_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 # How to spell this command in printed help, so copy-paste works either way.
 SELF="${DFTRACER_STACK_CMD:-$0}"
 
+# ── load .env (project secrets/config) ──────────────────────────────────────
+# Local (non-docker) mode has nothing else that reads .env — docker-compose
+# picks it up on its own, but a directly-launched mcp-server daemon would
+# otherwise never see SEMANTIC_SCHOLAR_API_KEY, CORE_API_KEY, etc. Values
+# already exported in the calling shell still win: bash re-assigns on
+# `source`, so anything you `export FOO=bar` before invoking this script is
+# overwritten by .env's FOO line if .env sets one — set your own overrides
+# by exporting them AFTER `. .env` yourself if you need to deviate from it.
+if [[ -f "$REPO_ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.env"
+  set +a
+fi
+
 # ── configuration (override by exporting before invoking) ──────────────────
 MCP_PORT="${MCP_PORT:-5000}"
 COLLECTOR_PORT="${COLLECTOR_PORT:-4318}"

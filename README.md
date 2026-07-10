@@ -33,6 +33,7 @@ This installs console scripts including:
 - `dftracer-install-agents`
 - `dftracer-bootstrap-workspace`
 - `dftracer-configure-harness`
+- `dftracer-configure-env` — create/update `.env` with API keys and auth tokens (see [Configuring API keys and auth tokens](#configuring-api-keys-and-auth-tokens))
 
 ### Quick setup (pip or uv)
 
@@ -188,9 +189,11 @@ them against `/proc` and reports what they miss:
 - **stale pid file** — the process died; the file outlived it.
 - **orphan** — a supervisor was killed but the child that binds the port
   survived, or a daemon of ours is sitting on a port we manage. `clean` reaps it.
-- **untracked** — a daemon this stack did not start: a harness's own stdio
-  server, or a colleague's process on a shared node. Reported, never killed
-  without `--untracked`.
+- **untracked** — a daemon this run didn't start but still belongs to *you*: a
+  harness's own stdio server, or a leftover from a different checkout / port
+  config of your own. Never another user's process — daemons are matched by
+  process owner (`uid`) first, unconditionally, regardless of command line or
+  ports. Reported, never killed without `--untracked`.
 
 Orphans get `SIGTERM` before `SIGKILL`, so the collector still flushes its
 profile and closes its MLflow run on the way out.
@@ -209,6 +212,10 @@ MCP_PORT=5100 MLFLOW_PORT=5101 COLLECTOR_PORT=4400 dftracer_agents_stack start
 DFTRACER_WORKSPACES=/path/to/workspaces dftracer_agents_stack start
 ```
 
+Or let `dftracer-configure-env` pick free ports for you once and persist them
+to `.env` (recommended on shared HPC login nodes, where the defaults collide
+often) — see [Configuring API keys and auth tokens](#configuring-api-keys-and-auth-tokens).
+
 State lives under `workspaces/_stack/` (pid files, logs) and
 `workspaces/_mlflow/` (SQLite DB, artifacts) — never `/tmp`.
 
@@ -219,6 +226,57 @@ when nothing changed.
 > **First run only:** the MCP server asks once, interactively, which harness and
 > models to use. A daemon cannot answer that, so run
 > `dftracer-configure-harness` before the first `dftracer_agents_stack start`.
+
+---
+
+## Configuring API keys and auth tokens
+
+Run `dftracer-configure-env` once after installing to create `.env` at the
+project root and fill in the values it needs:
+
+```bash
+dftracer-configure-env                    # interactive prompts
+dftracer-configure-env --non-interactive  # only auto-generate tokens; seed
+                                           # API keys from the environment
+                                           # when already exported
+```
+
+It finds the project root the same way `dftracer_agents_stack` does (walks up
+from the current directory for `workspaces/`, then `.git`/`pyproject.toml`),
+so it's safe to run from anywhere inside a checkout. It's idempotent — re-run
+any time; it only fills in blanks and never overwrites a value you already
+set, and it never prints secret values back to the terminal.
+
+It manages three groups of `.env` values:
+
+- **Auth tokens** — `DFTRACER_MCP_TOKEN` / `DFTRACER_COLLECTOR_TOKEN`,
+  auto-generated with `secrets.token_hex(32)` if blank. These gate the
+  Docker Compose stack's MCP/OTLP endpoints behind Caddy (see
+  [Docker](#docker-containerized-stack-with-authenticated-remote-access) below).
+- **Academic paper search keys** — `SEMANTIC_SCHOLAR_API_KEY`, `CORE_API_KEY`,
+  `OPENALEX_MAILTO`. All optional: every source in the `AcademicPapers` tool
+  group (arXiv, Semantic Scholar, OpenAlex, Crossref, CORE, DBLP, web search —
+  see [docs/tools.rst](docs/tools.rst)) falls back to anonymous, client-side
+  rate-limited access when these are blank, so leaving them empty is a normal,
+  fully supported configuration. Semantic Scholar's rate limit is 1
+  request/second whether or not a key is set — a key only raises the *daily*
+  quota — so the client-side limiter always keeps a buffer above 1.0s
+  regardless.
+- **Stack ports** — `MCP_PORT` / `COLLECTOR_PORT` / `MLFLOW_PORT`. Each is
+  probed with a real bind on `127.0.0.1`: if the launcher's default
+  (5000/4318/5001) is free it's used as-is, otherwise the next free port is
+  picked automatically (ports already claimed by one of the *other* two
+  services in the same run are skipped too, so you never get two services
+  assigned the same port). Left blank only if no free port is found in range —
+  set it by hand in that case. Shared HPC login nodes commonly have the
+  defaults already taken by another user's session, which is exactly the
+  `dftracer_agents_stack start` → `REFUSING to start ... is held by a
+  process` failure this sidesteps.
+
+`.env` is only ever read by two things: `docker compose` (automatically), and
+`dftracer_agents_stack` in bare-metal/local mode, which now sources it before
+starting the `mcp-server` daemon so these values reach the running process
+either way.
 
 ---
 
