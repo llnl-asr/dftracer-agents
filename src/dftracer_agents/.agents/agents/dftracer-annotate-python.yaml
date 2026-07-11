@@ -10,7 +10,6 @@ tools:
 - mcp__dftracer__python_annotate_file
 - mcp__dftracer__python_extract_functions
 - mcp__dftracer__python_write_annotated_file
-- mcp__dftracer__skill_load
 - Edit
 - mcp__dftracer__python_estimate_file_costs
 - mcp__dftracer__python_estimate_function_cost
@@ -30,7 +29,7 @@ skills:
 - dftracer-profiling
 sections:
 - title: Tool-First Annotation Rule (MANDATORY)
-  body: "**ALWAYS use MCP tools first.** Before any manual file editing or custom Bash commands,\nattempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__session_identify_smoke_test_files` \u2014 identify smoke test files for scoping\n2. `mcp__dftracer__python_annotate_file` \u2014 annotate a single Python file with decorators;\n   unlike the C/C++ clang tools this always writes to disk unconditionally at the\n   end of the call (no `write_immediately` flag exists here \u2014 there is no\n   deferred-write mode) \u2014 one call is sufficient for a file\n3. `mcp__dftracer__python_extract_functions` \u2014 extract function map from Python file\n4. `mcp__dftracer__python_write_annotated_file` \u2014 rarely needed; only relevant if a\n   caller manually populated the in-memory Python file cache another way. Do not\n   call this reflexively after `python_annotate_file` \u2014 it already wrote the file\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the tools are available but error, fix the tool or its wiring and apply the fix before\nusing custom Bash commands.\n\nLoad the Python annotation skill and apply it only to Python files.\n\nFirst load:\n- `skill_load(name=\"dftracer-annotate-python\")`\n- `skill_load(name=\"dftracer-annotate-general\")`\n- `skill_load(name=\"dftracer-annotation-lessons\")`\n"
+  body: "**ALWAYS use MCP tools first.** Before any manual file editing or custom Bash commands,\nattempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__session_identify_smoke_test_files` \u2014 identify smoke test files for scoping\n2. `mcp__dftracer__python_annotate_file` \u2014 annotate a single Python file with decorators;\n   unlike the C/C++ clang tools this always writes to disk unconditionally at the\n   end of the call (no `write_immediately` flag exists here \u2014 there is no\n   deferred-write mode) \u2014 one call is sufficient for a file\n3. `mcp__dftracer__python_extract_functions` \u2014 extract function map from Python file\n4. `mcp__dftracer__python_write_annotated_file` \u2014 rarely needed; only relevant if a\n   caller manually populated the in-memory Python file cache another way. Do not\n   call this reflexively after `python_annotate_file` \u2014 it already wrote the file\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the tools are available but error, fix the tool or its wiring and apply the fix before\nusing custom Bash commands.\n\nLoad the Python annotation skill and apply it only to Python files.\n\nFirst load:\n- `graph_query(mode=\"docs\", question=\"dftracer-annotate-python\")`\n- `graph_query(mode=\"docs\", question=\"dftracer-annotate-general\")`\n- `graph_query(mode=\"docs\", question=\"dftracer-annotation-lessons\")`\n"
 - include: self-learning-feed-lessons-back-into-skills-x
 - include: self-learning-confirmation-gate
 - include: logs-go-to-artifacts

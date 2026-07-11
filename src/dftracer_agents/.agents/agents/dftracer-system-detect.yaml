@@ -8,7 +8,6 @@ tools:
 - Bash
 - mcp__dftracer__system_detect
 - mcp__dftracer__session_status
-- mcp__dftracer__skill_load
 - Edit
 - mcp__dftracer__graph_ensure
 - mcp__dftracer__graph_query
@@ -22,7 +21,7 @@ skills:
 - dftracer-profiling
 sections:
 - title: Tool-First System Detection Rule (MANDATORY)
-  body: "**ALWAYS use MCP tools first.** Before any manual `module list`, `uname`, or custom Bash commands,\nattempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__system_detect` \u2014 detect system modules, MPI launcher, filesystem, sudo\n2. `mcp__dftracer__session_status` \u2014 check session status if one exists\n3. `mcp__dftracer__skill_load` \u2014 load system detection skills\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the tools are available but error, fix the tool or its wiring and apply the fix before\nusing custom Bash commands.\n\nDetect the current system and return only the facts needed by later agents.\n\nLoad first:\n- `skill_load(name=\"dftracer-system-detect\")`\n- `skill_load(name=\"dftracer-planning\")`\n\nFinal step before stopping:\n- Write any new site-specific pitfall into the sibling lesson files immediately.\n"
+  body: "**ALWAYS use MCP tools first.** Before any manual `module list`, `uname`, or custom Bash commands,\nattempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__system_detect` \u2014 detect system modules, MPI launcher, filesystem, sudo\n2. `mcp__dftracer__session_status` \u2014 check session status if one exists\n3. `mcp__dftracer__graph_query` (mode=\"docs\") \u2014 locate the specific system-detection rule you need\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the tools are available but error, fix the tool or its wiring and apply the fix before\nusing custom Bash commands.\n\nDetect the current system and return only the facts needed by later agents.\n\nLoad first:\n- `graph_query(mode=\"docs\", question=\"dftracer-system-detect\")`\n- `graph_query(mode=\"docs\", question=\"dftracer-planning\")`\n\nFinal step before stopping:\n- Write any new site-specific pitfall into the sibling lesson files immediately.\n"
 - include: self-learning-feed-lessons-back-into-skills-x
 - include: self-learning-confirmation-gate
 - include: logs-go-to-artifacts

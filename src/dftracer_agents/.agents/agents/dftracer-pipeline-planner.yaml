@@ -14,7 +14,6 @@ tools:
 - mcp__dftracer__session_read_file
 - mcp__dftracer__session_write_file
 - mcp__dftracer__system_detect
-- mcp__dftracer__skill_load
 - mcp__dftracer__skill_search
 - mcp__dftracer__docs_search
 - mcp__dftracer__list_presets
@@ -36,11 +35,11 @@ sections:
 - title: 'Prerequisite: the session already exists'
   body: "The main thread creates (or resumes) the session BEFORE dispatching you and\npasses you the `run_id`. If you were not given a `run_id`, stop and ask for\none \u2014 do NOT create a session yourself. Call `session_status(run_id)` and\n`session_get_run_paths(run_id)` first to ground every path you emit.\n"
 - title: Tool-First Planning Rule (MANDATORY)
-  body: "**ALWAYS use MCP tools first.** Before any manual path construction or custom Bash commands,\nattempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__session_status` \u2014 verify session exists and get its state\n2. `mcp__dftracer__session_list_runs` \u2014 list available runs in the session\n3. `mcp__dftracer__session_get_run_paths` \u2014 get canonical paths (NEVER hand-build paths)\n4. `mcp__dftracer__system_detect` \u2014 detect system modules, MPI launcher, filesystem\n5. `mcp__dftracer__skill_load` \u2014 load routing and planning skills\n6. `mcp__dftracer__skill_search` \u2014 search for relevant skills\n7. `mcp__dftracer__docs_search` \u2014 search dftracer documentation\n8. `mcp__dftracer__list_presets` \u2014 list available analysis presets\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the tools are available but error, fix the tool or its wiring and apply the fix before\nusing custom Bash commands.\n"
+  body: "**ALWAYS use MCP tools first.** Before any manual path construction or custom Bash commands,\nattempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__session_status` \u2014 verify session exists and get its state\n2. `mcp__dftracer__session_list_runs` \u2014 list available runs in the session\n3. `mcp__dftracer__session_get_run_paths` \u2014 get canonical paths (NEVER hand-build paths)\n4. `mcp__dftracer__system_detect` \u2014 detect system modules, MPI launcher, filesystem\n5. `mcp__dftracer__graph_query` (mode=\"docs\") \u2014 locate the specific routing/planning rule you need\n6. `mcp__dftracer__skill_search` \u2014 search for relevant skills\n7. `mcp__dftracer__docs_search` \u2014 search dftracer documentation\n8. `mcp__dftracer__list_presets` \u2014 list available analysis presets\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the tools are available but error, fix the tool or its wiring and apply the fix before\nusing custom Bash commands.\n"
 - title: First, load context (once)
   body: |
-    - `skill_load(name="dftracer-project-router")` for the routing policy.
-    - `skill_load(name="dftracer-planning")` for progress/reporting rules.
+    - `graph_query(mode="docs", question="dftracer-project-router")` for the routing policy.
+    - `graph_query(mode="docs", question="dftracer-planning")` for progress/reporting rules.
     - `system_detect()` to record the target system (modules, MPI launcher, sudo).
 - include: ask-which-workloads-configs-to-focus-on
 - title: Produce a plan with these stages, each mapped to ONE executor subagent

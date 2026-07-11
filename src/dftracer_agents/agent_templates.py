@@ -235,15 +235,29 @@ def _frontmatter(fields: Dict[str, Any], harness: str) -> str:
 
 def _skill_preamble(template: Dict[str, Any]) -> str:
     """For harnesses without a ``skills:`` frontmatter key, tell the agent to
-    load its skills through the dftracer MCP server instead."""
+    locate what it needs in its skills via the knowledge graph instead of a
+    blanket load.
+
+    ``graph_query(mode="docs", ...)`` indexes this repo's own skills/agent
+    definitions as markdown nodes (headings + file:line), so the agent can find
+    the specific section it needs and read only that slice — the same
+    locate-before-you-read discipline used for source code, applied to skills
+    too. A full read of the skill file is still fine when the agent genuinely
+    needs the whole document (e.g. an exhaustive checklist walk).
+    """
     skills = template.get("skills") or []
     if not skills:
         return ""
-    joined = ",".join(skills)
+    joined = ", ".join(skills)
     return (
-        "## Load your skills first (MANDATORY)\n\n"
-        "Before anything else, load this agent's skills through the dftracer "
-        f"MCP server:\n\n```\nskill_load(name=\"{joined}\")\n```\n\n"
+        "## Locate your skills via the graph first (MANDATORY)\n\n"
+        f"This agent's skills are: {joined}. Before anything else, for the SPECIFIC "
+        "rule/section you need, query the graph instead of loading the whole skill:\n\n"
+        "```\ngraph_query(mode=\"docs\", question=\"<topic within one of your skills>\")"
+        "  # -> file:line\n```\n\n"
+        "Then open only that file:line range. Read/`session_read_file` the whole "
+        "skill only when you genuinely need the entire document (e.g. an exhaustive "
+        "checklist that deliberately needs every category).\n\n"
     )
 
 

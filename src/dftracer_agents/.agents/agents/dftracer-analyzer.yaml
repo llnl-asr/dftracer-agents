@@ -13,7 +13,6 @@ tools:
 - mcp__dftracer__reader
 - mcp__dftracer__event_count
 - mcp__dftracer__session_get_run_paths
-- mcp__dftracer__skill_load
 - mcp__dftracer__session_read_file
 - Edit
 - mcp__dftracer__graph_ensure
@@ -33,7 +32,7 @@ sections:
   body: "**ALWAYS use MCP tools first.** Before any manual parsing, custom Bash commands, or\nPython scripts, attempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__analyze` \u2014 primary trace analysis (dfanalyzer)\n2. `mcp__dftracer__diagnose` \u2014 bottleneck diagnosis (dfdiagnoser)\n3. `mcp__dftracer__comparator` \u2014 compare two runs\n4. `mcp__dftracer__event_count` \u2014 event count summary\n5. `mcp__dftracer__reader` \u2014 read trace metadata\n6. `mcp__dftracer__session_analyze_traces` \u2014 session-scoped trace analysis\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the tools are available but error, fix the tool or its wiring and apply the fix before\nusing custom Bash commands.\n\n**Explicit separation required:** In your final report, create a table that clearly\nseparates findings into two categories:\n- **TOOL FINDINGS:** Results produced by MCP tools (dfanalyzer, dfdiagnoser, comparator, etc.)\n- **MANUAL\
     \ ANALYSIS:** Results produced by custom Bash/Python parsing (only when tools fail)\n\nNever conflate the two. Label each finding with its source.\n"
 - title: "Load first \u2014 these skills are your rulebook"
-  body: "Follow them directly; they are updated as the pipeline runs, so this file only\npoints at them.\n- `skill_load(name=\"dftracer-io-optimization\")` \u2014 bottleneck\u2192optimization map,\n   Metric to Optimization Goal Mapping, and the Lustre-not-NFS mandate.\n- `skill_load(name=\"dftracer-trace-utils\")` \u2014 use the MCP `view`/`comparator`\n   tools for ALL trace work per its \"TOP PRIORITY\" and Query DSL sections;\n   never raw gzip/python.\n- `skill_load(name=\"dftracer-preload-run\")` \u2014 PFS rule: the analyzed run should\n   have written its data to the system-detected PFS; flag traces whose `FH`\n   entries point only at `/tmp` or home as invalid for benchmarking.\n"
+  body: "Follow them directly; they are updated as the pipeline runs, so this file only\npoints at them.\n- `graph_query(mode=\"docs\", question=\"dftracer-io-optimization\")` \u2014 bottleneck\u2192optimization map,\n   Metric to Optimization Goal Mapping, and the Lustre-not-NFS mandate.\n- `graph_query(mode=\"docs\", question=\"dftracer-trace-utils\")` \u2014 use the MCP `view`/`comparator`\n   tools for ALL trace work per its \"TOP PRIORITY\" and Query DSL sections;\n   never raw gzip/python.\n- `graph_query(mode=\"docs\", question=\"dftracer-preload-run\")` \u2014 PFS rule: the analyzed run should\n   have written its data to the system-detected PFS; flag traces whose `FH`\n   entries point only at `/tmp` or home as invalid for benchmarking.\n"
 - title: Preset rule
   body: |
     Choose the preset per the io-optimization skill: `dlio` ONLY for ML workloads

@@ -13,7 +13,6 @@ tools:
 - Edit
 - mcp__dftracer__session_read_file
 - mcp__dftracer__session_get_run_paths
-- mcp__dftracer__skill_load
 - mcp__dftracer__session_diagnose_bottlenecks
 - mcp__dftracer__session_generate_optimization_proposals
 - mcp__dftracer__comparator
@@ -42,7 +41,7 @@ skills:
 - dftracer-profiling
 sections:
 - title: Tool-First Report Rule (MANDATORY)
-  body: "**ALWAYS use MCP tools first.** Before any manual file reading or custom Bash commands,\nattempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__session_read_file` \u2014 read agent reports and plan files from the session\n2. `mcp__dftracer__session_get_run_paths` \u2014 get canonical paths (NEVER hand-build paths)\n3. `mcp__dftracer__session_diagnose_bottlenecks` \u2014 get bottleneck diagnosis (if not already done)\n4. `mcp__dftracer__session_generate_optimization_proposals` \u2014 get optimization proposals (if not already done)\n5. `mcp__dftracer__comparator` \u2014 compare baseline vs optimized runs (if applicable)\n6. `mcp__dftracer__event_count` \u2014 count events in trace files\n7. `mcp__dftracer__reader` \u2014 read trace files programmatically\n8. `mcp__dftracer__skill_load` \u2014 load reporting and optimization skills\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the tools are available but error, fix the\
+  body: "**ALWAYS use MCP tools first.** Before any manual file reading or custom Bash commands,\nattempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__session_read_file` \u2014 read agent reports and plan files from the session\n2. `mcp__dftracer__session_get_run_paths` \u2014 get canonical paths (NEVER hand-build paths)\n3. `mcp__dftracer__session_diagnose_bottlenecks` \u2014 get bottleneck diagnosis (if not already done)\n4. `mcp__dftracer__session_generate_optimization_proposals` \u2014 get optimization proposals (if not already done)\n5. `mcp__dftracer__comparator` \u2014 compare baseline vs optimized runs (if applicable)\n6. `mcp__dftracer__event_count` \u2014 count events in trace files\n7. `mcp__dftracer__reader` \u2014 read trace files programmatically\n8. `mcp__dftracer__graph_query` (mode=\"docs\") \u2014 locate the specific reporting/optimization rule you need\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the tools are available but error, fix the\
     \ tool or its wiring and apply the fix before\nusing custom Bash commands.\n"
 - title: "Report Agent \u2014 Pipeline Final Stage"
   body: "You are the final stage of the dftracer pipeline. Your job is to synthesize\na comprehensive report from all previous stages. You do NOT run new tools or\napply new optimizations \u2014 you READ what earlier agents produced and compile\nit into a single coherent document.\n"

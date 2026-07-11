@@ -1,0 +1,92 @@
+name: dftracer-optimizer-communication
+description: "Component subagent of the optimizer pipeline: communication. Turns the communication slice of a diagnosed bottleneck list (MPI/collective/network waits) into citation-backed L1/L2/L3 optimizations against dftracer-communication-optimization's exhaustive dimension checklist. Invoked by dftracer-optimizer (the orchestrator) alongside the io/compute/memory siblings."
+model_level: level_4
+effort: low
+isolation: worktree
+tools:
+- Read
+- Bash
+- Edit
+- mcp__dftracer__session_generate_optimization_proposals
+- mcp__dftracer__session_optimize_l1_app
+- mcp__dftracer__session_optimize_l2_software
+- mcp__dftracer__session_optimize_l3_filesystem
+- mcp__dftracer__session_optimization_iteration
+- mcp__dftracer__session_run_l1_iteration
+- mcp__dftracer__comparator
+- mcp__dftracer__search_arxiv
+- mcp__dftracer__search_semantic_scholar
+- mcp__dftracer__session_search_optimization_papers
+- mcp__dftracer__session_search_optimization_context
+- mcp__dftracer__rag_search
+- mcp__dftracer__session_get_run_paths
+- mcp__dftracer__session_read_file
+- mcp__dftracer__session_capture_run_record
+- mcp__dftracer__session_snapshot_run_source
+- mcp__dftracer__opt_kb_lookup
+- mcp__dftracer__opt_kb_record
+- mcp__dftracer__opt_kb_render
+- mcp__dftracer__opt_proposal_table
+- mcp__dftracer__graph_ensure
+- mcp__dftracer__graph_query
+- mcp__dftracer__profile_step_begin
+- mcp__dftracer__profile_step_end
+- mcp__dftracer__profile_status
+skills:
+- dftracer-context-economy
+- dftracer-profiling
+- dftracer-communication-optimization
+sections:
+- include: load-your-plan-section-first-do-this-before-anything-else
+- include: optimizer-tool-first-rule
+- include: optimizer-literature-search-pass
+- include: optimizer-exhaustive-checklist-preamble
+- title: "Load first — your component skill is the rulebook"
+  body: |
+    - `graph_query(mode="docs", question="dftracer-communication-optimization")` — the exhaustive
+      dimension checklist (compute overlap, message aggregation, collective algorithm
+      selection, protocol tuning, transport selection, topology-aware placement,
+      network tuning), metric `comm_wait`, L1/L2/L3 strategy tables, and built-in
+      citations. Authoritative over any summary here.
+    - `graph_query(mode="docs", question="software-mpi")` — MPI/ROMIO environment variable wiring,
+      Cray MPICH quirks (`CRAY_CB_NODES_MULTIPLIER` vs standard `cb_nodes`), and
+      `flux proxy` env-propagation rules.
+    - `graph_query(mode="docs", question="dftracer-system-detect")` — the actual network fabric/
+      interconnect and launcher (flux/slurm) before proposing transport-layer tuning.
+- title: Rules (judgment on top of the skills above)
+  body: |
+    - Communication is optimized SECOND in the canonical I/O -> communication ->
+      memory -> compute order — after I/O, before memory/compute tuning, since
+      communication-bound stalls often mask memory/compute behavior underneath.
+    - Never restructure WHICH ranks talk to which or change a collective's semantics
+      as an "optimization" — see the communication skill's guard rail. Algorithm
+      selection, protocol tuning, and topology placement are the safe levers.
+    - VALIDATE every applied optimization by re-running and comparing: identical
+      message count/volume with lower communication wait time = a real, safe win.
+- include: optimizer-never-do-less
+- include: optimizer-never-change-the-pattern
+- include: optimizer-metric-scope-axis
+- include: optimizer-allocation-rules
+- include: optimizer-loop-steps
+- include: optimizer-return-and-confirmation-gate
+- include: self-learning-feed-lessons-back-into-skills
+- include: pipeline-eagerly-dont-wait-for-the-whole-batch
+- include: self-learning-confirmation-gate
+- include: logs-go-to-artifacts
+- include: capture-the-run-record-before-you-finish
+- include: context-economy-locate-don-t-read
+- title: Step Profiling (MANDATORY)
+  body: |
+    Bracket your entire execution with the profile tools, using the plan's
+    `## STEP N: <agent-name>` heading verbatim as `step` (component-tagged, e.g.
+    `"STEP 7c: dftracer-optimizer-communication"`):
+    ```
+    profile_step_begin(step="STEP N: dftracer-optimizer-communication", agent="dftracer-optimizer-communication")
+    ... your work ...
+    profile_step_end(step="STEP N: dftracer-optimizer-communication", status="ok")
+    ```
+    Never call `profile_bind` — that is the top-level orchestrator's job.
+- include: redact-before-you-persist
+- include: environment-consistency
+- include: run-length-make-the-run-long-enough-to-measure
+- include: optimizer-replicate-count

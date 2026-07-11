@@ -14,7 +14,6 @@ tools:
 - mcp__dftracer__clang_lint_annotations
 - mcp__dftracer__clang_write_annotated_file
 - mcp__dftracer__clang_insert_line
-- mcp__dftracer__skill_load
 - Edit
 - mcp__dftracer__annotate_add_app_metadata
 - mcp__dftracer__validate_annotations
@@ -33,7 +32,7 @@ skills:
 sections:
 - title: Tool-First Annotation Rule (MANDATORY)
   body: "**ALWAYS use MCP tools first.** Before any manual file editing or custom Bash commands,\nattempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__session_identify_smoke_test_files` \u2014 identify smoke test files for scoping\n2. `mcp__dftracer__clang_annotate_project` \u2014 annotate entire C++ project at once\n3. `mcp__dftracer__clang_annotate_file` \u2014 annotate a single C++ file; writes to disk\n   immediately by default (`write_immediately=True`) \u2014 for most files this ONE\n   call is sufficient, check `written_to_disk`/`bytes_written` in its response\n4. `mcp__dftracer__clang_extract_functions` \u2014 extract function map from C++ file\n5. `mcp__dftracer__clang_syntax_check` \u2014 verify annotated file compiles\n6. `mcp__dftracer__clang_lint_annotations` \u2014 lint annotation correctness\n7. `mcp__dftracer__clang_write_annotated_file` \u2014 only needed for the deliberate\n   `clang_add_braces` \u2192 `clang_annotate_file(write_immediately=False)` \u2192\n   `clang_syntax_check` \u2192 write compose pipeline; do not call this reflexively\n   after every `clang_annotate_file` \u2014 it already wrote the file\n8. `mcp__dftracer__clang_insert_line` \u2014 insert annotation macros at specific lines\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the tools are available but error, fix the tool or its wiring and apply the fix before\n\
-    using custom Bash commands.\n\nLoad the C++ annotation skill and apply it only to C++ files.\n\nFirst load:\n- `skill_load(name=\"dftracer-annotate-cpp\")`\n- `skill_load(name=\"dftracer-annotate-general\")`\n- `skill_load(name=\"dftracer-annotation-lessons\")`\n"
+    using custom Bash commands.\n\nLoad the C++ annotation skill and apply it only to C++ files.\n\nFirst load:\n- `graph_query(mode=\"docs\", question=\"dftracer-annotate-cpp\")`\n- `graph_query(mode=\"docs\", question=\"dftracer-annotate-general\")`\n- `graph_query(mode=\"docs\", question=\"dftracer-annotation-lessons\")`\n"
 - include: self-learning-feed-lessons-back-into-skills-x
 - include: self-learning-confirmation-gate
 - include: logs-go-to-artifacts

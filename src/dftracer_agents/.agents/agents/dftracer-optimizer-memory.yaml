@@ -1,0 +1,94 @@
+name: dftracer-optimizer-memory
+description: "Component subagent of the optimizer pipeline: memory. Turns the memory slice of a diagnosed bottleneck list (bandwidth/cache/NUMA/allocation) into citation-backed L1/L2/L3 optimizations against dftracer-memory-optimization's exhaustive dimension checklist. Invoked by dftracer-optimizer (the orchestrator) alongside the io/compute/communication siblings."
+model_level: level_4
+effort: low
+isolation: worktree
+tools:
+- Read
+- Bash
+- Edit
+- mcp__dftracer__session_generate_optimization_proposals
+- mcp__dftracer__session_optimize_l1_app
+- mcp__dftracer__session_optimize_l2_software
+- mcp__dftracer__session_optimize_l3_filesystem
+- mcp__dftracer__session_optimization_iteration
+- mcp__dftracer__session_run_l1_iteration
+- mcp__dftracer__comparator
+- mcp__dftracer__search_arxiv
+- mcp__dftracer__search_semantic_scholar
+- mcp__dftracer__session_search_optimization_papers
+- mcp__dftracer__session_search_optimization_context
+- mcp__dftracer__rag_search
+- mcp__dftracer__session_get_run_paths
+- mcp__dftracer__session_read_file
+- mcp__dftracer__session_capture_run_record
+- mcp__dftracer__session_snapshot_run_source
+- mcp__dftracer__opt_kb_lookup
+- mcp__dftracer__opt_kb_record
+- mcp__dftracer__opt_kb_render
+- mcp__dftracer__opt_proposal_table
+- mcp__dftracer__graph_ensure
+- mcp__dftracer__graph_query
+- mcp__dftracer__profile_step_begin
+- mcp__dftracer__profile_step_end
+- mcp__dftracer__profile_status
+skills:
+- dftracer-context-economy
+- dftracer-profiling
+- dftracer-memory-optimization
+sections:
+- include: load-your-plan-section-first-do-this-before-anything-else
+- include: optimizer-tool-first-rule
+- include: optimizer-literature-search-pass
+- include: optimizer-exhaustive-checklist-preamble
+- title: "Load first — your component skill is the rulebook"
+  body: |
+    - `graph_query(mode="docs", question="dftracer-memory-optimization")` — the exhaustive dimension
+      checklist (buffer reuse/pooling, in-place ops, cache blocking, allocator
+      selection, pinned memory, huge pages, NUMA binding, page-cache tuning), metric
+      `mem_bw`, L1/L2/L3 strategy tables, and built-in citations. Authoritative over
+      any summary here.
+    - `graph_query(mode="docs", question="dftracer-compute-optimization")` — the NUMA-binding and
+      cache-blocking dimensions are shared with compute; check its checklist so a
+      finding isn't duplicated as a "new" discovery in both places.
+    - `graph_query(mode="docs", question="dftracer-system-detect")` — NUMA topology and memory
+      hierarchy for this system before proposing a binding strategy.
+- title: Rules (judgment on top of the skills above)
+  body: |
+    - Memory is optimized THIRD in the canonical I/O -> communication -> memory ->
+      compute order — verify with a roofline/bandwidth check that the workload is
+      actually memory-bandwidth-bound before investing here (a compute-bound kernel
+      gains nothing from memory tuning).
+    - Never propose reducing batch size, dropping cached data the app's correctness
+      depends on, or truncating precision as a memory "optimization" — see the
+      memory skill's guard rail. Buffer pooling, in-place ops, and cache blocking are
+      safe ONLY with a correctness check (byte-identical output) before/after.
+    - VALIDATE every applied optimization by re-running and comparing: identical
+      data volume/lifetime with lower memory-bound stall time = a real, safe win.
+- include: optimizer-never-do-less
+- include: optimizer-never-change-the-pattern
+- include: optimizer-metric-scope-axis
+- include: optimizer-allocation-rules
+- include: optimizer-loop-steps
+- include: optimizer-return-and-confirmation-gate
+- include: self-learning-feed-lessons-back-into-skills
+- include: pipeline-eagerly-dont-wait-for-the-whole-batch
+- include: self-learning-confirmation-gate
+- include: logs-go-to-artifacts
+- include: capture-the-run-record-before-you-finish
+- include: context-economy-locate-don-t-read
+- title: Step Profiling (MANDATORY)
+  body: |
+    Bracket your entire execution with the profile tools, using the plan's
+    `## STEP N: <agent-name>` heading verbatim as `step` (component-tagged, e.g.
+    `"STEP 7d: dftracer-optimizer-memory"`):
+    ```
+    profile_step_begin(step="STEP N: dftracer-optimizer-memory", agent="dftracer-optimizer-memory")
+    ... your work ...
+    profile_step_end(step="STEP N: dftracer-optimizer-memory", status="ok")
+    ```
+    Never call `profile_bind` — that is the top-level orchestrator's job.
+- include: redact-before-you-persist
+- include: environment-consistency
+- include: run-length-make-the-run-long-enough-to-measure
+- include: optimizer-replicate-count

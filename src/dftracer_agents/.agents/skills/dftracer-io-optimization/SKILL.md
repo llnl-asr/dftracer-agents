@@ -3,6 +3,35 @@ name: dftracer-io-optimization
 description: Key literature, bottleneck-to-optimization mappings, and strategies for the dftracer I/O optimization pipeline
 ---
 
+## MANDATORY: Exhaustive Dimension Checklist (walk ALL 12, every session — user instruction 2026-07-10)
+
+The optimizer must not stop at the top-ranked bottleneck's obvious fix. Every optimization
+loop walks this full checklist, every time, and records a verdict for EACH category — not
+just the ones that turned out to matter. This is the enumeration source for the "Show the
+WHOLE option space" proposal table (see `dftracer-optimizer` agent). Verdict per category
+is one of: **Applied & measured** (result + citation), **Applicable, not measured**
+(concrete reason), or **Not applicable** (concrete technical reason — wrong FS_TYPE, no
+literature found for this access pattern, structurally inert given the app's I/O shape,
+admin-only/already-maxed per the system skill, etc.). Never silently omit a category, and
+never mark "not applicable" without first running the literature search for it.
+
+1. L1 buffering (write coalescing/batching/double-buffering)
+2. L1 caching (chunk cache, app-level LRU, page-cache hints)
+3. L1 prefetching (async I/O, HDF5 async VOL, `posix_fadvise`, background threads)
+4. L1 stage-in/stage-out (faster intermediate storage, pattern unchanged)
+5. L2 MPI-IO/ROMIO (collective/two-phase buffering, data sieving, `cb_nodes`/multiplier)
+6. L2 HDF5 (chunk cache sizing, metadata block size, collective metadata ops, page buffering)
+7. L2 other I/O middleware (NetCDF/PnetCDF, compression filters, framework dataloader overlap)
+8. L3 filesystem striping/layout (Lustre `lfs setstripe`/PFL/Data-on-MDT, GPFS/BeeGFS block size)
+9. L3 near-node/burst-buffer acceleration (Rabbit/DW, node-local NVMe, `/dev/shm`, VAST cache)
+10. L3 OS/kernel tuning (readahead, VM/dirty-ratio, I/O scheduler, NUMA binding — check tunability first)
+11. Metadata-path tuning (Lustre metadata striping, Data-on-MDT, directory sharding)
+12. Compute/communication overlap (async checkpointing, overlapping compute with I/O)
+
+See the L1/L2/L3 Strategy sections below for the detailed technique catalog behind each
+checklist number, and the FS_TYPE-gated tables for which system/filesystem combinations
+each technique even applies to.
+
 ## MANDATORY: Tool-First Analysis and Explicit Separation
 
 ### Tool-First Rule

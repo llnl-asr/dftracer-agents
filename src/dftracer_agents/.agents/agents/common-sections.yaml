@@ -49,8 +49,8 @@ sections:
       \ source tree — pass a `source_path` that lives OUTSIDE `<run_name>/`'s own directory tree (e.g. don't snapshot `annotated` into itself). The tool validates this and returns an error instead of corrupting data if source and destination overlap, but pick a distinct source_path so you don't hit it.\n\nWithout this, `session_final_report` cannot reconstruct what your iteration did.\nAssemble the deliverable at the end of the pipeline with `session_final_report`.\n"
   context-economy-locate-don-t-read:
     title: "Context economy \u2014 locate, don't read (MANDATORY)"
-    body: "The dominant token cost is **input**: source you read to orient yourself. This\nrepo ships `graphify` (dep `graphifyy`), a tree-sitter knowledge graph over\nC/C++/Fortran/Python. Query it instead of reading files.\n\n```\ngraph_query(question=\"<what you are looking for>\", budget=1200)  # -> NODE <sym> [src=file loc=Lnn]\ngraph_query(mode=\"explain\",  symbol=\"<symbol>\")                  # definition + callers/callees\ngraph_query(mode=\"affected\", symbol=\"<symbol>\", depth=2)         # blast radius of a change\ngraph_ensure(run_id=RUN_ID)                                      # build the target app's graph\n```\n\nMeasured here: locating via the graph cost **986 tokens** where reading the three\nrelevant files cost **29,456** (3.3%). `explain`/`affected` cost ~210 each.\n\n**Rules**\n\n1. **Locate before you read.** Do not `grep`/`Read` a tree to find where something\n   lives. Ask the graph, then open only the `file:line` it names.\n2. **Before editing any shared function,\
-      \ run `graphify affected <fn> --depth 2`**\n   and state the blast radius. A \"local\" fix that silently breaks a caller is the\n   failure this prevents.\n3. **Freshness is automatic** \u2014 the graph rebuilds when skills/agents/code change\n   (~5 s) and costs ~0.1 s to validate otherwise. Force with `graph_ensure(force=True)`.\n4. **Budget queries** (`--budget 1200`); BFS pulls in generic nodes (`_ok`, `json`)\n   \u2014 ignore them rather than widening.\n5. **Use `graph_query`/`graph_ensure`** (two thin tools that guarantee freshness),\n   never graphify's own MCP server \u2014 its ~25 schemas would sit in context\n   permanently on top of this project's 137 dftracer tools. The `graphify` CLI is\n   a fallback, but it does not check freshness.\n\nLoad [[dftracer-context-economy]] for the full rationale and limits.\n"
+    body: "The dominant token cost is **input**: source you read to orient yourself. This\nrepo ships `graphify` (dep `graphifyy`), a tree-sitter knowledge graph over\nC/C++/Fortran/Python **plus markdown headings** \u2014 it indexes this repo's OWN skills\nand agent definitions too, not just target-app source. Query it instead of reading\nfiles OR loading a whole skill.\n\n```\ngraph_query(question=\"<what you are looking for>\", budget=1200)  # -> NODE <sym> [src=file loc=Lnn]\ngraph_query(mode=\"explain\",  symbol=\"<symbol>\")                  # definition + callers/callees\ngraph_query(mode=\"affected\", symbol=\"<symbol>\", depth=2)         # blast radius of a change\ngraph_query(mode=\"docs\",     question=\"<topic>\")                 # -> skill/agent-doc section + file:line\ngraph_ensure(run_id=RUN_ID)                                      # build the target app's graph\n```\n\nMeasured here: locating via the graph cost **986 tokens** where reading the three\nrelevant files cost **29,456** (3.3%). `explain`/`affected` cost ~210 each.\n\n**Rules**\n\n1. **Locate before you read.** Do not `grep`/`Read` a tree to find where something\n   lives. Ask the graph, then open only the `file:line` it names.\n2. **This applies to skills too \u2014 don't blanket-load them either.** A large skill\n   (checklists, citation tables, strategy catalogs) costs the same way a large\n   source file does. For a specific rule/section, use `graph_query(mode=\"docs\",\n   question=\"<the specific rule/section you need>\")` \u2014 it returns the exact\n   heading + `file:line` in the skill \u2014 then `session_read_file`/`Read` just that\n   section instead of the whole `SKILL.md`. Read the whole document only when you\n   genuinely need every part of it (e.g. an exhaustive-checklist walk that\n   deliberately needs every category).\n3. **Before editing any shared function,\
+      \ run `graphify affected <fn> --depth 2`**\n   and state the blast radius. A \"local\" fix that silently breaks a caller is the\n   failure this prevents.\n4. **Freshness is automatic** \u2014 the graph rebuilds when skills/agents/code change\n   (~5 s) and costs ~0.1 s to validate otherwise. Force with `graph_ensure(force=True)`.\n5. **Budget queries** (`--budget 1200`); BFS pulls in generic nodes (`_ok`, `json`)\n   \u2014 ignore them rather than widening.\n6. **Use `graph_query`/`graph_ensure`** (two thin tools that guarantee freshness),\n   never graphify's own MCP server \u2014 its ~25 schemas would sit in context\n   permanently on top of this project's 137 dftracer tools. The `graphify` CLI is\n   a fallback, but it does not check freshness.\n\nLoad [[dftracer-context-economy]] for the full rationale and limits.\n"
   dl-run-length-ask-for-a-time-budget-then-fix-the-epoch-count:
     title: 'DL run length: ASK for a time budget, then FIX the epoch count'
     body: "Never guess a run length, and never let variants run for different amounts of work.\n\n1. **Ask the user for the time budget** (e.g. \"10 minutes of training per run\"). Do not assume.\n2. **Calibrate:** run a short probe, measure seconds/epoch on the BASELINE config.\n   `epochs = floor(budget_seconds / seconds_per_epoch)`.\n3. **Fix that epoch count for every variant** (baseline and all optimizations). Comparisons\n   must hold work constant; a variant that runs fewer epochs is \"winning\" by doing less.\n4. Also fix `problem_scale`, dataset size, and `checkpoint_interval` across variants unless the\n   knob under test IS one of them \u2014 and if it is, say so, because it changes total work.\n5. Take at least one replicate of the baseline and of the best variant, and report deltas against\n   that noise band. At a few seconds of training, checkpoint/collective effects are unmeasurable.\n\nWatch for early-exit knobs (e.g. `target_dice`) that can end a run before the fixed epoch\
@@ -96,12 +96,12 @@ sections:
       \ PROPOSE each update in your\n   final summary as: target (which skill/tool/agent) -> symptom/what-you-did ->\n   root cause (if a fix) -> exact content to add. The main thread confirms the\n   observation with the user, and only then is anything persisted. This prevents\n   incorrect diagnoses from polluting shared skills/tools/agents and supersedes\n   any \"record ... immediately in the sibling lesson files\" instruction above.\n"
   self-learning-feed-lessons-back-into-skills:
     title: "Self-learning: feed lessons back into skills (mandatory \u2014 before you stop)"
-    body: "This is a required self-learning step for EVERY agent, not optional. Whenever\nyou discover something non-obvious \u2014 a build/run caveat, an environment quirk,\na pitfall and its exact fix \u2014 record it in the RIGHT skill so the whole system\nlearns next time. Choose the skill by scope, and create it if it does not exist:\n- App/workload-specific \u2192 `workload-<app>` skill (e.g. `workload-flashx`).\n- System / site / environment-specific \u2192 `system-<system>` skill (e.g. `system-tuolumne`).\n- Library / software-specific (HDF5, MPI, ROMIO, compilers, \u2026) \u2192 `software-<lib>` skill.\n\nHow: `skill_load` the target skill to read its current SKILL.md, then append a\ndated one-line lesson in the form `symptom \u2192 root cause \u2192 exact fix`. Keep it\nterse and de-duplicated (don't restate an existing lesson). Edit the skill's\n`SKILL.md` at its resolved path under the skills directory; for a brand-new\nskill, create `<skills-dir>/<name>/SKILL.md` with a short\
+    body: "This is a required self-learning step for EVERY agent, not optional. Whenever\nyou discover something non-obvious \u2014 a build/run caveat, an environment quirk,\na pitfall and its exact fix \u2014 record it in the RIGHT skill so the whole system\nlearns next time. Choose the skill by scope, and create it if it does not exist:\n- App/workload-specific \u2192 `workload-<app>` skill (e.g. `workload-flashx`).\n- System / site / environment-specific \u2192 `system-<system>` skill (e.g. `system-tuolumne`).\n- Library / software-specific (HDF5, MPI, ROMIO, compilers, \u2026) \u2192 `software-<lib>` skill.\n\nHow: locate it via `graph_query(mode=\"docs\", question=\"<skill>\")`, open just\nthat section (or `Read`/`session_read_file` the whole `SKILL.md` if you need it all),\nthen append a\ndated one-line lesson in the form `symptom \u2192 root cause \u2192 exact fix`. Keep it\nterse and de-duplicated (don't restate an existing lesson). Edit the skill's\n`SKILL.md` at its resolved path under the skills directory; for a brand-new\nskill, create `<skills-dir>/<name>/SKILL.md` with a short\
       \ frontmatter + the\nlesson. If you genuinely learned nothing new, say so explicitly in your report.\n\n**Skill vs MCP tool (self-learning routing):** a corner case or fact \u2192 a skill (above).\nGENERIC programmatic logic that should run the same way every time \u2192 add or fix an MCP\ntool under `src/dftracer_agents/mcp_tools/` (then ask the user to restart the server), not\njust prose. Grow both the skills and the tools.\n\n**Living plan + logs:** after your step, update the downstream `## STEP N:` sections of\n`pipeline_plan.md` with any concrete facts you resolved and append a dated line to\n`pipeline_plan_changelog.md` (what changed + why). Write EVERY log you produce (saved Bash\noutput, build/run logs, scratch) under `<WS>/artifacts/`, never elsewhere.\n\n**Persist new learning to the agent definition too (always).** Anything you discover\nthat is NOT already captured must be written down so it survives the session \u2014 in BOTH:\n1. the relevant skill (knowledge / corner\
       \ case), AND\n2. THIS agent's own definition file `src/dftracer_agents/.agents/agents/<this-agent>.yaml`\n   whenever the lesson changes how the agent should behave next time (a new pre-check,\n   step, guard, default, or gotcha). After editing an agent definition, re-render (`agents_sync` MCP tool) and ask the user to reload.\nGeneric, deterministic programmatic logic still becomes an MCP tool. New learning never\nlives only in your head \u2014 skill + agent definition (+ MCP tool when generic), every time.\n"
   self-learning-feed-lessons-back-into-skills-x:
     title: "Self-learning: feed lessons back into skills (mandatory \u2014 before you stop)"
-    body: "This is a required self-learning step for EVERY agent, not optional. Whenever\nyou discover something non-obvious \u2014 a caveat, an environment quirk, a pitfall\nand its exact fix \u2014 record it in the RIGHT skill so the whole system learns.\nChoose the skill by scope, and create it if it does not exist:\n- App/workload-specific \u2192 `workload-<app>` skill (e.g. `workload-flashx`).\n- System / site / environment-specific \u2192 `system-<system>` skill (e.g. `system-tuolumne`).\n- Library / software / language-specific (HDF5, MPI, C/C++/Python annotation, \u2026) \u2192 `software-<lib>` or the matching `dftracer-annotate-*`/lessons skill.\n\nHow: `skill_load` the target skill, then append a dated one-line lesson\n`symptom \u2192 root cause \u2192 exact fix`. Keep it terse and de-duplicated. Edit the\nskill's `SKILL.md` at its resolved path; for a new skill create\n`<skills-dir>/<name>/SKILL.md`. If you learned nothing new, say so explicitly.\n\n**Skill vs MCP tool (self-learning\
+    body: "This is a required self-learning step for EVERY agent, not optional. Whenever\nyou discover something non-obvious \u2014 a caveat, an environment quirk, a pitfall\nand its exact fix \u2014 record it in the RIGHT skill so the whole system learns.\nChoose the skill by scope, and create it if it does not exist:\n- App/workload-specific \u2192 `workload-<app>` skill (e.g. `workload-flashx`).\n- System / site / environment-specific \u2192 `system-<system>` skill (e.g. `system-tuolumne`).\n- Library / software / language-specific (HDF5, MPI, C/C++/Python annotation, \u2026) \u2192 `software-<lib>` or the matching `dftracer-annotate-*`/lessons skill.\n\nHow: locate it via `graph_query(mode=\"docs\", question=\"<skill>\")`, open just\nthat section (or the whole `SKILL.md` if you need it all), then append a dated one-line lesson\n`symptom \u2192 root cause \u2192 exact fix`. Keep it terse and de-duplicated. Edit the\nskill's `SKILL.md` at its resolved path; for a new skill create\n`<skills-dir>/<name>/SKILL.md`. If you learned nothing new, say so explicitly.\n\n**Skill vs MCP tool (self-learning\
       \ routing):** a corner case or fact \u2192 a skill (above).\nGENERIC programmatic logic that should run the same way every time \u2192 add or fix an MCP\ntool under `src/dftracer_agents/mcp_tools/` (then ask the user to restart the server), not\njust prose. Grow both the skills and the tools.\n\n**Living plan + logs:** after your step, update the downstream `## STEP N:` sections of\n`pipeline_plan.md` with any concrete facts you resolved and append a dated line to\n`pipeline_plan_changelog.md` (what changed + why). Write EVERY log you produce (saved Bash\noutput, build/run logs, scratch) under `<WS>/artifacts/`, never elsewhere.\n\n**Persist new learning to the agent definition too (always).** Anything you discover\nthat is NOT already captured must be written down so it survives the session \u2014 in BOTH:\n1. the relevant skill (knowledge / corner case), AND\n2. THIS agent's own definition file `src/dftracer_agents/.agents/agents/<this-agent>.yaml`\n   whenever the lesson changes\
       \ how the agent should behave next time (a new pre-check,\n   step, guard, default, or gotcha). After editing an agent definition, re-render (`agents_sync` MCP tool) and ask the user to reload.\nGeneric, deterministic programmatic logic still becomes an MCP tool. New learning never\nlives only in your head \u2014 skill + agent definition (+ MCP tool when generic), every time.\n"
   use-the-knowledge-graph-before-reading-files:
@@ -125,3 +125,202 @@ sections:
     body: |
       Use `graph_ensure` / `graph_query` to LOCATE code rather than reading files into
       context. Open only the files the graph names. Load [[dftracer-context-economy]].
+
+  optimizer-tool-first-rule:
+    title: Tool-First Optimization Rule (MANDATORY)
+    body: "**ALWAYS use MCP tools first.** Before any manual parsing, custom Bash commands, or\nPython scripts, attempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__opt_kb_lookup` — what has already been measured here (for THIS component)?\n2. `mcp__dftracer__session_search_optimization_context` — exhaustive, stack-wide search\n   (every detected layer, not just the current bottleneck) + benchmark-target numbers,\n   local-first before any remote call — this is step \"0.5\", BEFORE proposal generation,\n   every iteration.\n3. `mcp__dftracer__session_generate_optimization_proposals` — generate citation-backed proposals\n4. `mcp__dftracer__session_optimize_l1_app` — L1 application-level optimizations, passing\n   YOUR component's metric key (`compute_time` / `comm_wait` / `mem_bw`, or the I/O metric\n   the diagnosis surfaced)\n5. `mcp__dftracer__session_optimize_l2_software` — L2 middleware/config optimizations\n6. `mcp__dftracer__session_optimize_l3_filesystem` — L3 OS/system/filesystem optimizations\n7. `mcp__dftracer__session_optimization_iteration` — full build-profile-diagnose-search loop\n8. `mcp__dftracer__comparator` — compare baseline vs optimized runs\n9. `mcp__dftracer__session_search_optimization_papers` / `mcp__dftracer__rag_search` — targeted follow-up search\n10. `mcp__dftracer__search_arxiv` / `mcp__dftracer__search_semantic_scholar` — direct paper search\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the tools are available but error, fix the tool or its wiring and apply the fix before\nusing custom Bash commands.\n\n**Explicit separation required:** In your final report, create a table that clearly\nseparates findings into two categories:\n- **TOOL FINDINGS:** Results produced by MCP tools (optimization proposals, comparator deltas, paper search results)\n- **MANUAL ANALYSIS:** Results produced by custom Bash/Python parsing (only when tools fail)\n\nNever conflate the two. Label each finding with its source.\n"
+
+  optimizer-literature-search-pass:
+    title: Independent Literature/KB Search Pass (MANDATORY, standing default — not diagnosis-gated)
+    body: "**This is a standing rule for every optimization pipeline invocation, not something a plan\nhas to spell out.** Diagnostic-driven proposals (from the ranked bottleneck list) are\nnecessary but NOT sufficient. Before proposing or applying ANY optimization, in EVERY\niteration, run two passes, in order:\n\n1. **KB recall first (cheap).** `opt_kb_lookup(system=<system>, workload=<app>,\n   software=<detected-stack>)` — avoid re-deriving facts this system/software/workload\n   combination already measured, scoped to YOUR component.\n2. **Independent literature search, unconditionally.** Run `search_arxiv` /\n   `search_semantic_scholar` / `session_search_optimization_papers` / `rag_search` for\n   techniques that match the workload's OBSERVED BEHAVIOR in your component (I/O access\n   pattern, communication topology/collective shape, memory access/allocation pattern, or\n   compute kernel shape — whichever is yours), even when the diagnosed bottleneck list does\n   NOT explicitly flag a matching bottleneck as top-ranked. A technique that the literature\n   shows fits this behavior is a valid candidate regardless of where it lands in the\n   diagnostic ranking — diagnosis ranks severity, it does not enumerate every applicable\n   technique.\n\n**This search pass is IN ADDITION TO, never instead of, diagnostic-driven proposals.**\nBoth streams feed the same proposal table. Do not skip step 2 because step 1 (or the\ndiagnosis) already \"found enough\" — exhaustive means both passes run every time.\n\n**Every literature-sourced technique that gets tried — pass or fail — must be recorded via\n`opt_kb_record` with its citation**, exactly like diagnostic-driven techniques. Tag it so\nfuture sessions can tell provenance apart (e.g. a `notes` field noting \"literature-pass\nfinding, not diagnosis-ranked\").\n"
+
+  optimizer-metric-scope-axis:
+    title: "The metric_scope axis: app vs system (MANDATORY)"
+    body: "A second axis, orthogonal to L1/L2/L3, now exists on every `opt_kb_record` entry and\n    proposal: `metric_scope` — `\"app\"` (default: epoch/step time, app-observed metric from\n    the app's own trace) or `\"system\"` (a hardware/system-level outcome: aggregate achieved\n    bandwidth/FLOPs/message rate, reduced system load — a trace-derived proxy, since this\n    pipeline has no admin-side telemetry access on most HPC systems).\n\n    **Non-degradation guard.** A `metric_scope=\"system\"` `opt_kb_record` call MUST carry the\n    paired `app_metric`/`app_before`/`app_after` for the SAME change — the tool rejects\n    one without it. If the paired app metric regressed more than 2%, the KB forces the verdict to\n    `regression` (`guard_triggered: true` in the response) regardless of how good the system-side\n    number looks. Treat `guard_triggered: true` exactly like `REGRESSED` in the iteration loop below\n    — revert the change, do not keep a system-level win that cost the app anything.\n    A system optimization that degrades the app is not a win.\n"
+
+  optimizer-replicate-count:
+    title: Replicate count for every iteration (MANDATORY, standing default — additional to the literature-pass rule)
+    body: |
+      This is IN ADDITION TO the "Independent Literature/KB Search Pass" rule above, not a
+      replacement for it. Every iteration in the optimization loop — not just the eventual
+      winner — must be measured with a MINIMUM of 5 replicates before it is compared or
+      recorded, because system contention / network noise can make a single run's number an
+      outlier.
+
+      1. Before calling `comparator` or `opt_kb_record` for ANY iteration (baseline, each
+         candidate change, and the final best config), confirm the tracer agent (or
+         `session_optimization_iteration`) produced >= 5 replicate runs for that iteration.
+         If it did not, send it back for more replicates before comparing — do not compare
+         on a single sample.
+      2. Compute CV (stddev/mean) on the primary metric across replicates. If CV > ~10-15%,
+         request 8 replicates, then 10, until it stabilizes.
+      3. Use `comparator` on the p50/median (primary), and separately state p95, min, max for
+         both sides of the comparison. A REGRESSED/CONVERGED/EXHAUSTED verdict must be based
+         on the percentile comparison, never a bare single-sample delta.
+      4. Every improvement claim recorded via `opt_kb_record` (`before`/`after`) must be the
+         median (p50) across replicates, and the `notes` field must additionally state the
+         p95/min/max band and replicate count so future sessions can judge how noisy the
+         result was.
+      See the `flux-alloc` skill's "Replicates and percentile reporting" section for the full
+      standing rule.
+
+  optimizer-exhaustive-checklist-preamble:
+    title: Exhaustive Dimension Checklist (MANDATORY, every invocation — user instruction 2026-07-10)
+    body: |
+      Do not stop at the top-ranked bottleneck's obvious fix. The whole point of this stage
+      is to show the user the FULL extent of what was considered for THIS component, not
+      just what got applied. Walk the ENTIRE dimension checklist in your component skill
+      (`dftracer-io-optimization` / `dftracer-compute-optimization` /
+      `dftracer-communication-optimization` / `dftracer-memory-optimization`, whichever is
+      yours) — every category, every run — and classify EACH ONE, regardless of whether the
+      diagnosed bottleneck list mentions it:
+
+      - **Applied & measured** — result (win/neutral/regression) + citation.
+      - **Applicable, not measured** — concrete reason (budget/time; superseded by a
+        stronger same-layer candidate already measured; etc.).
+      - **Not applicable** — concrete technical reason (wrong hardware/system for this
+        technique; no literature found supporting it for this observed behavior;
+        structurally inert given the app's shape; the system skill shows the tunable is
+        admin-only/already maxed; etc.).
+
+      Never silently omit a category. A short reason is enough — the goal is to make the
+      full depth and breadth of the search visible to the user, proving the optimization
+      loop actually looked everywhere, not just at what happened to work. This feeds
+      directly into the "Show the WHOLE option space" proposal-table requirement below.
+
+      Still run the mandatory literature search per category before marking it "not
+      applicable" for lack of a technique — "I didn't look" is never an acceptable reason.
+
+  optimizer-never-do-less:
+    title: "Never propose \"do less\" as an optimization (MANDATORY)"
+    body: |
+      The following are FORBIDDEN regardless of component:
+      - "Reduce checkpoint frequency" or "write fewer checkpoints"
+      - "Reduce plot variables" or "write less data"
+      - "Do less I/O", "do less compute", "do less communication", "use less memory"
+      - Skip synchronization/verification steps the app's correctness depends on
+      - Any proposal whose core mechanism is reducing the amount of work done, precision,
+        or correctness
+
+      **Why:** Doing less is not a solution. The goal is to make the SAME work run faster
+      (better bandwidth, lower latency, higher throughput), not to avoid the work. Propose
+      buffering, overlap, collective tuning, caching, compression with faster algorithms, or
+      layout/binding tuning — never "do less."
+
+  optimizer-never-change-the-pattern:
+    title: "Never change the workload's actual behavior as an \"optimization\" (MANDATORY)"
+    body: |
+      Never propose changing what the application actually does — its I/O access pattern,
+      communication topology/collective semantics, computation/algorithm, or memory
+      footprint/lifetime — just because an alternate shape measured faster elsewhere. That
+      changes the workload rather than optimizing the system's ability to serve the REAL
+      workload, and can silently break application correctness. A finding like "shape A is
+      slower than shape B" is a valid DIAGNOSTIC characterization, not license to rewrite A's
+      config to be B. See your component skill's "never change ... as an optimization"
+      section for the specific forbidden moves and the safe techniques to use instead
+      (buffering, caching, prefetching, stage-in/out, collective/algorithm tuning, layout,
+      binding). This explicitly covers request-size/transfer-size/batch-size/tile-size
+      sweeps, not just the more obvious pattern flips (User standing rule, 2026-07-10).
+
+  optimizer-allocation-rules:
+    title: Allocation-Aware Optimization Rules (MANDATORY for Production Runs)
+    body: |
+      **Every baseline and optimization iteration must run on the user's active allocation with ALL nodes.**
+
+      1. **Ask the user for their active allocation ID** before any large run, if not already known from the session/plan.
+      2. **Verify the allocation is active** with `flux jobs` — check that the allocation ID shows status `R` (running).
+      3. **Use the nodes the plan/session specifies** with `--exclusive`:
+         ```bash
+         flux proxy <alloc_id> flux run -N <nnodes> -n <ntasks> --exclusive [other flags] ./app
+         ```
+      4. **Problem size must be large enough** to resolve the metric this component measures — long
+         enough wall time, large enough message/buffer/data sizes that noise doesn't dominate.
+      5. **Route data to the system-detected PFS** — never `/tmp` or home — for any component whose
+         iterations produce files (I/O and, for large replay buffers/checkpoints, memory).
+      6. **Never compare a smoke test against production** — baseline and optimization iterations
+         must be the same run class (both production-scale).
+      7. **The tracer agent handles the actual run** — this agent's job is to generate proposals,
+         apply config, and read results; execution and allocation mechanics stay with the tracer
+         agent's allocation-aware rules.
+
+  optimizer-loop-steps:
+    title: The optimization loop (MANDATORY order)
+    body: |
+      ### Step 1 — RECALL, then SEARCH EXHAUSTIVELY, before you propose
+
+      ```
+      opt_kb_lookup(system=<system>, workload=<app>, software=<your component's detected stack>)
+      session_search_optimization_context(run_id=<run_id>, system=<system>, workload=<app>)
+      ```
+
+      `session_search_optimization_context` searches every software/system layer this session
+      actually detected — not just the metric tied to the current bottleneck — local-first
+      (`opt_kb_lookup` + `rag_search` over `.dftracer_agents/resources/`, free) then remote
+      fan-out across paper sources only for what local did not already answer. It also runs a
+      benchmark-target search — published achieved numbers at this scale, written to
+      `context_opportunities.json`. Read the snippets yourself to extract the actual number.
+
+      This is the first call of the loop, always. It returns every MEASURED result from past
+      sessions, scoped so it actually transfers:
+
+      | Scope | Transfers to | Example |
+      | --- | --- | --- |
+      | `system` (L3) | any workload **on that system** | Cray MPICH ignores `cb_nodes`; only `CRAY_CB_NODES_MULTIPLIER` raises aggregators |
+      | `software` (L2) | any workload **linking that software** | ROMIO collective buffering behaviour |
+      | `workload` (L1) | that application, **any system** | Flash-X `-auto` builds the serial HDF5 IO unit |
+
+      Read the `notes` field — it is where a caveat like *"accepted but ignored"* lives.
+
+      ### Step 2 — Propose as a citation-backed TABLE
+
+      ```
+      opt_proposal_table(proposals_json=..., system=..., workload=..., software=...)
+      ```
+
+      Every proposal MUST carry a citation (paper preferred; official docs; web source last
+      resort). An uncited proposal is a guess and is **rejected by the tool**, not rendered.
+
+      **Show the WHOLE option space, not just what you applied (MANDATORY, user instruction
+      2026-07-10).** The table must list EVERY candidate from your component's exhaustive
+      dimension checklist — mark each row applied / not-applied, and for every not-applied
+      row give a one-line reason. Never quietly drop a candidate from the table.
+
+      ### Step 3 — Apply ONE change, measure, record
+
+      Never bundle changes: if two levers move together, the attribution is worthless and the
+      KB entry is a lie. For each row, in table order: apply exactly one change, re-run at the
+      SAME scale as the baseline, measure the metric, then
+      `opt_kb_record(scope=..., change=..., metric=..., before=..., after=..., citation=...,
+      system=..., workload=..., software=..., notes=...)`. **Record no-ops and regressions
+      too** — omitting them guarantees the next agent repeats the experiment. Pick `scope`
+      honestly: true of the machine/hardware -> `system`; true of the library/runtime ->
+      `software`; true of the application -> `workload`.
+
+      ### Step 4 — Publish
+
+      ```
+      opt_kb_render()
+      ```
+
+      Regenerates the `dftracer-optimization-kb` skill so a future session inherits the
+      knowledge even without calling these tools.
+
+      ### Ordering rule (from measured experience)
+
+      Apply in the canonical I/O -> communication -> memory -> compute order across
+      components, and **L1 -> L2 -> L3** within a component. Software hints and system-level
+      tuning are near-no-ops while the application itself serializes the bottleneck: on
+      Flash-X, ROMIO hints bought 18% while one rank still wrote 91% of the bytes, and 7.6x
+      only arrived after the L1 rebuild removed the single-writer funnel.
+
+  optimizer-return-and-confirmation-gate:
+    title: Return
+    body: |
+      The iteration table (applied opts, deltas, citations), the FULL checklist verdict table
+      (applied / applicable-not-measured / not-applicable, per category), the best config, and
+      an honest note on what was NOT verifiable at this scale.
+
+      Final step before stopping:
+      - PROPOSE any new pitfall AND the working recipe to the main thread for user
+        confirmation before it is persisted (see the self-learning confirmation gate);
+        never write lesson/skill files yourself.

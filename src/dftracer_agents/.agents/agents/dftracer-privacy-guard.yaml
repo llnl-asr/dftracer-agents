@@ -12,7 +12,6 @@ tools:
 - mcp__dftracer__privacy_add_pattern
 - mcp__dftracer__session_get_run_paths
 - mcp__dftracer__session_read_file
-- mcp__dftracer__skill_load
 - mcp__dftracer__graph_ensure
 - mcp__dftracer__graph_query
 - mcp__dftracer__profile_step_begin
