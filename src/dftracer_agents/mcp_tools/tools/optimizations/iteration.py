@@ -12,6 +12,7 @@ from ..session.workspace import (
     _ws, _load_state, _save_state, _write_artifact_log, _ok, _err, _run, _workspaces_root,
 )
 from ..session.install import _dftracer_utils_comparator
+from ..session.detection import _detect_analyzer_presets
 from ..session.session_tools import (
     _session_build_annotated_impl,
     _session_run_with_dftracer_impl,
@@ -312,10 +313,13 @@ def register_iteration_tools(mcp: FastMCP) -> None:
             import shutil as _sh2
             _sh2.rmtree(str(_ckpt))
         _ckpt.mkdir(exist_ok=True)
-        # Use the DLIO preset for ML/DL workloads so dfanalyzer surfaces
-        # dataloader/compute-specific metrics (e.g. data_loader_ops_slope,
-        # compute_ops_slope) instead of only generic POSIX metrics.
-        _preset = "dlio" if (state.get("frameworks") or state.get("ml_frameworks_list")) else "posix"
+        # ML/DL workloads run BOTH dlio (dataloader/compute-specific metrics like
+        # data_loader_ops_slope, compute_ops_slope) AND generic (auto-discovered
+        # per-category layers, so nothing outside dlio's known layers is
+        # silently left undiagnosed); non-DL uses posix alone. Same detection
+        # logic as the main pipeline's diagnose step (session/detection.py).
+        _frameworks = state.get("frameworks") or state.get("ml_frameworks_list") or []
+        _preset = ",".join(_detect_analyzer_presets({"ml_frameworks_list": _frameworks}))
         raw = _session_diagnose_bottlenecks_impl(
             run_id=run_id, timeout=timeout, traces_dir=str(iter_split_dir),
             analyzer_preset=_preset,

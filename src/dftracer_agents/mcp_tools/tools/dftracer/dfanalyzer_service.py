@@ -51,6 +51,21 @@ def _ensure_analyzable_path(trace_path: str) -> str:
     ``*.pfw.gz`` file and does not already look like split output, split it into
     a cached ``<trace_path>/.dfa_split`` dir and return that.  On any failure the
     original path is returned unchanged (best-effort, never blocks analysis).
+
+    A directory is treated as ALREADY split/compact output — and left alone,
+    never re-split — if it has its own ``idx/`` sibling dir and/or its
+    ``*.pfw.gz`` files already carry the ``dftracer_split``-produced
+    ``*_chunkN.pfw.gz`` naming convention. Discovered (2026-07-11): re-splitting
+    a session's own multi-chunk ``traces/compact/`` output (produced by the
+    tracer's own compaction step, e.g. ``montage_2mass-{1,2,3,4}_chunk0.pfw.gz``
+    + a sibling ``idx/`` dir) silently double-processed already-merged data —
+    ``analyze()`` undercounted by ~70% (480K vs a verified 1,583,272-event
+    ground truth) with implausible file/process counts, while a *single*-chunk
+    compact dir (``len(gz) <= 1``) was never re-split and matched ground truth
+    exactly. The `>1 pfw.gz file` heuristic alone cannot distinguish "raw
+    per-rank files that need merging" from "already-compact multi-chunk output
+    that must NOT be re-split" — the ``idx/``-sibling / ``_chunk`` naming check
+    is required to tell them apart.
     """
     try:
         p = Path(trace_path)
@@ -66,14 +81,24 @@ def _ensure_analyzable_path(trace_path: str) -> str:
         # Already a single (possibly split) chunk, or nothing to do.
         if len(gz) <= 1:
             return trace_path
-        # Reuse a fresh cached split (newer than every input file).
-        if split_dir.is_dir():
-            existing = glob.glob(str(split_dir / "*.pfw.gz"))
-            if existing and min(os.path.getmtime(f) for f in existing) >= max(
-                os.path.getmtime(f) for f in gz
-            ):
-                return str(split_dir)
-            shutil.rmtree(split_dir, ignore_errors=True)
+        # Already-compact/indexed output (this session's own tracer compaction step,
+        # or a prior dftracer_split run): don't re-split, or already-merged data gets
+        # silently double-processed and undercounted. Evidence: a sibling `idx/` dir,
+        # or all files already following the `*_chunkN.pfw.gz` split-output naming.
+        already_split = (p / "idx").is_dir() or all(
+            "_chunk" in os.path.basename(f) for f in gz
+        )
+        if already_split:
+            return trace_path
+        # Always rebuild from scratch. A prior mtime-based "reuse if fresh" cache
+        # was found to still mask corruption: `dftracer_split --force` alone forces
+        # individual index-entry recreation but not a clean rebuild, so a directory
+        # that looked fresh by mtime could still contain overlapping/stale RocksDB
+        # SST generations from an earlier partial run (observed as diagnose() crashing
+        # on a stale .dftindex/*.sst, and analyze() returning a different event count
+        # on every call against the same identical input). Splitting is cheap relative
+        # to correctness, so never trust a cached split_dir — always delete + regenerate.
+        shutil.rmtree(split_dir, ignore_errors=True)
         split_dir.mkdir(parents=True, exist_ok=True)
         split_bin = shutil.which("dftracer_split")
         if not split_bin:
@@ -81,7 +106,7 @@ def _ensure_analyzable_path(trace_path: str) -> str:
         r = subprocess.run(
             [split_bin, "-d", str(p), "--output", str(split_dir),
              "--index-dir", str(split_dir / "idx"), "--compress",
-             "--app-name", "analyze"],
+             "--app-name", "analyze", "--force"],
             capture_output=True, text=True, timeout=600,
         )
         if r.returncode == 0 and glob.glob(str(split_dir / "*.pfw.gz")):
@@ -108,7 +133,9 @@ def _hydra_args(
     output_compact: Optional[bool] = None,
     output_root_only: Optional[bool] = None,
     output_name: Optional[str] = None,
+    output_path: Optional[str] = None,
     output_run_db_path: Optional[str] = None,
+    facts_enabled: Optional[bool] = None,
     cluster_type: str = "local",
     cluster_n_workers: Optional[int] = None,
     cluster_memory_limit: Optional[str] = None,
@@ -146,7 +173,14 @@ def _hydra_args(
             omitted.
         analyzer_preset (str): Hydra preset for the selected analyzer backend.
             Appended as ``-ahydra.analyzer/preset=<value>``.  Common values are
-            ``"posix"`` (default) and ``"dlio"``.
+            ``"posix"`` (default) and ``"dlio"``. ``"generic"`` is a catch-all
+            preset that auto-discovers every distinct ``cat`` value in the
+            trace at runtime and builds one layer per category — use it for
+            traces with custom app-annotation categories or any workload that
+            doesn't fit ``posix``/``dlio``, so no trace content is silently
+            left uncategorized. ``session_diagnose_bottlenecks`` additionally
+            accepts a comma-separated preset list (e.g. ``"dlio,generic"``)
+            to run and merge multiple presets in one call.
         analyzer_checkpoint (Optional[bool]): Enable or disable checkpointing
             inside the analyzer.  Mapped to
             ``--analyzer.checkpoint=true|false``.  Omitted when ``None``.
@@ -207,9 +241,13 @@ def _hydra_args(
         * Boolean overrides (``analyzer_checkpoint``, ``analyzer_time_approximate``,
           ``output_compact``) are serialised as the literal strings ``"true"`` or
           ``"false"`` to match Hydra's expected format.
-        * ``output_name`` and ``output_run_db_path`` are tested with
-          :meth:`str.strip` before inclusion, so whitespace-only strings are
-          silently dropped.
+        * ``output_name``, ``output_path``, and ``output_run_db_path`` are
+          tested with :meth:`str.strip` before inclusion, so whitespace-only
+          strings are silently dropped.
+        * ``output_path`` is required for ``output_format="file"`` — it is the
+          ``facts_dir`` that ``diagnose(facts_dir=...)`` reads ``facts.jsonl``
+          from. Without it, ``dfanalyzer output=file`` runs but writes nowhere
+          the diagnoser can find, silently breaking the facts_dir workflow.
     """
     # dfanalyzer uses Hydra-style positional overrides (key=value), not GNU flags.
     cmd: List[str] = ["dfanalyzer"]
@@ -249,8 +287,12 @@ def _hydra_args(
         cmd.append(f"output.root_only={output_root_only}")
     if output_name and output_name.strip():
         cmd.append(f"output.name={output_name}")
+    if output_path and output_path.strip():
+        cmd.append(f"output.path={output_path}")
     if output_run_db_path and output_run_db_path.strip():
         cmd.append(f"output.run_db_path={output_run_db_path}")
+    if facts_enabled is not None:
+        cmd.append(f"facts.enabled={'True' if facts_enabled else 'False'}")
 
     cmd.append(f"cluster={cluster_type}")
     if cluster_n_workers is not None:
@@ -347,7 +389,9 @@ class DFAnalyzerService(MCPService):
             output_compact: Optional[bool] = None,
             output_root_only: Optional[bool] = None,
             output_name: Optional[str] = None,
+            output_path: Optional[str] = None,
             output_run_db_path: Optional[str] = None,
+            facts_enabled: Optional[bool] = None,
             cluster_type: str = "local",
             cluster_n_workers: Optional[int] = None,
             cluster_memory_limit: Optional[str] = None,
@@ -355,7 +399,15 @@ class DFAnalyzerService(MCPService):
             cluster_cores: Optional[int] = None,
             cluster_memory: Optional[str] = None,
         ) -> str:
-            """Run dfanalyzer on the provided trace path."""
+            """Run dfanalyzer on the provided trace path.
+
+            Pass ``output_format="file"`` with ``output_path=<facts_dir>`` AND
+            ``facts_enabled=True`` to produce the ``facts.jsonl`` bundle that
+            ``diagnose(facts_dir=...)`` consumes. ``facts.enabled`` defaults to
+            ``False`` in dfanalyzer itself — omitting either ``output_path`` or
+            ``facts_enabled=True`` writes only parquet views + raw_stats.json,
+            never a ``facts.jsonl``, and silently breaks that workflow.
+            """
             # dfanalyzer truncates a dir of raw per-rank *.pfw.gz files; split +
             # index them first so it reads the full event set across all ranks.
             trace_path = _ensure_analyzable_path(trace_path)
@@ -375,7 +427,9 @@ class DFAnalyzerService(MCPService):
                 output_compact=output_compact,
                 output_root_only=output_root_only,
                 output_name=output_name,
+                output_path=output_path,
                 output_run_db_path=output_run_db_path,
+                facts_enabled=facts_enabled,
                 cluster_type=cluster_type,
                 cluster_n_workers=cluster_n_workers,
                 cluster_memory_limit=cluster_memory_limit,

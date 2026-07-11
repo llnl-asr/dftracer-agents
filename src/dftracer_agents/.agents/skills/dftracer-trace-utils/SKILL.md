@@ -265,6 +265,55 @@ schemas would sit in context permanently. See [[dftracer-context-economy]].
    `session_optimization_iteration` (e.g. a two-phase `flux batch` job). Pass
    `bottlenecks_json=...` or write `<ws>/<run>/analysis/diagnosis.json`.
 
+5. **`analyze()`/`diagnose()` stale-split-index fixed (2026-07-11).** Even after fix #2
+   (sibling `.dfa_split_<name>` dir), a *fresh* split could still leave a stale/partial
+   `.dftindex/*.sst` file behind if a prior `dftracer_split` run was interrupted or
+   overlapped — `diagnose(facts_dir=...)` then failed outright on the corrupt index, and
+   two back-to-back `analyze()` calls on the same input still returned different totals
+   (undercounts of 485,598 and 1,456,794 vs a verified ground truth of 1,583,272 events,
+   confirmed via `event_count`/`dftracer_info`). Root cause: `_ensure_analyzable_path` in
+   `dfanalyzer_service.py` invoked `dftracer_split` without `--force`, so the binary's own
+   index-recreation guard could reuse a stale `.dftindex` under the (mtime-fresh) split dir.
+   Fixed by always passing `dftracer_split ... --force` — this unconditionally overrides
+   existing index files and forces index recreation, regardless of mtime staleness checks.
+   **Always cross-check `analyze()`/`diagnose()` output against `event_count` ground truth
+   even after this fix** — if a mismatch recurs, delete the `.dfa_split_<name>` dir entirely
+   before re-running rather than trusting incremental reuse.
+
+6. **`--force` alone was insufficient (2026-07-11, same-day follow-up).** Verification found
+   `dftracer_split --force` forces recreation of individual index entries but not a clean
+   directory rebuild — a `.dfa_split_<name>` dir judged "fresh" by the old mtime-reuse check
+   could still carry overlapping/stale RocksDB SST generations from an earlier partial run,
+   so `analyze()` kept returning a different event count on every call (490,306 → 960,318 →
+   1,456,794 → 636,045, none matching the 1,583,272 ground truth). Also discovered in the
+   same pass: the `analyze()` MCP tool had **no `output_path` parameter**, so
+   `analyze(output_format="file")` ran but wrote nowhere `diagnose(facts_dir=...)` could find.
+
+7. **Real root cause found (2026-07-11, second follow-up): re-splitting already-compact
+   multi-chunk output.** The `_ensure_analyzable_path` heuristic ("if a dir has >1
+   `*.pfw.gz` file, run `dftracer_split` on it") cannot tell "raw per-rank files that need
+   merging" apart from "already-compact multi-chunk tracer output that must NOT be
+   re-split". A session's own `traces/compact/` dir with 4 files
+   (`montage_2mass-{1,2,3,4}_chunk0.pfw.gz`) plus its own `idx/` sibling dir was getting
+   silently re-split and double-processed, undercounting by ~70% (480K vs a verified
+   1,583,272 ground truth) with implausible file/process counts. A *single*-chunk compact
+   dir was never re-split (`len(gz) <= 1` short-circuit) and matched ground truth exactly
+   — that's why the bug was scale-dependent (invisible on 1-chunk pilot traces, present on
+   multi-chunk production traces). **Fixed**: `_ensure_analyzable_path` now also treats a
+   dir as already-split/compact (and leaves it alone) if it has a sibling `idx/` dir or all
+   its `*.pfw.gz` files already carry the `dftracer_split`-produced `_chunkN.pfw.gz`
+   naming — in addition to the unconditional rebuild-on-actual-split fix from item 6.
+   **Separately**, `dfanalyzer`'s own `facts.enabled` config defaults to `False` — even with
+   `output_path` wired up, `output=file` only writes parquet views + `raw_stats.json`
+   unless `facts.enabled=True` is also passed. Added a `facts_enabled` param to `analyze()`
+   and hardcoded `facts.enabled=True` in `session_diagnose_bottlenecks`'s internal
+   `_run_dfanalyzer_facts` call (`optimizations/diagnose.py`) — the facts_dir workflow
+   needs BOTH `output.path=<dir>` and `facts.enabled=True` to produce `facts.jsonl`.
+   **When verifying trace-analysis fixes**: always run `analyze()` on the SAME input at
+   least twice, confirm counts are identical AND match `event_count`/`dftracer_info`
+   ground truth — do not accept "two calls happened to agree" as proof if a third or a
+   different-scale trace (single-chunk vs multi-chunk) hasn't also been checked.
+
 ### Still true regardless of tooling
 - Cross-check any `analyze()` summary against `event_count` and the known pid count.
 - An empty `diagnose()` is a tool signal, not "no bottlenecks".

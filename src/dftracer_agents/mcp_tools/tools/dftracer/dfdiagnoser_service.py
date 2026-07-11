@@ -1,4 +1,4 @@
-"""DFDiagnoser MCP service — I/O bottleneck diagnosis from DFAnalyzer checkpoints.
+"""DFDiagnoser MCP service — I/O bottleneck diagnosis from DFAnalyzer facts bundles.
 
 This module exposes the DFDiagnoser library as an MCP tool so that AI agents can
 identify I/O bottlenecks in dftracer traces without constructing shell commands
@@ -6,40 +6,51 @@ manually.
 
 Background
 ----------
-DFDiagnoser consumes *DFAnalyzer checkpoints* — a directory of ``_flat_view_*.parquet``
-and ``_raw_stats_*.json`` files produced when dfanalyzer is run with
-``analyzer.checkpoint=True``.  It scores each metric against severity thresholds
-(trivial → critical) and, in streaming mode, builds higher-level findings with
-motifs and recommendations.
+DFDiagnoser is a pure *fact consumer*: DFAnalyzer's own fact pipeline computes
+scored, classified findings (severity, severity_score, confidence, motif,
+recommendation_bundle) and writes them as ``facts.jsonl`` when run with
+``output=file output.path=<facts_dir>``. DFDiagnoser's ``diagnose_file()``
+replays that bundle into ``DiagnosisFinding`` objects and (via ``FileOutput``)
+writes them back out as ``findings.jsonl``. There is no ``diagnose_checkpoint``
+method — a raw ``analyzer.checkpoint`` directory (``_flat_view_*.parquet``,
+used for incremental recompute caching) is a distinct mechanism and is not
+diagnosable via the real DFDiagnoser API/CLI.
 
-For static checkpoint runs (the common batch-pipeline use case) the tool:
+The primary (facts_dir) path:
 
-1. Loads each ``_flat_view_*.parquet`` file from the checkpoint directory.
-2. Calls ``score_metrics()`` which adds a ``<metric>_score`` column
-   (1 = trivial, 2 = low, 3 = medium, 4 = high, 5 = critical) to every
-   relevant metric.
-3. Serialises the scored views to ``<output_dir>/`` as JSON/CSV/Parquet.
-4. Extracts the highest-scoring metrics and surfaces them as a structured
-   bottleneck summary.
+1. Runs (or expects already-run) dfanalyzer with ``output=file`` to produce
+   ``<facts_dir>/facts.jsonl``.
+2. Calls ``Diagnoser().diagnose_file(facts_dir)`` (Python API) or
+   ``dfdiagnoser input=file input.path=<facts_dir>`` (CLI fallback).
+3. Writes ``findings.jsonl`` (one classified ``DiagnosisFinding`` per line) to
+   ``<output_dir>/``.
+4. Surfaces high/critical-severity findings as a structured bottleneck summary.
+
+A LEGACY ``checkpoint_dir`` path remains for when only a raw checkpoint exists:
+it scores every numeric column with a local percentile heuristic (not real
+DFDiagnoser motif/trend classification) since the real diagnoser has no
+checkpoint-parquet consumer.
 
 Tools exposed
 -------------
-* ``diagnose`` — run dfdiagnoser on an existing DFAnalyzer checkpoint directory.
+* ``diagnose`` — run dfdiagnoser on a DFAnalyzer ``output=file`` facts bundle
+  (preferred) or, legacy, a raw checkpoint directory.
 
 Typical pipeline order
 ----------------------
 ::
 
-    dfanalyzer (via analyze tool, with analyzer_checkpoint=True)
-        → checkpoint_dir/  (_flat_view_*.parquet, _raw_stats_*.json)
+    dfanalyzer trace_path=<traces> analyzer/preset=posix \\
+        output=file output.path=<facts_dir>
+        → facts_dir/  (facts.jsonl, raw_stats.json)
 
-    diagnose(checkpoint_dir=checkpoint_dir, output_dir=output_dir)
-        → scored flat views  +  bottleneck summary JSON
+    diagnose(facts_dir=facts_dir, output_dir=output_dir)
+        → findings.jsonl  +  bottleneck summary JSON
 
 References
 ----------
-* https://github.com/llnl/DFDiagnoser
-* https://dfanalyzer.readthedocs.io/
+* https://github.com/llnl/dfdiagnoser
+* https://github.com/llnl/dfanalyzer
 """
 
 from __future__ import annotations
@@ -55,7 +66,11 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastmcp import FastMCP
 
 from ...mcp_service_factory import MCPService, MCPServiceFactory
-from ..optimizations.diagnose import _session_diagnose_bottlenecks_impl
+from ..optimizations.diagnose import (
+    _session_diagnose_bottlenecks_impl,
+    _run_dfdiagnoser_findings,
+    _parse_findings_jsonl,
+)
 
 # Score integer → human label (1-indexed, matching dfdiagnoser.scoring.SCORE_NAMES)
 _SCORE_LABELS = {1: "trivial", 2: "low", 3: "medium", 4: "high", 5: "critical"}
@@ -112,57 +127,13 @@ def _run_cli(cmd: List[str], timeout: int = 300) -> Dict[str, Any]:
         return {"returncode": -1, "stdout": "", "stderr": str(exc), "success": False}
 
 
-def _diagnose_via_api(
-    checkpoint_dir: str,
-    output_dir: str,
-    output_format: str,
-    metric_boundaries: Dict[str, float],
-) -> Optional[Dict[str, Any]]:
-    """Attempt Python-API diagnosis; return None to signal the direct-pandas
-    fallback should be used instead.
-
-    As of DFDiagnoser's current release, only ``diagnose_file``,
-    ``diagnose_facts``, ``diagnose_mofka``, and ``diagnose_zmq`` exist; there
-    is no ``diagnose_checkpoint`` method. Treat that as an expected
-    "API unavailable" case, not a hard failure, so the direct checkpoint
-    reader (which uses pandas) always runs.
-    """
-    try:
-        from dfdiagnoser.diagnoser import Diagnoser  # type: ignore
-    except ImportError:
-        return None
-
-    diagnoser = Diagnoser()
-    if not hasattr(diagnoser, "diagnose_checkpoint"):
-        return None
-    # If a future DFDiagnoser release adds diagnose_checkpoint, this path
-    # will automatically light up.  For now it always returns None.
-    return None
-
-
-def _diagnose_via_cli(
-    checkpoint_dir: str,
-    output_dir: str,
-    output_format: str,
-    timeout: int,
-) -> Dict[str, Any]:
-    """Run dfdiagnoser CLI as a subprocess.
-
-    NOTE: The dfdiagnoser CLI (Hydra-based) does NOT support
-    ``input=checkpoint``.  Valid input modes are ``file`` (expects
-    ``facts.jsonl``) and ``mofka`` / ``zmq`` (streaming).  Therefore this
-    function is kept for API compatibility but will fail with a clear
-    message directing the caller to the direct-pandas fallback.
-    """
-    return {
-        "returncode": -1,
-        "stdout": "",
-        "stderr": (
-            "dfdiagnoser CLI does not support input=checkpoint. "
-            "Use the direct checkpoint reader (pandas) instead."
-        ),
-        "success": False,
-    }
+## NOTE: The real DFDiagnoser Python API / CLI (`diagnose_file` /
+## `dfdiagnoser input=file`) is used via the shared `_run_dfdiagnoser_findings`
+## helper (imported from `optimizations/diagnose.py`) for the `facts_dir` path
+## above. `_diagnose_via_pandas` below remains the only path for the LEGACY
+## `checkpoint_dir` input, since a raw `analyzer.checkpoint` directory
+## (`_flat_view_*.parquet`) has no real-DFDiagnoser consumer — `diagnose_file`
+## requires an `output=file` bundle (`facts.jsonl`), not checkpoint parquet.
 
 
 def _score_dataframe(df: "pd.DataFrame") -> "pd.DataFrame":
@@ -343,48 +314,52 @@ class DFDiagnoserService(MCPService):
 
         @self.diagnoser_subservice.tool()
         def diagnose(
-            checkpoint_dir: str,
+            facts_dir: Optional[str] = None,
+            checkpoint_dir: Optional[str] = None,
             output_dir: Optional[str] = None,
             output_format: str = "json",
             metric_boundaries: Optional[str] = None,
             timeout: int = 300,
         ) -> str:
-            """Diagnose I/O bottlenecks from a DFAnalyzer checkpoint directory.
+            """Diagnose I/O bottlenecks from a DFAnalyzer ``output=file`` facts bundle.
 
-            Loads the ``_flat_view_*.parquet`` files produced by dfanalyzer
-            (when run with ``analyzer.checkpoint=True``) and scores every
-            metric against severity thresholds defined by DFDiagnoser:
-
-            * ``trivial`` (1) — below 25 % of threshold / baseline
-            * ``low``     (2) — 25–50 %
-            * ``medium``  (3) — 50–75 %
-            * ``high``    (4) — 75–90 %
-            * ``critical``(5) — above 90 % of threshold / baseline
-
-            The tool attempts the DFDiagnoser Python API first; if the package
-            is not installed it falls back to the ``dfdiagnoser`` CLI binary.
+            DFDiagnoser is now a pure fact CONSUMER: scoring/motif classification
+            happens in DFAnalyzer's own fact pipeline, and DFDiagnoser's
+            ``diagnose_file()`` replays the resulting ``facts.jsonl`` bundle into
+            classified findings (severity, severity_score, confidence, motif,
+            recommendation_bundle). There is no ``diagnose_checkpoint`` — a raw
+            ``analyzer.checkpoint`` directory (``_flat_view_*.parquet``) is a
+            distinct, incremental-recompute-only cache, not diagnosable directly.
 
             Typical upstream step::
 
                 dfanalyzer \\
                     trace_path=<trace_dir> \\
-                    "analyzer.checkpoint=True" \\
-                    "analyzer.checkpoint_dir=<checkpoint_dir>" \\
                     "analyzer/preset=posix" \\
-                    "view_types=[time_range]"
+                    "view_types=[time_range]" \\
+                    output=file \\
+                    "output.path=<facts_dir>"
 
             Args:
-                checkpoint_dir: Path to the DFAnalyzer checkpoint directory
-                    (must contain ``_flat_view_*.parquet`` and
-                    ``_raw_stats_*.json`` files).
-                output_dir: Directory where scored flat views are written.
-                    Defaults to ``<checkpoint_dir>/scored/``.
-                output_format: Format for scored output files.  One of
-                    ``"json"`` (default), ``"csv"``, or ``"parquet"``.
+                facts_dir: Path to the DFAnalyzer ``output=file`` bundle
+                    directory (must contain ``facts.jsonl``). Preferred —
+                    this is the real, currently-supported diagnosis path.
+                checkpoint_dir: LEGACY fallback: a raw ``analyzer.checkpoint``
+                    directory (``_flat_view_*.parquet``). Used only if
+                    *facts_dir* is not given; scores every numeric column via
+                    a local percentile heuristic (not DFDiagnoser's real
+                    motif/trend classification) since the real diagnoser
+                    cannot consume checkpoint parquet directly. Prefer
+                    re-running dfanalyzer with ``output=file`` instead.
+                output_dir: Directory where results are written. Defaults to
+                    ``<facts_dir>/findings/`` or ``<checkpoint_dir>/scored/``.
+                output_format: Format for legacy scored-view output files
+                    (checkpoint_dir path only). One of ``"json"`` (default),
+                    ``"csv"``, or ``"parquet"``.
                 metric_boundaries: Optional JSON object string mapping metric
-                    names to their peak-performance reference values.  Used
-                    by DFDiagnoser to normalise bandwidth/IOPS metrics against
-                    hardware limits (e.g. ``'{"bw_mean": 10000000000}'``).
+                    names to their peak-performance reference values, passed
+                    to ``diagnose_file()`` (facts_dir path only — DFDiagnoser's
+                    CLI does not expose this as a Hydra field).
                     Defaults to ``None`` (no boundary normalisation).
                 timeout: Seconds before the diagnosis subprocess is killed.
                     Defaults to ``300``.
@@ -393,25 +368,84 @@ class DFDiagnoserService(MCPService):
                 JSON string with keys:
                     * ``status`` (``"ok"`` or ``"error"``).
                     * ``message`` — outcome description.
-                    * ``checkpoint_dir`` — the directory that was analysed.
-                    * ``output_dir`` — where scored views were written.
-                    * ``severity_counts`` — dict mapping severity label to count
-                      of (view, metric) pairs at that severity level.
-                    * ``bottlenecks`` — list of high/critical findings, each
-                      with ``view``, ``scope``, ``metric``, ``severity``,
-                      ``description``, and ``value`` keys.
-                      Sorted by severity score descending, capped at 50 entries.
-                    * ``raw_stats_summary`` — top-level keys from the
-                      ``_raw_stats_*.json`` checkpoint file, if present.
+                    * ``facts_dir`` / ``checkpoint_dir`` — whichever input was analysed.
+                    * ``output_dir`` — where results were written.
+                    * ``severity_counts`` — dict mapping severity label to count.
+                    * ``bottlenecks`` — list of high/critical findings (facts_dir
+                      path: full ``DiagnosisFinding`` fields — ``motif``,
+                      ``confidence``, ``recommendation_bundle``, ``summary``, etc.;
+                      checkpoint_dir path: ``view``/``scope``/``metric``/``score``).
+                      Sorted by severity descending, capped at 50 entries.
                     * ``diagnose_result`` — subprocess/API run result dict.
 
             Raises:
                 Returns ``{"status": "error"}`` when:
-                    * *checkpoint_dir* does not exist or is empty.
-                    * No ``_flat_view_*.parquet`` files are found.
-                    * Both the Python API and CLI fail.
+                    * Neither *facts_dir* nor *checkpoint_dir* is given.
+                    * The given directory does not exist or lacks the expected files.
+                    * Diagnosis fails via every available path.
             """
-            # ── Validate checkpoint dir ──────────────────────────────────
+            if not facts_dir and not checkpoint_dir:
+                return json.dumps({
+                    "status": "error",
+                    "message": "Provide facts_dir (preferred) or checkpoint_dir (legacy).",
+                }, indent=2)
+
+            # ── Preferred path: real diagnose_file() on an output=file bundle ────
+            if facts_dir:
+                fd = Path(facts_dir)
+                if not fd.exists() or not (fd / "facts.jsonl").exists():
+                    return json.dumps({
+                        "status": "error",
+                        "message": (
+                            f"No facts.jsonl in {facts_dir}. Run dfanalyzer with "
+                            "output=file output.path=<facts_dir> first."
+                        ),
+                    }, indent=2)
+
+                out_dir = Path(output_dir) if output_dir else (fd / "findings")
+                out_dir.mkdir(parents=True, exist_ok=True)
+                boundaries = json.loads(metric_boundaries) if metric_boundaries else {}
+
+                run_result = _run_dfdiagnoser_findings(fd, out_dir, timeout, boundaries)
+                severity_counts, bottlenecks = _parse_findings_jsonl(out_dir)
+                raw_stats = None
+                raw_stats_path = fd / "raw_stats.json"
+                if raw_stats_path.exists():
+                    try:
+                        with open(raw_stats_path) as f:
+                            raw_stats = json.load(f)
+                    except Exception:
+                        pass
+
+                total_issues = sum(severity_counts.values())
+                critical_high = severity_counts["critical"] + severity_counts["high"]
+                msg = (
+                    f"Diagnosis complete: {total_issues} finding(s). "
+                    f"{critical_high} high/critical issue(s) found."
+                )
+                if not run_result["success"] and not bottlenecks:
+                    return json.dumps({
+                        "status": "error",
+                        "message": f"Diagnosis failed: {run_result['stderr']}",
+                        "facts_dir": facts_dir,
+                        "diagnose_result": run_result,
+                    }, indent=2)
+
+                return json.dumps({
+                    "status": "ok",
+                    "message": msg,
+                    "facts_dir": facts_dir,
+                    "output_dir": str(out_dir),
+                    "severity_counts": severity_counts,
+                    "bottlenecks": bottlenecks[:50],
+                    "raw_stats_summary": (
+                        {k: raw_stats[k] for k in list(raw_stats)[:20]}
+                        if raw_stats else None
+                    ),
+                    "diagnose_result": run_result,
+                }, indent=2)
+
+            # ── Legacy fallback: raw checkpoint parquet via local pandas scoring ──
             cp = Path(checkpoint_dir)
             if not cp.exists():
                 return json.dumps({
@@ -431,18 +465,8 @@ class DFDiagnoserService(MCPService):
             out_dir = output_dir or str(cp / "scored")
             Path(out_dir).mkdir(parents=True, exist_ok=True)
 
-            boundaries = json.loads(metric_boundaries) if metric_boundaries else {}
+            run_result = _diagnose_via_pandas(checkpoint_dir, out_dir, output_format)
 
-            # ── Run diagnosis (API → pandas fallback → CLI) ───────────────
-            run_result = _diagnose_via_api(checkpoint_dir, out_dir, output_format, boundaries)
-            if run_result is None:
-                # API unavailable — try direct pandas scoring (primary fallback)
-                run_result = _diagnose_via_pandas(checkpoint_dir, out_dir, output_format)
-            if not run_result["success"]:
-                # pandas failed — try CLI as last resort (expected to fail for checkpoint)
-                run_result = _diagnose_via_cli(checkpoint_dir, out_dir, output_format, timeout)
-
-            # ── Parse scored outputs ──────────────────────────────────────
             scored_views = _load_scored_views(out_dir)
             severity_counts, bottlenecks = _extract_bottlenecks(scored_views)
             raw_stats = _load_raw_stats(checkpoint_dir)
@@ -450,8 +474,8 @@ class DFDiagnoserService(MCPService):
             total_issues = sum(severity_counts.values())
             critical_high = severity_counts["critical"] + severity_counts["high"]
             msg = (
-                f"Diagnosis complete: {total_issues} metric observations across "
-                f"{len(scored_views)} view(s). "
+                f"Diagnosis complete (legacy checkpoint path): {total_issues} metric "
+                f"observations across {len(scored_views)} view(s). "
                 f"{critical_high} high/critical issue(s) found."
             )
 
@@ -496,41 +520,52 @@ class DFDiagnoserService(MCPService):
 
             Two-phase pipeline:
 
-            **Phase 1 — DFAnalyzer checkpoint**
-                Runs ``dfanalyzer`` with ``analyzer.checkpoint=True`` on the split
-                traces in ``<workspace>/traces_split/``, writing checkpoint files
-                (``_flat_view_*.parquet``, ``_raw_stats_*.json``) to
-                ``<workspace>/dfanalyzer_checkpoint/``.
+            **Phase 1 — DFAnalyzer facts bundle**
+                Runs ``dfanalyzer`` with ``output=file`` on the split traces in
+                ``<workspace>/traces_split/``, writing the deliverable bundle
+                (``facts.jsonl``, ``raw_stats.json``) to
+                ``<workspace>/dfanalyzer_facts/``. Also writes an independent
+                ``analyzer.checkpoint`` cache to ``<workspace>/dfanalyzer_checkpoint/``
+                (incremental-recompute only — not consumed by DFDiagnoser).
 
             **Phase 2 — DFDiagnoser**
-                Loads the checkpoint and scores every metric against severity
-                thresholds (trivial → critical).  Scored views are written to
-                ``<workspace>/diagnosis/scored/`` and a bottleneck summary is
-                saved to ``<workspace>/diagnosis.json``.
+                Replays ``facts.jsonl`` via ``diagnose_file()`` into classified
+                findings (severity, severity_score, confidence, motif,
+                recommendation_bundle — scoring already happened in the analyzer's
+                fact pipeline). Findings are written to
+                ``<workspace>/diagnosis/findings/findings.jsonl`` and a bottleneck
+                summary is saved to ``<workspace>/diagnosis.json``.
 
-            Severity levels (DFDiagnoser convention):
-                * ``trivial`` — metric below 25 % of threshold
-                * ``low``     — 25–50 %
-                * ``medium``  — 50–75 %
-                * ``high``    — 75–90 %  ← surfaces as a bottleneck
-                * ``critical``— above 90 % ← surfaces as a bottleneck
+            Severity levels: ``trivial`` / ``low`` / ``medium`` / ``high`` /
+            ``critical`` (``high``/``critical`` surface as bottlenecks), each
+            paired with a continuous ``severity_score`` (0.0-1.0) and a
+            ``confidence`` value from DFDiagnoser's trend/motif classification.
 
             Side effects:
-                * Creates ``<workspace>/dfanalyzer_checkpoint/``.
-                * Creates ``<workspace>/diagnosis/scored/``.
+                * Creates ``<workspace>/dfanalyzer_facts/`` and ``<workspace>/dfanalyzer_checkpoint/``.
+                * Creates ``<workspace>/diagnosis/findings/``.
                 * Writes ``<workspace>/diagnosis.json`` with the bottleneck summary.
                 * Persists ``{"step": "bottlenecks_diagnosed", ...}`` to ``session.json``.
                 * Writes an artifact log at step 15.
 
             Args:
                 run_id: Session identifier returned by ``session_create``.
-                analyzer_preset: DFAnalyzer preset.  ``"posix"`` covers POSIX
-                    file I/O; ``"dlio"`` covers deep-learning I/O workloads.
+                analyzer_preset: DFAnalyzer preset(s).  ``"posix"`` covers POSIX
+                    file I/O; ``"dlio"`` covers deep-learning I/O workloads;
+                    ``"generic"`` auto-discovers distinct ``cat`` values in the
+                    trace and builds one layer per category — use it for
+                    custom app-annotation categories or mixed/unknown workloads
+                    that don't fit ``posix``/``dlio``. Accepts a comma-separated
+                    list (e.g. ``"dlio,generic"``) to run and merge multiple
+                    presets in one call — the pipeline's own diagnose step does
+                    this automatically for DL workloads (``dlio,generic``) via
+                    ``session/detection.py``'s ``_detect_analyzer_presets``.
                     Defaults to ``"posix"``.
                 view_types: Comma-separated DFAnalyzer view type(s).
                     Defaults to ``"time_range"``.
                 metric_boundaries: Optional JSON object string mapping metric names
-                    to hardware peak values for bandwidth/IOPS normalisation.
+                    to hardware peak values for bandwidth/IOPS normalisation,
+                    passed to ``diagnose_file()`` (Python-API path only).
                     Defaults to ``None``.
                 timeout: Seconds before each subprocess phase is killed.
                     Defaults to ``600``.
@@ -540,15 +575,18 @@ class DFDiagnoserService(MCPService):
                     * ``status`` (``"ok"`` or ``"error"``).
                     * ``message`` — outcome description.
                     * ``diagnosis_file`` — path to ``diagnosis.json``.
-                    * ``checkpoint_dir`` — dfanalyzer checkpoint directory.
-                    * ``severity_counts`` — per-severity metric observation counts.
-                    * ``bottlenecks`` — list of high/critical findings (up to 50).
+                    * ``facts_dir`` — dfanalyzer output=file bundle directory.
+                    * ``checkpoint_dir`` — dfanalyzer incremental-recompute cache directory.
+                    * ``severity_counts`` — per-severity finding counts.
+                    * ``bottlenecks`` — list of high/critical findings (up to 50),
+                      each with the full ``DiagnosisFinding`` fields (``motif``,
+                      ``confidence``, ``recommendation_bundle``, ``summary``, etc.).
                     * ``phases`` — subprocess result dicts for debugging.
 
             Raises:
                 Returns ``{"status": "error"}`` when:
                     * ``traces_split/`` does not exist (run ``session_split_traces`` first).
-                    * dfanalyzer fails to produce checkpoint files.
+                    * dfanalyzer fails to produce ``facts.jsonl``.
                     * DFDiagnoser is not installed and no CLI binary is found.
             """
             return _session_diagnose_bottlenecks_impl(
@@ -560,7 +598,7 @@ class DFDiagnoserService(MCPService):
             )
 
     def execute(self, data: dict) -> Optional[str]:
-        return "Use the diagnose tool to identify I/O bottlenecks from DFAnalyzer checkpoints."
+        return "Use the diagnose tool to identify I/O bottlenecks from a DFAnalyzer output=file facts bundle."
 
     @property
     def name(self) -> str:

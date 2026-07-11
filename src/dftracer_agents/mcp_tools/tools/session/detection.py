@@ -999,12 +999,39 @@ _DL_FRAMEWORK_NAMES = frozenset({
 })
 
 
-def _detect_analyzer_preset(detect_info: Dict[str, Any]) -> str:
-    """Return the dfanalyzer preset name appropriate for the detected workload.
+def _detect_analyzer_presets(detect_info: Dict[str, Any]) -> List[str]:
+    """Return ALL dfanalyzer presets to run for the detected workload.
 
-    Uses the ML framework list from ``_detect_info`` output.  If any known
-    deep-learning framework is present the ``dlio`` preset is returned;
-    otherwise ``posix`` is returned for generic POSIX I/O workloads.
+    Deep-learning workloads get BOTH ``dlio`` (hand-tuned DL layer/metric
+    definitions — epoch/fetch/dataloader semantics) AND ``generic`` (the
+    catch-all preset: auto-discovers every distinct ``cat`` value in the trace
+    at runtime and builds one layer per category, so app-level annotation
+    categories the ``dlio`` preset doesn't know about are never silently
+    dropped from the diagnosis). Non-DL workloads default to ``posix`` alone;
+    pass an explicit comma-separated ``analyzer_preset`` (e.g.
+    ``"posix,generic"``) to a diagnosis tool to widen coverage for any
+    workload, DL or not — ``session_diagnose_bottlenecks`` and the pipeline's
+    diagnose step both accept and merge a comma-separated preset list.
+
+    Args:
+        detect_info: Dict returned by :func:`_detect_info`.
+
+    Returns:
+        ``["dlio", "generic"]`` for deep-learning workloads, ``["posix"]``
+        otherwise.
+    """
+    frameworks = set(detect_info.get("ml_frameworks_list", []))
+    if frameworks & _DL_FRAMEWORK_NAMES:
+        return ["dlio", "generic"]
+    return ["posix"]
+
+
+def _detect_analyzer_preset(detect_info: Dict[str, Any]) -> str:
+    """Return the single primary dfanalyzer preset name for the detected workload.
+
+    Back-compat wrapper around :func:`_detect_analyzer_presets` for callers
+    that only want one preset name — returns the first (primary) entry.
+    Prefer :func:`_detect_analyzer_presets` for full multi-preset coverage.
 
     Args:
         detect_info: Dict returned by :func:`_detect_info`.
@@ -1012,10 +1039,7 @@ def _detect_analyzer_preset(detect_info: Dict[str, Any]) -> str:
     Returns:
         ``"dlio"`` for deep-learning workloads, ``"posix"`` otherwise.
     """
-    frameworks = set(detect_info.get("ml_frameworks_list", []))
-    if frameworks & _DL_FRAMEWORK_NAMES:
-        return "dlio"
-    return "posix"
+    return _detect_analyzer_presets(detect_info)[0]
 
 
 def _mpi_prefix_to_wrappers(mpi_prefix: Optional[str]) -> Tuple[Optional[str], Optional[str]]:

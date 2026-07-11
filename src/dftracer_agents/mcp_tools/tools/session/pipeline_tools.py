@@ -18,7 +18,7 @@ from .workspace import (
     _ws, _load_state, _save_state, _write_artifact_log,
     _ok, _err, _new_run_id, _create_run, _run, _workspaces_root, _derive_app_name,
 )
-from .detection import _detect_info, _detect_analyzer_preset
+from .detection import _detect_info, _detect_analyzer_presets
 from .annotation import (
     _annotate_c_source, _annotate_python_source,
     _fix_dftracer_annotation_errors,
@@ -33,6 +33,7 @@ from .build import (
 from .install import (
     _ensure_session_venv, _install_dftracer_pip_direct, _dftracer_utils_split,
 )
+from ..optimizations.diagnose import _session_diagnose_bottlenecks_impl
 
 
 def _timed_step(label: str) -> Dict[str, Any]:
@@ -630,143 +631,49 @@ def register_pipeline_tools(mcp: FastMCP) -> None:
         report["step_12_analyze"] = {**an_r, **{k: v for k, v in _t12.items() if k != "step_label"}}
         _write_artifact_log(ws, 13, "session_analyze_traces", an_r, rid)
 
-        # --- Step 13: diagnose bottlenecks (dfanalyzer checkpoint → dfdiagnoser) ---
+        # --- Step 13: diagnose bottlenecks (dfanalyzer facts bundle → dfdiagnoser) ---
+        # Delegates to the shared, single-source-of-truth implementation (also used by
+        # the standalone session_diagnose_bottlenecks tool and session_optimization_iteration)
+        # instead of re-deriving the dfanalyzer/dfdiagnoser wiring inline here.
         _t13 = _timed_step("step_13_diagnose")
-        checkpoint_dir = ws / "dfanalyzer_checkpoint"
-        diagnosis_dir  = ws / "diagnosis"
-        scored_dir     = diagnosis_dir / "scored"
-        checkpoint_dir.mkdir(exist_ok=True)
-        diagnosis_dir.mkdir(exist_ok=True)
-        scored_dir.mkdir(exist_ok=True)
 
-        diag_phases: Dict[str, Any] = {}
+        # Choose dfanalyzer preset(s): DL workloads run BOTH dlio (hand-tuned DL
+        # layers) and generic (auto-discovers every trace category) so nothing
+        # outside dlio's known layers is silently left undiagnosed; non-DL uses
+        # posix alone. session_diagnose_bottlenecks merges results across presets.
+        analyzer_preset = ",".join(_detect_analyzer_presets(info))
 
-        # Choose dfanalyzer preset: dlio for deep-learning workloads, posix otherwise.
-        analyzer_preset = _detect_analyzer_preset(info)
-
-        # Phase 13a: dfanalyzer with checkpoint output
-        ana13_r = _run(
-            [
-                "dfanalyzer",
-                f"trace_path={traces_split}",
-                "analyzer.checkpoint=True",
-                f"analyzer.checkpoint_dir={checkpoint_dir}",
-                f"analyzer/preset={analyzer_preset}",
-                "view_types=[time_range]",
-            ],
+        _diag_raw = _session_diagnose_bottlenecks_impl(
+            run_id=rid,
+            analyzer_preset=analyzer_preset,
+            traces_dir=str(traces_split),
             timeout=600,
         )
-        diag_phases["dfanalyzer"] = ana13_r
-        if not ana13_r["success"]:
+        _diag_result = json.loads(_diag_raw)
+        if _diag_result.get("status") != "ok":
             report["step_13_diagnose"] = {
                 "status": "warning",
-                "message": "dfanalyzer failed — bottleneck diagnosis skipped",
-                "stderr": ana13_r.get("stderr", ""),
-                "hint": "Install dfanalyzer: pip install dfanalyzer-utils",
-                "phases": diag_phases,
+                "message": _diag_result.get("message", "bottleneck diagnosis failed"),
+                "phases": _diag_result.get("phases", {}),
             }
         else:
-            flat_views = list(checkpoint_dir.glob("_flat_view_*.parquet"))
-            if not flat_views:
-                report["step_13_diagnose"] = {
-                    "status": "warning",
-                    "message": "dfanalyzer produced no _flat_view_*.parquet — bottleneck diagnosis skipped",
-                    "phases": diag_phases,
-                }
-            else:
-                # Phase 13b: dfdiagnoser (Python API → CLI fallback)
-                diag_r: Optional[Dict[str, Any]] = None
-                try:
-                    from dfdiagnoser.diagnoser import Diagnoser   # type: ignore
-                    from dfdiagnoser.output import FileOutput     # type: ignore
-                    _dg = Diagnoser()
-                    _res = _dg.diagnose_checkpoint(checkpoint_dir=str(checkpoint_dir))
-                    FileOutput(output_dir=str(scored_dir), output_format="json").handle_result(_res)
-                    diag_r = {
-                        "returncode": 0,
-                        "stdout": f"Scored {len(_res.scored_flat_views)} view(s) via Python API",
-                        "stderr": "",
-                        "success": True,
-                    }
-                except ImportError:
-                    diag_r = _run(
-                        [
-                            "dfdiagnoser",
-                            "input=checkpoint",
-                            f"input.checkpoint_dir={checkpoint_dir}",
-                            "output=file",
-                            f"output.output_dir={scored_dir}",
-                            "output.output_format=json",
-                        ],
-                        timeout=600,
-                    )
-                    if not diag_r["success"] and "not found" in diag_r.get("stderr", "").lower():
-                        diag_r["stderr"] += " — install with: pip install dfdiagnoser"
-                except Exception as exc:
-                    diag_r = {"returncode": -1, "stdout": "", "stderr": str(exc), "success": False}
-                diag_phases["dfdiagnoser"] = diag_r
-
-                # Parse scored outputs
-                _score_labels = {1: "trivial", 2: "low", 3: "medium", 4: "high", 5: "critical"}
-                severity_counts: Dict[str, int] = {
-                    "critical": 0, "high": 0, "medium": 0, "low": 0, "trivial": 0
-                }
-                bottlenecks: List[Dict[str, Any]] = []
-                for _sp in sorted(scored_dir.glob("*_scored.json")):
-                    try:
-                        with open(_sp) as _f:
-                            _rows = json.load(_f)
-                        _vname = _sp.stem
-                        for _rk, _row in (_rows.items() if isinstance(_rows, dict) else []):
-                            for _col, _val in _row.items():
-                                if not _col.endswith("_score") or _val is None:
-                                    continue
-                                _metric = _col[:-6]
-                                try:
-                                    _score = int(_val)
-                                except (TypeError, ValueError):
-                                    continue
-                                _label = _score_labels.get(_score, "unknown")
-                                if _label in severity_counts:
-                                    severity_counts[_label] += 1
-                                if _score >= 4:
-                                    bottlenecks.append({
-                                        "view":     _vname,
-                                        "scope":    str(_rk),
-                                        "metric":   _metric,
-                                        "score":    _score,
-                                        "severity": _label,
-                                        "value":    _row.get(_metric),
-                                    })
-                    except Exception:
-                        pass
-                bottlenecks.sort(key=lambda x: x["score"], reverse=True)
-
-                diagnosis_summary = {
-                    "run_id":          rid,
-                    "checkpoint_dir":  str(checkpoint_dir),
-                    "diagnosis_dir":   str(diagnosis_dir),
-                    "severity_counts": severity_counts,
-                    "bottlenecks":     bottlenecks[:50],
-                    "phases":          diag_phases,
-                }
-                (ws / "diagnosis.json").write_text(json.dumps(diagnosis_summary, indent=2))
-
-                total_issues  = sum(severity_counts.values())
-                critical_high = severity_counts["critical"] + severity_counts["high"]
-                report["step_13_diagnose"] = {
-                    "status":          "ok",
-                    "total_scored":    total_issues,
-                    "high_critical":   critical_high,
-                    "severity_counts": severity_counts,
-                    "bottlenecks":     bottlenecks[:10],
-                    "phases":          diag_phases,
-                }
-                _write_artifact_log(ws, 14, "session_diagnose_bottlenecks", {
-                    "total_metrics_scored": total_issues,
-                    "high_critical":        critical_high,
-                    "severity_counts":      severity_counts,
-                }, rid)
+            severity_counts = _diag_result.get("severity_counts", {})
+            bottlenecks = _diag_result.get("bottlenecks", [])
+            total_issues = sum(severity_counts.values())
+            critical_high = severity_counts.get("critical", 0) + severity_counts.get("high", 0)
+            report["step_13_diagnose"] = {
+                "status":          "ok",
+                "total_findings":  total_issues,
+                "high_critical":   critical_high,
+                "severity_counts": severity_counts,
+                "bottlenecks":     bottlenecks[:10],
+                "phases":          _diag_result.get("phases", {}),
+            }
+            _write_artifact_log(ws, 14, "session_diagnose_bottlenecks", {
+                "total_findings":  total_issues,
+                "high_critical":   critical_high,
+                "severity_counts": severity_counts,
+            }, rid)
 
         _finish_step(_t13)
         step_timings.append(_t13)
