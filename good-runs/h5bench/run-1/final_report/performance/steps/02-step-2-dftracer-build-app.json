@@ -1,0 +1,43 @@
+{
+  "run_id": "h5bench/20260710_061131",
+  "key": "STEP 2: dftracer-build-app",
+  "index": 2,
+  "agent": "dftracer-build-app",
+  "notes": "h5bench original build, vanilla HDF5 1.14.3 from source, chid_t patch",
+  "status": "superseded",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 1427.916,
+  "wall_s": 1427.916,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 1427.916,
+      "error": "",
+      "start_ns": 1783664186646056180,
+      "end_ns": 1783665614561787702
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

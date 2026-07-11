@@ -22,3 +22,11 @@ patterns:
   structure_safe: true
   note: 32-character UUIDs in backticks (MLflow run IDs, etc.) should be anonymized
     to remove run-specific provenance.
+- name: mlflow-run-id-json-url
+  regex: ((?:"run_id"|"parent_run_id"|/runs/)\s*:?\s*"?)([0-9a-f]{32})("?)
+  replacement: \1&lt;mlflow-run-id&gt;\3
+  structure_safe: true
+  note: MLflow run_id/parent_run_id JSON fields and /runs/&lt;id&gt; URLs (mlflow.json,
+    PERFORMANCE.md) weren't covered by the existing backtick-prose mlflow-run-id pattern.
+    Anchored to run_id/parent_run_id/runs-url context so bare content hashes elsewhere
+    are never touched.

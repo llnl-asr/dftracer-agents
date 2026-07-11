@@ -518,6 +518,63 @@ don't expect to reproduce the `write_normal_dist` runs themselves on this fork.
   chunk distribution naturally avoids lock contention. This is the OPPOSITE of contiguous write:
   do NOT use 28-OST stripe for `h5bench_write` (only 2 default ROMIO aggregators deadlock).
 
+### ✅ WORKING / NEW DEFAULT: cb_nodes=16 + CRAY_CB_NODES_MULTIPLIER=2 + 16-OST stripe — write, 768 ranks, +490.5% median, ~8.7x faster wall time
+
+- **Config:** `MPICH_MPIIO_HINTS="*:romio_cb_write=enable:cb_nodes=16"` +
+  `CRAY_CB_NODES_MULTIPLIER=2` (effective 32 aggregators — the Cray-specific multiplier is
+  what actually raises the real aggregator count; `cb_nodes=16` alone is not enough) +
+  `lfs setstripe -c 16 -S 4M` on a FRESH output dir. Exported directly in the wrapper script
+  (never via `flux run --env` — see the pitfall entry above; the flag silently drops hints).
+- **Result (8 nodes x 96 ppn = 768 ranks, DIM_1=2097152, INTERLEAVED/INTERLEAVED,
+  ~575GB/rep):** median POSIX bandwidth 325.94 -> 1924.71 MB/s (**+490.5%**), and critically
+  the 5-rep ranges DO NOT OVERLAP AT ALL (worst optimized rep beats best baseline rep by
+  +26.7%) despite both distributions being individually noisy (CV 64% baseline, 39% optimized)
+  on this shared-tenant Lustre filesystem. Real elapsed wall time per rep also dropped from
+  ~12.1 min to ~1.4 min for the identical 575GB output (confirmed via real `du` + real flux
+  job time at single-process/1-node/8-node calibration, not projection). A `comparator`
+  spot-check corroborates the mechanism: `open()` mean -55.9% (significant), `lseek` mean
+  -97.1% (significant), `__lxstat` mean -55.3% (significant), avg POSIX transfer size
+  1MB->4MB (+300%, significant — exactly the 32-effective-aggregator arithmetic).
+- **System:** Tuolumne, cray-mpich/9.0.1, lustre5, h5bench_write annotated, session
+  h5bench/20260710_061131.
+- **Date confirmed:** 2026-07-10.
+- **This is the SAME lever/mechanism that won +73.8% on flash_x** (session
+  flash_x/20260708_201403) for a matching collective-write-bandwidth-bound shape — now
+  confirmed transferring cleanly to a second workload on this system.
+- **Recommend as the h5bench write-workload default on Tuolumne/lustre5 going forward.**
+- **Caveat on layering further levers on top of this one:** network-layer (Slingshot NIC
+  policy, `FI_CXI_RDZV_THRESHOLD`) and memory-layer (NUMA `cpu-affinity=per-task`) levers
+  layered on top of this config all showed large, misleading 5-rep median deltas (+38-68%)
+  that a same-rep `comparator` cross-check revealed as noise (+3% or less, flagged
+  negligible) every single time. **Do not trust a 5-rep median alone for this workload's
+  aggregate-bandwidth metric on shared Lustre — always run a same-rep `comparator` check
+  before calling anything a win** (this generic cross-workload lesson is now also recorded
+  in `dftracer-optimization-kb` Rule 5; this note is the h5bench-specific instance of it).
+  NUMA `cpu-affinity=per-task` in particular showed a NEGLIGIBLE per-rep effect (-0.5%),
+  consistent with a prior finding on this same MI300A system for an unrelated GPU workload —
+  launcher-level core pinning appears to have no headroom to recover on Tuolumne generally.
+
+### ❌ H5Pset_file_space_strategy(PAGE) + H5Pset_page_buffer_size — incompatible with COLLECTIVE_METADATA=YES
+
+- **What was tried:** Paged HDF5 file-space aggregation (`H5F_FSPACE_STRATEGY_PAGE` on a
+  FILE-CREATE plist + `H5Pset_page_buffer_size` on the FAPL), intended to reduce open()/seek()
+  churn under an unchanged access pattern (Li et al. 2025, Howison et al. 2010).
+- **Result:** `H5Fcreate` fails outright: `H5Fint.c: collective metadata writes are not
+  supported with page buffering`. Any h5bench config with `COLLECTIVE_METADATA=YES` (which
+  `h5bench_write.c`'s `set_metadata()` turns into `H5Pset_all_coll_metadata_ops`/
+  `H5Pset_coll_metadata_write` on the same FAPL) cannot use page buffering — a fundamental
+  HDF5 1.14.x library restriction, not a bug in the h5bench config or the annotated build.
+- **Also uncovered:** `h5bench_write.c` never checks `H5Fcreate_async`'s return value — a
+  failed create silently cascades into every subsequent `H5D`/`H5G` call failing too (each
+  logs its own `HDF5-DIAG` block), yet the benchmark still prints a fabricated "successful"
+  performance summary (e.g. 142 GB/s single-rank write rate, 0-byte output file). **Always
+  grep the h5bench_write run log for `HDF5-DIAG`, never trust exit-code-0 + a printed summary
+  alone.**
+- **Status:** DO NOT propose page buffering for any h5bench config with
+  `COLLECTIVE_METADATA=YES` on HDF5 1.14.x. Would require disabling collective metadata to
+  even test (a confounding change, not pursued).
+- **Date confirmed:** 2026-07-10, Tuolumne, HDF5 1.14.5, session h5bench/20260710_061131.
+
 ## Benchmarking Pitfalls
 
 ### ❌ Reusing output directory inflates `__lxstat` latency by 100×

@@ -33,3 +33,5 @@
 - [Project: h5bench dftracer pipeline](project_h5bench_dftracer_pipeline.md) — 768-rank Tuolumne run; root-caused brahma extern-C mangling bug; 20TB/500GB quota budget; 10-15min run sizing
 - [project-ior-hdf5-optimization-dftracer-pipeline](project-ior-hdf5-optimization-dftracer-pipeline.md) — IOR 4.0.0 HDF5 dftracer pipeline session on Tuolumne — 512-rank baseline stable, exhaustive ROMIO/striping sweep found no lever beats the 4KB-transfer baseline
 - [feedback-app-pattern-swap-not-optimization](feedback-app-pattern-swap-not-optimization.md) — Never treat an app request/transfer-size or access-pattern sweep as "the optimization" — it's a diagnostic bound, not a system fix
+- [project-h5bench-read-write-optimization](project-h5bench-read-write-optimization.md) — h5bench read+write baseline fix + ROMIO cb_nodes+striping confirmed win (+490.5%) on Tuolumne, plus the comparator-corroboration methodology lesson
+- [feedback-h5bench-session-incidents](feedback-h5bench-session-incidents.md) — Runaway job-submission-loop incident, mpifileutils/drm cleanup pattern, and comparator-corroboration methodology from an h5bench session

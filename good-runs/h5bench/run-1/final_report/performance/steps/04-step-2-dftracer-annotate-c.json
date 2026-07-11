@@ -1,0 +1,51 @@
+{
+  "run_id": "h5bench/20260710_061131",
+  "key": "STEP 2: dftracer-annotate-c",
+  "index": 4,
+  "agent": "dftracer-annotate-c",
+  "notes": "RETRY: prior attempt falsely reported success with no actual writes; annotated/source/ now has clean copy from baseline; re-annotating h5bench_patterns/, commons/, metadata_stress/, exerciser/",
+  "status": "ok",
+  "tries": 2,
+  "retries": 1,
+  "failed_attempts": 0,
+  "successful_attempts": 2,
+  "exec_s": 988.085,
+  "wall_s": 1225.999,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 354.531,
+      "error": "",
+      "start_ns": 1783666272877617482,
+      "end_ns": 1783666627408240221
+    },
+    {
+      "number": 2,
+      "status": "ok",
+      "duration_s": 633.555,
+      "error": "",
+      "start_ns": 1783666865321442758,
+      "end_ns": 1783667498876270084
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "tracking_uri": "http://127.0.0.1:7002",
+  "experiment": "dftracer-agents",
+  "parent_run_id": "&lt;mlflow-run-id&gt;",
+  "ui_url": "http://127.0.0.1:7002/#/experiments/1/runs/&lt;mlflow-run-id&gt;",
+  "error": ""
+}

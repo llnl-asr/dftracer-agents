@@ -1,0 +1,51 @@
+{
+  "run_id": "h5bench/20260710_061131",
+  "key": "STEP 3: dftracer-build-smoke",
+  "index": 5,
+  "agent": "dftracer-build-smoke",
+  "notes": "build annotated h5bench with dftracer, smoke test h5bench_write",
+  "status": "blocked",
+  "tries": 2,
+  "retries": 1,
+  "failed_attempts": 2,
+  "successful_attempts": 0,
+  "exec_s": 398.2,
+  "wall_s": 1226.181,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "failed",
+      "duration_s": 64.808,
+      "error": "annotated/source/ is missing the actual h5bench codebase (no CMakeLists.txt, no src/); it only contains stray scripts/traces/record subdirs. STEP 2 annotation output is incomplete/blocked upstream \u2014 cannot build.",
+      "start_ns": 1783666699543702692,
+      "end_ns": 1783666764351488338
+    },
+    {
+      "number": 2,
+      "status": "blocked",
+      "duration_s": 333.392,
+      "error": "Build succeeded (all 7 binaries built, correctly linked against session HDF5 1.14.5 and libdftracer_core), but functional smoke test reveals a runtime ABI mismatch: brahma's prebuilt HDF5 interception wrapper (libbrahma.so.1, shipped in pydftracer 2.0.3.dev52) was compiled against an older H5Fcreate_async/H5Dwrite_async signature lacking the app_file/app_func/app_line async-debug prologue args that HDF5 1.14.5 added. Calling h5bench_write against the session's HDF5 1.14.5 corrupts hid_t args passed through brahma's interposed H5Fcreate/H5Dcreate/H5Dwrite/H5Dclose calls -- HDF5 emits H5Fcreate_async 'not a file create property list' diagnostics and the .h5 output file is never created (0 bytes / missing), even though the process exits 0 and prints a fabricated-looking success summary. Confirmed by diff: unannotated baseline binary with the identical config produces a real 67MB .h5 file; annotated binary produces none.",
+      "start_ns": 1783667592331951073,
+      "end_ns": 1783667925724300927
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

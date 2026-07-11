@@ -1,0 +1,4304 @@
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/commons/async_adaptor.h /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/commons/async_adaptor.h
+--- /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/commons/async_adaptor.h	2026-07-09 23:11:32.121786000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/commons/async_adaptor.h	2026-07-10 02:23:26.824556000 -0700
+@@ -8,7 +8,15 @@
+ 
+ #ifndef COMMONS_ASYNC_ADAPTOR_H_
+ #define COMMONS_ASYNC_ADAPTOR_H_
+-#ifndef H5ES_WAIT_FOREVER
++// Explicit version guard in addition to the H5ES_WAIT_FOREVER macro-presence
++// check below: HDF5 >= 1.14.0 always ships real async VOL support (and
++// GOTCHA-based interceptors like brahma rely on intercepting the REAL
++// exported *_async symbols), so this shim must never activate on 1.14+
++// regardless of macro definition order/edge cases. Without this, any
++// GOTCHA-based tool intercepting HDF5 can end up bound against h5bench's
++// OWN shim definitions instead of (or in conflicting coexistence with) the
++// real HDF5 symbols, causing chaotic/incorrect interception.
++#if !defined(H5ES_WAIT_FOREVER) && !(H5_VERS_MAJOR > 1 || (H5_VERS_MAJOR == 1 && H5_VERS_MINOR >= 14))
+ #define H5ES_WAIT_FOREVER INT_MAX
+ #define H5ES_NONE         0
+ 
+@@ -405,6 +413,6 @@
+ {
+     return H5Gclose(group_id);
+ }
+-#endif // H5ES_WAIT_FOREVER
++#endif // !defined(H5ES_WAIT_FOREVER) && HDF5 < 1.14
+ 
+ #endif /* COMMONS_ASYNC_ADAPTOR_H_ */
+\ No newline at end of file
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/commons/h5bench_util.c /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/commons/h5bench_util.c
+--- /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/commons/h5bench_util.c	2026-07-09 23:11:32.123812000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/commons/h5bench_util.c	2026-07-10 00:08:16.527361000 -0700
+@@ -24,6 +24,7 @@
+ #endif
+ 
+ #include "h5bench_util.h"
++#include <dftracer/dftracer.h>
+ 
+ int str_to_ull(char *str_in, unsigned long long *num_out);
+ int parse_time(char *str_in, duration *time);
+@@ -49,6 +50,8 @@
+ void
+ h5bench_sleep(duration sleep_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (sleep_time.unit == TIME_SEC) {
+         sleep(sleep_time.time_num);
+     }
+@@ -58,12 +61,19 @@
+     }
+     else {
+         if (sleep_time.unit == TIME_MS)
++            {
+             usleep(1000 * sleep_time.time_num);
++            }
+         else if (sleep_time.unit == TIME_US)
++            {
+             usleep(sleep_time.time_num);
++            }
+         else
++            {
+             printf("Invalid sleep time unit.\n");
++            }
+     }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -81,13 +91,18 @@
+ void
+ timestep_es_id_close(time_step *ts, async_mode mode)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     es_id_close(ts->es_meta_create, mode);
+     es_id_close(ts->es_data, mode);
+     es_id_close(ts->es_meta_close, mode);
++    DFTRACER_C_FUNCTION_END();
+ }
+ unsigned long long
+ read_time_val(duration time, time_unit unit)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     unsigned long long t_us     = time.time_num;
+     unsigned long long factor   = 1;
+     unsigned long long t_output = 1;
+@@ -129,6 +144,7 @@
+             printf("Invalid time unit: %s\n", __func__);
+             break;
+     }
++    DFTRACER_C_FUNCTION_END();
+     return t_output;
+ }
+ 
+@@ -136,6 +152,8 @@
+ mem_monitor_new(int time_step_cnt, async_mode mode, unsigned long long time_step_size,
+                 unsigned long long mem_threshold)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     mem_monitor *monitor   = calloc(1, sizeof(mem_monitor));
+     monitor->mode          = mode;
+     monitor->time_step_cnt = time_step_cnt;
+@@ -152,28 +170,41 @@
+         monitor->time_steps[i].mem_size = time_step_size;
+         monitor->time_steps[i].status   = TS_INIT;
+         for (int j = 0; j < 8; j++)
++            {
+             monitor->time_steps[i].dset_ids[j] = 0;
++            }
+     }
+     return monitor;
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ int
+ mem_monitor_free(mem_monitor *mon)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     if (mon) {
+         if (mon->time_steps)
++            {
+             free(mon->time_steps);
++            }
+         free(mon);
+     }
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ int
+ ts_delayed_close(mem_monitor *mon, unsigned long *metadata_time_total, int dset_cnt)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     *metadata_time_total = 0;
+     if (!mon || !metadata_time_total)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return -1;
++        }
+ 
+     time_step *   ts_run;
+     size_t        num_in_progress;
+@@ -182,7 +213,10 @@
+     unsigned long meta_time = 0;
+ 
+     if (!has_vol_async)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return 0;
++        }
+ 
+     for (int i = 0; i < mon->time_step_cnt; i++) {
+         ts_run = &(mon->time_steps[i]);
+@@ -200,18 +234,27 @@
+         }
+     }
+     *metadata_time_total = meta_time;
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ int
+ mem_monitor_check_run(mem_monitor *mon, unsigned long *metadata_time_total, unsigned long *data_time_total)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     *metadata_time_total = 0;
+     *data_time_total     = 0;
+     if (!mon || !metadata_time_total || !data_time_total)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return -1;
++        }
+     if (!has_vol_async)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return 0;
++        }
+     time_step *   ts_run;
+     size_t        num_in_progress;
+     hbool_t       op_failed;
+@@ -235,22 +278,31 @@
+                 ts_run->status = TS_DONE;
+                 mon->mem_used -= ts_run->mem_size;
+                 if (mon->mem_used >= mon->mem_threshold)
++                    {
+                     continue;
++                    }
+                 else
++                    {
+                     break;
++                    }
+             }
+             else if (mon->time_steps[i].status == TS_INIT)
++                {
+                 break;
++                }
+         }
+         *metadata_time_total = meta_time;
+         *data_time_total     = data_time;
+     }
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ int
+ mem_monitor_final_run(mem_monitor *mon, unsigned long *metadata_time_total, unsigned long *data_time_total)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     *metadata_time_total = 0;
+     *data_time_total     = 0;
+     size_t        num_in_progress;
+@@ -272,11 +324,15 @@
+                 H5Gclose_async(ts_run->grp_id, ts_run->es_meta_close);
+             }
+         }
++        DFTRACER_C_FUNCTION_END();
+         return 0;
+     }
+ 
+     if (!mon || !metadata_time_total || !data_time_total)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return -1;
++        }
+     t1 = get_time_usec();
+     for (int i = 0; i < mon->time_step_cnt; i++) {
+         ts_run = &(mon->time_steps[i]);
+@@ -297,7 +353,10 @@
+     meta_time += (t2 - t1);
+ 
+     if (!has_vol_async)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return 0;
++        }
+ 
+     for (int i = 0; i < mon->time_step_cnt; i++) {
+         ts_run = &(mon->time_steps[i]);
+@@ -325,6 +384,7 @@
+ 
+     *metadata_time_total = meta_time;
+     *data_time_total     = data_time;
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+@@ -345,9 +405,12 @@
+ void
+ es_id_close(hid_t es_id, async_mode mode)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (has_vol_async) {
+         H5ESclose(es_id);
+     }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ float
+@@ -399,6 +462,8 @@
+ void
+ free_contig_memory(data_contig_md *data)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     if (data) {
+         free(data->x);
+         free(data->y);
+@@ -410,92 +475,141 @@
+         free(data->id_2);
+         free(data);
+     }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ int
+ parse_unit(char *str_in, unsigned long long *num, char **unit_str)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     char *str     = strdup(str_in);
+     char *ptr     = NULL;
+     ptr           = strtok(str, " ");
+     char *num_str = strdup(ptr);
+     if (!num_str) {
+         printf("Number parsing failed: \"%s\" is not recognized.\n", str_in);
++        DFTRACER_C_FUNCTION_END();
+         return -1;
+     }
+     char *endptr;
+     *num = strtoul(num_str, &endptr, 10);
+     ptr  = strtok(NULL, " ");
+     if (ptr)
++        {
+         *unit_str = strdup(ptr);
++        }
+     else
++        {
+         *unit_str = NULL;
++        }
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ int
+ parse_time(char *str_in, duration *time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (!time)
++        {
+         time = calloc(1, sizeof(duration));
++        }
+     unsigned long long num = 0;
+     char *             unit_str;
+     parse_unit(str_in, &num, &unit_str);
+ 
+     if (!unit_str)
++        {
+         time->unit = TIME_SEC;
++        }
+     else if (unit_str[0] == 'S' || unit_str[0] == 's')
++        {
+         time->unit = TIME_SEC;
++        }
+     else if (unit_str[0] == 'M' || unit_str[0] == 'm') {
+         if (strcmp(unit_str, "ms") == 0 || strcmp(unit_str, "MS") == 0)
++            {
+             time->unit = TIME_MS;
++            }
+         else
++            {
+             time->unit = TIME_MIN;
++            }
+     }
+     else if (unit_str[0] == 'U' || unit_str[0] == 'u')
++        {
+         time->unit = TIME_US;
++        }
+     else {
+         printf("time parsing failed\n");
++        DFTRACER_C_FUNCTION_END();
+         return -1;
+     }
+     time->time_num = num;
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ int
+ str_to_ull(char *str_in, unsigned long long *num_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     if (!str_in) {
+         printf("Number parsing failed: \"%s\" is not recognized.\n", str_in);
++        DFTRACER_C_FUNCTION_END();
+         return -1;
+     }
+     unsigned long long num = 0;
+     char *             unit_str;
+     int                ret = parse_unit(str_in, &num, &unit_str);
+     if (ret < 0)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return -1;
++        }
+     if (!unit_str)
++        {
+         num = num * 1;
++        }
+     else if (unit_str[0] == 'K' || unit_str[0] == 'k')
++        {
+         num = num * K_VAL;
++        }
+     else if (unit_str[0] == 'M' || unit_str[0] == 'm')
++        {
+         num = num * M_VAL;
++        }
+     else if (unit_str[0] == 'G' || unit_str[0] == 'g')
++        {
+         num = num * G_VAL;
++        }
+     else if (unit_str[0] == 'T' || unit_str[0] == 't')
++        {
+         num = num * T_VAL;
++        }
+ 
+     if (unit_str)
++        {
+         free(unit_str);
++        }
+     *num_out = num;
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ int
+ _set_io_pattern(bench_params *params_in_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (!params_in_out)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return -1;
++        }
+     int ret = 0;
+     if (params_in_out->io_op == IO_WRITE) { // mem --> file
+         if (params_in_out->mem_pattern == PATTERN_CONTIG) {
+@@ -621,13 +735,18 @@
+         printf("%s() failed on line %d\n", __func__, __LINE__);
+     }
+     if (ret < 0)
++        {
+         printf("%s() failed, unsupported value/patterns.\n", __func__);
++        }
++    DFTRACER_C_FUNCTION_END();
+     return ret;
+ }
+ 
+ char *
+ _parse_val(char *val_in)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     char *val_str = strdup(val_in);
+     char *tokens[2];
+     char *tok = strtok(val_str, "#");
+@@ -635,15 +754,23 @@
+     val       = strdup(tok);
+     //    printf("_parse_val: val_in = [%s], val = [%s]\n", val_in, val);
+     if (val_str)
++        {
+         free(val_str);
++        }
++    DFTRACER_C_FUNCTION_END();
+     return val;
+ }
+ 
+ int
+ _set_params(char *key, char *val_in, bench_params *params_in_out, int do_write)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     if (!params_in_out)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return 0;
++        }
+     char *val = _parse_val(val_in);
+ 
+     if (strcmp(key, "IO_OPERATION") == 0) {
+@@ -661,6 +788,7 @@
+         }
+         else {
+             printf("Unknown value for \"IO_OPERATION\": %s\n", val);
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+@@ -696,78 +824,115 @@
+     else if (strcmp(key, "TO_READ_NUM_PARTICLES") == 0) {
+         if ((*params_in_out).io_op != IO_READ) {
+             printf("TO_READ_CNT_M parameter is only used with READ_PATTERNs, please check config file.\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+         unsigned long long num = 0;
+         if (str_to_ull(val, &num) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+         (*params_in_out).try_num_particles = num;
+     }
+     else if (strcmp(key, "COLLECTIVE_METADATA") == 0) {
+         if (val[0] == 'Y' || val[0] == 'y')
++            {
+             (*params_in_out).meta_coll = 1;
++            }
+         else
++            {
+             (*params_in_out).meta_coll = 0;
++            }
+     }
+     else if (strcmp(key, "COLLECTIVE_DATA") == 0) {
+         if (val[0] == 'Y' || val[0] == 'y')
++            {
+             (*params_in_out).data_coll = 1;
++            }
+         else
++            {
+             (*params_in_out).data_coll = 0;
++            }
+     }
+     else if (strcmp(key, "COMPRESS") == 0) {
+         if (val[0] == 'Y' || val[0] == 'y')
++            {
+             (*params_in_out).useCompress = 1;
++            }
+         else
++            {
+             (*params_in_out).useCompress = 0;
++            }
+     }
+     else if (strcmp(key, "TIMESTEPS") == 0) {
+         int ts_cnt = atoi(val);
+         if (ts_cnt >= 1)
++            {
+             (*params_in_out).cnt_time_step = ts_cnt;
++            }
+         else {
+             printf("TIMESTEPS must be at least 1.\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+     else if (strcmp(key, "DELAYED_CLOSE_TIMESTEPS") == 0) {
+         int delay_ts_cnt = atoi(val);
+         if (delay_ts_cnt < 0)
++            {
+             delay_ts_cnt = 0;
++            }
+         (*params_in_out).cnt_time_step_delay = delay_ts_cnt;
+     }
+     else if (strcmp(key, "NUM_PARTICLES") == 0) { // 16M, 8K
+         unsigned long long num = 0;
+         if (str_to_ull(val, &num) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+ 
+         if (num >= 1)
++            {
+             (*params_in_out).num_particles = num;
++            }
+         else {
+             printf("NUM_PARTICLES must be at least 1.\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+     else if (strcmp(key, "IO_MEM_LIMIT") == 0) {
+         unsigned long long num = 0;
+         if (str_to_ull(val, &num) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+         if (num >= 0) {
+             (*params_in_out).io_mem_limit = num;
+         }
+         else {
+             printf("IO_MEM_LIMIT must be at least 0.\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+     else if (strcmp(key, "EMULATED_COMPUTE_TIME_PER_TIMESTEP") == 0) {
+         duration time;
+         if (parse_time(val, &time) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+         if (time.time_num >= 0)
++            {
+             (*params_in_out).compute_time = time;
++            }
+         else {
+             printf("EMULATED_COMPUTE_TIME_PER_TIMESTEP must be at least 0.\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+@@ -782,107 +947,169 @@
+             (*params_in_out).read_option = READ_STRIDED;
+         }
+         else
++            {
+             (*params_in_out).read_option = READ_OPTION_INVALID;
++            }
+     }
+     else if (strcmp(key, "NUM_DIMS") == 0) {
+         int num = atoi(val);
+         if (num > 0)
++            {
+             (*params_in_out).num_dims = num;
++            }
+         else {
+             printf("NUM_DIMS must be at least 1\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+     else if (strcmp(key, "DIM_1") == 0) {
+         unsigned long long num = 0;
+         if (str_to_ull(val, &num) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+         if (num > 0)
++            {
+             (*params_in_out).dim_1 = num;
++            }
+         else {
+             printf("DIM_1 must be at least 1\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+     else if (strcmp(key, "DIM_2") == 0) {
+         if ((*params_in_out).num_dims == 1)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return 1;
++            }
+         unsigned long long num = 0;
+         if (str_to_ull(val, &num) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+         if (num >= 1)
++            {
+             (*params_in_out).dim_2 = num;
++            }
+         else {
+             printf("DIM_2 must be at least 1\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+     else if (strcmp(key, "DIM_3") == 0) {
+         if ((*params_in_out).num_dims == 1 || (*params_in_out).num_dims == 2)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return 1;
++            }
+         unsigned long long num = 0;
+         if (str_to_ull(val, &num) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+         if (num >= 1)
++            {
+             (*params_in_out).dim_3 = num;
++            }
+         else {
+             printf("DIM_3 must be at least 1\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+     else if (strcmp(key, "CHUNK_DIM_1") == 0) {
+         unsigned long long dim = 0;
+         if (str_to_ull(val, &dim) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+         if (dim > 0)
++            {
+             (*params_in_out).chunk_dim_1 = dim;
++            }
+         else {
+             printf("CHUNK_DIM_1 must be at least 1\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+     else if (strcmp(key, "CHUNK_DIM_2") == 0) {
+         if ((*params_in_out).num_dims == 1)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return 1;
++            }
+         unsigned long long dim = 0;
+         if (str_to_ull(val, &dim) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+         if (dim >= 1)
++            {
+             (*params_in_out).chunk_dim_2 = dim;
++            }
+         else {
+             printf("CHUNK_DIM_2 must be at least 1.\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+     else if (strcmp(key, "CHUNK_DIM_3") == 0) {
+         if ((*params_in_out).num_dims == 1 || (*params_in_out).num_dims == 2)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return 1;
++            }
+         unsigned long long dim = 0;
+         if (str_to_ull(val, &dim) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+         if (dim >= 1)
++            {
+             (*params_in_out).chunk_dim_3 = dim;
++            }
+         else {
+             printf("CHUNK_DIM_3 must be at least 1.\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+     else if (strcmp(key, "STRIDE_SIZE") == 0) {
+         unsigned long long num = 0;
+         if (str_to_ull(val, &num) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+         (*params_in_out).stride = num;
+     }
+     else if (strcmp(key, "BLOCK_SIZE") == 0) {
+         unsigned long long num = 0;
+         if (str_to_ull(val, &num) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+         (*params_in_out).block_size = num;
+     }
+     else if (strcmp(key, "BLOCK_CNT") == 0) {
+         unsigned long long num = 0;
+         if (str_to_ull(val, &num) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+         (*params_in_out).block_cnt = num;
+     }
+     else if (strcmp(key, "CSV_FILE") == 0) {
+@@ -894,20 +1121,27 @@
+     }
+     else if (strcmp(key, "FILE_PER_PROC") == 0) {
+         if (val[0] == 'Y' || val[0] == 'y')
++            {
+             (*params_in_out).file_per_proc = 1;
++            }
+         else
++            {
+             (*params_in_out).file_per_proc = 0;
++            }
+     }
+     else if (strcmp(key, "SUBFILING") == 0) {
+         if (val[0] == 'Y' || val[0] == 'y') {
+ #ifndef HAVE_SUBFILING
+             printf("HDF5 version does not support SUBFILING \n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+ #endif
+             (*params_in_out).subfiling = 1;
+         }
+         else
++            {
+             (*params_in_out).subfiling = 0;
++            }
+     }
+     else if (strcmp(key, "ALIGN") == 0) {
+         if (val[0] == 'Y' || val[0] == 'y') {
+@@ -920,23 +1154,30 @@
+     else if (strcmp(key, "ALIGN_THRESHOLD") == 0) {
+         int align_threshold = atoi(val);
+         if (align_threshold >= 0)
++            {
+             (*params_in_out).align_threshold = align_threshold;
++            }
+         else {
+             printf("ALIGN_THRESHOLD must be >=0\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+     else if (strcmp(key, "ALIGN_LEN") == 0) {
+         int align_len = atoi(val);
+         if (align_len >= 0)
++            {
+             (*params_in_out).align_len = align_len;
++            }
+         else {
+             printf("ALIGN_LEN must be >=0\n");
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+     else {
+         printf("Unknown Parameter: %s\n", key);
++        DFTRACER_C_FUNCTION_END();
+         return -1;
+     }
+ 
+@@ -950,17 +1191,26 @@
+     }
+ 
+     if ((*params_in_out).useCSV)
++        {
+         (*params_in_out).csv_fs = csv_init(params_in_out->csv_path, params_in_out->env_meta_path);
++        }
+ 
+     if (val)
++        {
+         free(val);
++        }
++    DFTRACER_C_FUNCTION_END();
+     return 1;
+ }
+ void
+ bench_params_init(bench_params *params_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (!params_out)
++        {
+         params_out = (bench_params *)calloc(1, sizeof(bench_params));
++        }
+     (*params_out).pattern_name = NULL;
+     (*params_out).meta_coll    = 0;
+     (*params_out).data_coll    = 0;
+@@ -994,6 +1244,7 @@
+     (*params_out).align           = 0;
+     (*params_out).align_threshold = 0;
+     (*params_out).align_len       = 0;
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ int
+@@ -1013,12 +1264,18 @@
+ int
+ read_config(const char *file_path, bench_params *params_out, int do_write)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "io");
+     char cfg_line[CFG_LINE_LEN_MAX] = "";
+ 
+     if (!params_out)
++        {
+         params_out = (bench_params *)calloc(1, sizeof(bench_params));
++        }
+     else
++        {
+         memset(params_out, 0, sizeof(bench_params));
++        }
+     // Default settings
+     bench_params_init(params_out);
+     (*params_out).data_file_path = strdup(file_path);
+@@ -1030,9 +1287,13 @@
+     // default values
+     (*params_out).useCSV = 0;
+     if (do_write)
++        {
+         (*params_out).io_op = IO_WRITE;
++        }
+     else
++        {
+         (*params_out).io_op = IO_READ;
++        }
+ 
+     while (fgets(cfg_line, CFG_LINE_LEN_MAX, file) && (parsed == 1)) {
+         if (cfg_line[0] == '#') { // skip comment lines
+@@ -1047,19 +1308,31 @@
+                 tokens[1] = tok;
+             }
+             else
++                {
++                DFTRACER_C_FUNCTION_END();
+                 return -1;
++                }
+         }
+         else
++            {
++            DFTRACER_C_FUNCTION_END();
+             return -1;
++            }
+         //        printf("key = [%s], val = [%s]\n", tokens[0], tokens[1]);
+         parsed = _set_params(tokens[0], tokens[1], params_out, do_write);
+     }
+     if (parsed < 0)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return -1;
++        }
+ 
+     int ret = _set_io_pattern(params_out);
+     if (ret < 0)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return ret;
++        }
+ 
+     if (params_out->io_op == IO_WRITE || params_out->io_op == IO_OVERWRITE ||
+         params_out->io_op == IO_APPEND ||
+@@ -1074,6 +1347,7 @@
+                    "please check IO_MEM_LIMIT in your config file.\n",
+                    params_out->num_particles, params_out->num_particles * PARTICLE_SIZE, PARTICLE_SIZE,
+                    params_out->io_mem_limit);
++            DFTRACER_C_FUNCTION_END();
+             return -1;
+         }
+     }
+@@ -1081,6 +1355,7 @@
+         if (params_out->access_pattern.pattern_write == CONTIG_CONTIG_STRIDED_1D) {
+             if (params_out->stride < 1 || params_out->block_size < 1 || params_out->block_cnt < 1) {
+                 printf("Strided read requires STRIDE_SIZE/BLOCK_SIZE/BLOCK_CNT no less than 1.\n");
++                DFTRACER_C_FUNCTION_END();
+                 return -1;
+             }
+         }
+@@ -1089,22 +1364,29 @@
+              (params_out->io_op == IO_APPEND)) {                    // read-based operations
+         if (params_out->access_pattern.pattern_read == CONTIG_1D) { // read whole file
+             if (params_out->num_particles > 1)
++                {
+                 params_out->try_num_particles = params_out->num_particles;
++                }
+             else
++                {
+                 params_out->num_particles = params_out->try_num_particles;
++                }
+         }
+         if (params_out->access_pattern.pattern_read == STRIDED_1D) {
+             if (params_out->stride < 1 || params_out->block_size < 1 || params_out->block_cnt < 1) {
+                 printf("Strided read requires STRIDE_SIZE/BLOCK_SIZE/BLOCK_CNT no less than 1.\n");
++                DFTRACER_C_FUNCTION_END();
+                 return -1;
+             }
+         }
+     }
+     if (params_out->subfiling > 0 && params_out->data_coll == 1) {
+         printf("Subfiling does not support collective data buffering for data.\n");
++        DFTRACER_C_FUNCTION_END();
+         return -1;
+     }
+ 
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+@@ -1112,6 +1394,8 @@
+ void
+ print_params(const bench_params *p)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     printf("\n");
+     printf("================ Benchmark Configuration ==================\n");
+     printf("File: %s\n", p->data_file_path);
+@@ -1159,40 +1443,58 @@
+     }
+     printf("===========================================================\n");
+     printf("\n");
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+ bench_params_free(bench_params *p)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     if (!p)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return;
++        }
+     if (p->data_file_path)
++        {
+         free(p->data_file_path);
++        }
+     if (p->pattern_name)
++        {
+         free(p->pattern_name);
++        }
+ }
+ 
+ int
+ file_create_try(const char *path)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "io");
+     FILE *fs = fopen(path, "w+");
+     if (!fs) {
+         printf("Failed to create file: %s, Please check permission.\n", path);
++        DFTRACER_C_FUNCTION_END();
+         return -1;
+     }
+     fclose(fs);
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ int
+ file_exist(const char *path)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "io");
+     FILE *f = fopen(path, "r");
+     if (!f) {
+         printf("Failed to open file: %s, Please check if the file exists.\n", path);
++        DFTRACER_C_FUNCTION_END();
+         return -1;
+     }
+     fclose(f);
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+@@ -1204,12 +1506,18 @@
+ int
+ record_env_metadata(FILE *fs, const char *metadata_list_file)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "io");
+     // read list file line, use each line as a key to search env
+     if (!fs)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return -1;
++        }
+     FILE *lfs = fopen(metadata_list_file, "r");
+     if (!lfs) {
+         printf("Can not open metadata list file: %s\n", metadata_list_file);
++        DFTRACER_C_FUNCTION_END();
+         return -1;
+     }
+ 
+@@ -1218,9 +1526,13 @@
+     char line[10 * CFG_LINE_LEN_MAX]; // some env val could be very large, such as PATH
+     while (fgets(line, CFG_LINE_LEN_MAX, lfs)) {
+         if (line[0] == '#') // skip comment lines
++            {
+             continue;
++            }
+         if (line[0] == '\n')
++            {
+             continue;
++            }
+ 
+         if (line[strlen(line) - 1] == '\n') {
+             line[strlen(line) - 1] = 0;
+@@ -1238,24 +1550,32 @@
+ 
+     fprintf(fs, "======================= Metadata end ====================\n");
+     fclose(lfs);
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ FILE *
+ csv_init(const char *csv_path, const char *metadata_list_file)
+ { //, const char* metadata_list_file: should be optional.
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "io");
+     FILE *fs = fopen(csv_path, "w+");
+ 
+     if (!fs) {
+         printf("Failed to create file: %s, Please check permission.\n", csv_path);
++        DFTRACER_C_FUNCTION_END();
+         return NULL;
+     }
+ 
+     if (metadata_list_file) {
+         if (record_env_metadata(fs, metadata_list_file) < 0)
++            {
++            DFTRACER_C_FUNCTION_END();
+             return NULL;
++            }
+     }
+ 
++    DFTRACER_C_FUNCTION_END();
+     return fs;
+ }
+ 
+@@ -1270,47 +1590,66 @@
+ int
+ argv_print(int argc, char *argv[])
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (argc < 1)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return -1;
++        }
+     printf("%d arguments provided.\n", argc);
+     for (int i = 0; i < argc; i++) {
+         printf("idx = %d, argv = %s\n", i, argv[i]);
+     }
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ char *
+ get_file_name_from_path(char *path)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (path == NULL)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return NULL;
++        }
+ 
+     char *pFileName = path;
+     for (char *pCur = path; *pCur != '\0'; pCur++) {
+         if (*pCur == '/' || *pCur == '\\')
++            {
+             pFileName = pCur + 1;
++            }
+     }
+ 
++    DFTRACER_C_FUNCTION_END();
+     return pFileName;
+ }
+ 
+ char *
+ substr(char *src, size_t start, size_t len)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     if (start + len > strlen(src)) {
+         fprintf(stderr, "%s() error: invalid substring index (start+len > length).\n", __func__);
++        DFTRACER_C_FUNCTION_END();
+         return NULL;
+     }
+ 
+     char *sub = calloc(1, len + 1);
+     if (!sub) {
+         fprintf(stderr, "%s() error: memory allocation failed.\n", __func__);
++        DFTRACER_C_FUNCTION_END();
+         return NULL;
+     }
+ 
+     memcpy(sub, src + start, len);
+     // sub[len] = '\0';  // by using calloc, sub is filled with 0 (null)
+ 
++    DFTRACER_C_FUNCTION_END();
+     return sub;
+ }
+ 
+@@ -1318,7 +1657,9 @@
+ get_dir_from_path(char *path)
+ {
+     if (path == NULL)
++        {
+         return NULL;
++        }
+ 
+     char *pDir = substr(path, 0, strlen(path) - strlen(get_file_name_from_path(path)));
+ 
+@@ -1328,6 +1669,8 @@
+ human_readable
+ format_human_readable(uint64_t bytes)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     human_readable value;
+ 
+     char unit[] = {' ', 'K', 'M', 'G', 'T'};
+@@ -1338,11 +1681,14 @@
+ 
+     if (bytes >= 1024) {
+         for (i = 0; (bytes / 1024) > 0 && i < length - 1; i++, bytes /= 1024)
++            {
+             format = bytes / 1024.0;
++            }
+     }
+ 
+     value.value = format;
+     value.unit  = unit[i];
+ 
+     return value;
++    DFTRACER_C_FUNCTION_END();
+ }
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/exerciser/h5bench_exerciser.c /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/exerciser/h5bench_exerciser.c
+--- /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/exerciser/h5bench_exerciser.c	2026-07-09 23:11:32.213576000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/exerciser/h5bench_exerciser.c	2026-07-10 00:08:18.094274000 -0700
+@@ -25,6 +25,7 @@
+ #include <math.h>
+ #include <unistd.h>
+ #include <assert.h>
++#include <dftracer/dftracer.h>
+ #ifdef __linux__
+ #include <sys/sysinfo.h>
+ #include <sys/resource.h>
+@@ -131,17 +132,29 @@
+     /* Parse Input Args */
+     for (i = 1; i < argc; i++) {
+         if (strcmp(argv[i], "--metacoll") == 0)
++            {
+             useMetaDataCollectives = 1;
++            }
+         else if (strcmp(argv[i], "--derivedtype") == 0)
++            {
+             addDerivedTypeDataset = 1;
++            }
+         else if (strcmp(argv[i], "--addattr") == 0)
++            {
+             addAttributes = 1;
++            }
+         else if (strcmp(argv[i], "--indepio") == 0)
++            {
+             useIndependentIO = 1;
++            }
+         else if (strcmp(argv[i], "--keepfile") == 0)
++            {
+             keepFile = 1;
++            }
+         else if (strcmp(argv[i], "--usechunked") == 0)
++            {
+             useChunked = 1;
++            }
+         else if (strcmp(argv[i], "--maxcheck") == 0) {
+             i++;
+             maxcheck_set = 1;
+@@ -233,6 +246,9 @@
+     MPI_Init(&argc, &argv);
+     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
++    DFTRACER_C_INIT(NULL, NULL, NULL);
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     MPI_Comm comm = MPI_COMM_WORLD;
+ 
+     /* Make sure the array decomposition makes sense. For now, we can just divide
+@@ -242,11 +258,15 @@
+     if (rank == 0) {
+         int ndomains = 1;
+         for (i = 0; i < numDims; ++i)
++            {
+             ndomains *= dimRanks[i];
++            }
+         if (ndomains != nprocs) {
+             printf("WARNING!! - ndomains: %d must be: %d. Only dividing dim-0\n", ndomains, nprocs);
+             for (j = 0; j <= numDims; ++j)
++                {
+                 dimRanks[j] = 1;
++                }
+             dimRanks[0] = nprocs;
+         }
+     }
+@@ -262,7 +282,9 @@
+         /* Shifting the location of the WRITE location in file */
+         cary = rank + rankshift;
+         if (cary >= nprocs)
++            {
+             cary -= nprocs;
++            }
+         for (i = numDims - 1; i >= 0; --i) {
+             rankLocationShiftedWr[i] = cary % dimRanks[i];
+             cary                     = cary / dimRanks[i];
+@@ -270,7 +292,9 @@
+         /* Shifting the location of the READ location in file */
+         cary = rank + rankshift * 2;
+         if (cary >= nprocs)
++            {
+             cary -= nprocs;
++            }
+         for (i = numDims - 1; i >= 0; --i) {
+             rankLocationShiftedRd[i] = cary % dimRanks[i];
+             cary                     = cary / dimRanks[i];
+@@ -331,7 +355,9 @@
+ 
+     /* Initialize curNEls to minNEls */
+     for (j = 0; j < numDims; j++)
++        {
+         curNEls[j] = minNEls[j];
++        }
+ 
+     /* Loop through different buffer-size iterations */
+     for (bufloopIter = 0; bufloopIter < numBufLoops; bufloopIter++) {
+@@ -372,8 +398,10 @@
+                 }
+             }
+             if (rank == 0 && HYPER_VERBOSE)
++                {
+                 printf("FileSpace: Dim= %d Block= %llu Stride= %llu Count= %llu\n", j, fileBlock_dbl[j],
+                        fileStride_dbl[j], fileCount_dbl[j]);
++                }
+ 
+             /* Check that the FILE space settings make sense */
+             if ((fileBlock_spe[j] < 1) || (curNEls[j] % fileBlock_spe[j] != 0)) {
+@@ -405,8 +433,10 @@
+             NumDoubleElements = memStride_dbl * memCount_dbl;
+         }
+         if (rank == 0 && HYPER_VERBOSE)
++            {
+             printf("MemSpace:  Dim= %d Block= %llu Stride= %llu Count= %llu\n", 0, memBlock_dbl,
+                    memStride_dbl, memCount_dbl);
++            }
+ 
+         /* data buffers for writing and reading */
+         double *dataBuffer  = (double *)malloc(sizeof(double) * NumDoubleElements);
+@@ -444,7 +474,9 @@
+                     if (j < memBlock_dbl) {
+                         cary = rank + rankshift; // * 2;
+                         if (cary >= nprocs)
++                            {
+                             cary -= nprocs;
++                            }
+                         dataBufferShift[ii] = (double)(cary + 1);
+                     }
+                     else {
+@@ -550,9 +582,13 @@
+             xferPropList = H5Pcreate(H5P_DATASET_XFER);
+ 
+             if (useIndependentIO)
++                {
+                 H5Pset_dxpl_mpio(xferPropList, H5FD_MPIO_INDEPENDENT);
++                }
+             else
++                {
+                 H5Pset_dxpl_mpio(xferPropList, H5FD_MPIO_COLLECTIVE);
++                }
+ 
+             hid_t dataSetPropList = H5Pcreate(H5P_DATASET_CREATE);
+ 
+@@ -627,6 +663,8 @@
+ 
+             if (rc < 0) {
+                 printf("H5Fclose failed with rc %d\n", rc);
++                DFTRACER_C_FUNCTION_END();
++                DFTRACER_C_FINI();
+                 exit(1);
+             }
+ 
+@@ -665,6 +703,8 @@
+ 
+             if (fd < 0) {
+                 printf("H5Fopen error - fd is %lld\n", (hid_t)fd);
++                DFTRACER_C_FUNCTION_END();
++                DFTRACER_C_FINI();
+                 exit(1);
+             }
+ 
+@@ -676,6 +716,8 @@
+ 
+             if (dataSet < 0) {
+                 printf("H5Dopen error - dataSet is %lld\n", (hid_t)dataSet);
++                DFTRACER_C_FUNCTION_END();
++                DFTRACER_C_FINI();
+                 exit(1);
+             }
+ 
+@@ -683,6 +725,8 @@
+ 
+             if (fileDataSpace < 0) {
+                 printf("H5Dget_space error - fileDataSpace is %lld\n", (hid_t)fileDataSpace);
++                DFTRACER_C_FUNCTION_END();
++                DFTRACER_C_FINI();
+                 exit(1);
+             }
+             dtype_id = H5Dget_type(dataSet);
+@@ -800,6 +844,8 @@
+ 
+                 if (rc < 0) {
+                     printf("H5Dwrite of dataSet failed with rc %d\n", rc);
++                    DFTRACER_C_FUNCTION_END();
++                    DFTRACER_C_FINI();
+                     exit(1);
+                 }
+ 
+@@ -834,6 +880,8 @@
+ 
+             if (rc < 0) {
+                 printf("H5Fclose failed with rc %d\n", rc);
++                DFTRACER_C_FUNCTION_END();
++                DFTRACER_C_FINI();
+                 exit(1);
+             }
+ 
+@@ -909,11 +957,15 @@
+         free(checkBuffer);
+         free(sim_params);
+         if (rankshift != 0)
++            {
+             free(dataBufferShift);
++            }
+ 
+         /* Increase buffer sizes for next loop */
+         for (j = 0; j < numDims; j++)
++            {
+             curNEls[j] *= bufMult[j];
++            }
+ 
+         MPI_Barrier(comm);
+     } /* bufsize for-loop */
+@@ -926,9 +978,13 @@
+     }
+ 
+     if (rank == 0)
++        {
+         printf("All done -- Finishing normally.\n");
++        }
+     MPI_Barrier(comm);
+ 
++    DFTRACER_C_FUNCTION_END();
++    DFTRACER_C_FINI();
+     MPI_Finalize();
+     return 0;
+ }
+@@ -936,12 +992,16 @@
+ void
+ getmoments(double *ain, int n, double *momarr)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     int    i, j;
+     double median, t, minv, maxv, avgv, stdv;
+ 
+     double *a = (double *)malloc(sizeof(double) * n);
+     for (i = 0; i < n; i++)
++        {
+         a[i] = ain[i];
++        }
+ 
+     /* 1st Loop through array to get min, max, and sum (for avg) */
+     minv = a[0];
+@@ -950,16 +1010,22 @@
+     for (i = 1; i < n; i++) {
+         avgv += a[i];
+         if (a[i] > maxv)
++            {
+             maxv = a[i];
++            }
+         if (a[i] < minv)
++            {
+             minv = a[i];
++            }
+     }
+     avgv /= ((double)n);
+ 
+     /* 2nd Loop through array to get std dev */
+     stdv = 0.0;
+     for (i = 0; i < n; i++)
++        {
+         stdv += (a[i] - avgv) * (a[i] - avgv);
++        }
+     stdv /= ((double)n);
+     stdv = sqrt(stdv);
+ 
+@@ -972,14 +1038,20 @@
+                 a[j + 1] = t;
+             }
+             else
++                {
+                 continue;
++                }
+         }
+     }
+     /* Calculate the median (trivial, because sorted) */
+     if (n % 2 == 0)
++        {
+         median = (a[n / 2] + a[n / 2 + 1]) / 2.0;
++        }
+     else
++        {
+         median = a[n / 2 + 1];
++        }
+ 
+     /* Set values in moment array */
+     momarr[MIN_ind] = minv;
+@@ -988,4 +1060,5 @@
+     momarr[AVG_ind] = avgv;
+     momarr[STD_ind] = stdv;
+     free(a);
++    DFTRACER_C_FUNCTION_END();
+ }
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/h5bench_patterns/h5bench_append.c /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/h5bench_patterns/h5bench_append.c
+--- /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/h5bench_patterns/h5bench_append.c	2026-07-09 23:11:32.217640000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/h5bench_patterns/h5bench_append.c	2026-07-10 00:08:18.923250000 -0700
+@@ -22,6 +22,7 @@
+ #include <assert.h>
+ #include "../commons/h5bench_util.h"
+ #include "../commons/async_adaptor.h"
++#include <dftracer/dftracer.h>
+ 
+ // Global Variables and dimensions
+ long long  NUM_PARTICLES = 0, FILE_OFFSET = 0;
+@@ -38,11 +39,16 @@
+ void
+ print_data(int n)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     int i;
+     for (i = 0; i < n; i++)
++        {
+         printf("sample data: %f %f %f %d %f %f %f %f\n", BUF_STRUCT->x[i], BUF_STRUCT->y[i], BUF_STRUCT->z[i],
+                BUF_STRUCT->id_1[i], BUF_STRUCT->id_2[i], BUF_STRUCT->px[i], BUF_STRUCT->py[i],
+                BUF_STRUCT->pz[i]);
++        }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -50,9 +56,13 @@
+ {
+     *plist_id_out = H5Pcreate(H5P_DATASET_XFER);
+     if (data_collective == 1)
++        {
+         H5Pset_dxpl_mpio(*plist_id_out, H5FD_MPIO_COLLECTIVE);
++        }
+     else
++        {
+         H5Pset_dxpl_mpio(*plist_id_out, H5FD_MPIO_INDEPENDENT);
++        }
+ }
+ 
+ // Append to dataset with hyperslab
+@@ -60,6 +70,8 @@
+ append_h5_data(bench_params params, time_step *ts, hid_t loc, hid_t *dset_ids, hid_t filespace,
+                hid_t memspace, unsigned long *read_time, unsigned long *metadata_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     hid_t         dapl;
+     unsigned long t1, t2, t3;
+ 
+@@ -222,7 +234,9 @@
+     *metadata_time = t2 - t1;
+ 
+     if (MY_RANK == 0)
++        {
+         printf("  Append 8 variable completed\n");
++        }
+     H5Pclose(dapl);
+ 
+     if (params.num_dims == 1) {
+@@ -251,6 +265,7 @@
+         free(data_3D_INT);
+         free(data_3D_FLOAT);
+     }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ int
+@@ -271,6 +286,8 @@
+ _set_dataspace_strided_read(unsigned long read_elem_cnt, bench_params params, hid_t *filespace_in,
+                             hid_t *memspace_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (MY_RANK == 0) {
+         printf("Stride parameters: STRIDE_SIZE = %lu, BLOCK_SIZE = %lu, BLOCK_CNT = %lu\n", params.stride,
+                params.block_size, params.block_cnt);
+@@ -280,6 +297,7 @@
+         printf("\n\nInvalid hyperslab setting: (STRIDE_SIZE + BLOCK_SIZE) * BLOCK_CNT"
+                "must be no greater than the number of available particles per rank(%lu).\n\n",
+                params.chunk_dim_1);
++        DFTRACER_C_FUNCTION_END();
+         return 0;
+     }
+ 
+@@ -292,6 +310,7 @@
+                         (hsize_t *)&params.block_cnt,   // block cnt
+                         (hsize_t *)&params.block_size); // block size
+ 
++    DFTRACER_C_FUNCTION_END();
+     return actual_elem_cnt;
+ }
+ 
+@@ -300,6 +319,8 @@
+ _set_dataspace_seq_2D(hid_t *filespace_in_out, hid_t *memspace_out, unsigned long long dim_1,
+                       unsigned long long dim_2)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hsize_t mem_dims[2], file_dims[2];
+     mem_dims[0] = (hsize_t)dim_1;
+     mem_dims[1] = (hsize_t)dim_2;
+@@ -316,6 +337,7 @@
+     block[1]      = dim_2;
+     *memspace_out = H5Screate_simple(2, mem_dims, NULL);
+     H5Sselect_hyperslab(*filespace_in_out, H5S_SELECT_SET, file_starts, NULL, count, block);
++    DFTRACER_C_FUNCTION_END();
+     return dim_1 * dim_2;
+ }
+ 
+@@ -323,6 +345,8 @@
+ _set_dataspace_seq_3D(hid_t *filespace_in_out, hid_t *memspace_out, unsigned long long dim_1,
+                       unsigned long long dim_2, unsigned long long dim_3)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hsize_t mem_dims[3];
+     hsize_t file_dims[3];
+     mem_dims[0]  = (hsize_t)dim_1;
+@@ -344,12 +368,15 @@
+     *memspace_out = H5Screate_simple(3, mem_dims, NULL);
+ 
+     H5Sselect_hyperslab(*filespace_in_out, H5S_SELECT_SET, file_starts, NULL, count, file_range);
++    DFTRACER_C_FUNCTION_END();
+     return dim_1 * dim_2 * dim_3;
+ }
+ 
+ hid_t
+ get_filespace(hid_t file_id)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     char *grp_name  = "/Timestep_0";
+     char *ds_name   = "px";
+     hid_t gid       = H5Gopen2(file_id, grp_name, H5P_DEFAULT);
+@@ -357,6 +384,7 @@
+     hid_t filespace = H5Dget_space(dsid);
+     H5Dclose(dsid);
+     H5Gclose(gid);
++    DFTRACER_C_FUNCTION_END();
+     return filespace;
+ }
+ 
+@@ -364,6 +392,8 @@
+ set_dataspace(bench_params params, unsigned long long try_read_elem_cnt, hid_t *filespace_in_out,
+               hid_t *memspace_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     unsigned long actual_read_cnt = 0;
+     switch (params.access_pattern.pattern_read) {
+         case CONTIG_1D:
+@@ -391,6 +421,7 @@
+             printf("Unknown read pattern\n");
+             break;
+     }
++    DFTRACER_C_FUNCTION_END();
+     return actual_read_cnt;
+ }
+ 
+@@ -399,6 +430,8 @@
+                       unsigned long *total_data_size_out, unsigned long *raw_read_time_out,
+                       unsigned long *inner_metadata_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     *raw_read_time_out               = 0;
+     *inner_metadata_time             = 0;
+     int                nts           = params.cnt_time_step;
+@@ -411,10 +444,15 @@
+     actual_read_cnt = set_dataspace(params, read_elem_cnt, &filespace, &memspace);
+ 
+     if (actual_read_cnt < 1)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return -1;
++        }
+ 
+     if (MY_RANK == 0)
++        {
+         print_params(&params);
++        }
+ 
+     MEM_MONITOR      = mem_monitor_new(nts, ASYNC_MODE, actual_read_cnt, params.io_mem_limit);
+     unsigned long t1 = 0, t2 = 0, t3 = 0, t4 = 0;
+@@ -431,7 +469,9 @@
+ 
+         if (params.cnt_time_step_delay > 0) {
+             if (ts_index > params.cnt_time_step_delay - 1) // delayed close on all ids of the previous ts
++                {
+                 ts_delayed_close(MEM_MONITOR, &meta_time1, dset_cnt);
++                }
+         }
+         mem_monitor_check_run(MEM_MONITOR, &meta_time2, &read_time_imp);
+ 
+@@ -441,7 +481,9 @@
+         meta_time3 = (t2 - t1);
+ 
+         if (MY_RANK == 0)
++            {
+             printf("Reading %s ... \n", grp_name);
++            }
+ 
+         append_h5_data(params, ts, ts->grp_id, ts->dset_ids, filespace, memspace, &read_time_exp,
+                        &meta_time4);
+@@ -464,7 +506,9 @@
+         if (ts_index != nts - 1) { // no sleep after the last ts
+             if (params.compute_time.time_num >= 0) {
+                 if (MY_RANK == 0)
++                    {
+                     printf("Computing... \n");
++                    }
+                 async_sleep(ts->es_meta_close, params.compute_time);
+             }
+         }
+@@ -479,18 +523,22 @@
+     *total_data_size_out = nts * actual_read_cnt * (6 * sizeof(float) + 2 * sizeof(int));
+     H5Sclose(memspace);
+     H5Sclose(filespace);
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ void
+ set_pl(hid_t *fapl, hid_t *gapl)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     *fapl = H5Pcreate(H5P_FILE_ACCESS);
+     H5Pset_fapl_mpio(*fapl, MPI_COMM_WORLD, MPI_INFO_NULL);
+     H5Pset_all_coll_metadata_ops(*fapl, true);
+     H5Pset_coll_metadata_write(*fapl, true);
+     *gapl = H5Pcreate(H5P_GROUP_ACCESS);
+     H5Pset_all_coll_metadata_ops(*gapl, true);
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -507,6 +555,9 @@
+     assert(MPI_THREAD_MULTIPLE == mpi_thread_lvl_provided);
+     MPI_Comm_rank(MPI_COMM_WORLD, &MY_RANK);
+     MPI_Comm_size(MPI_COMM_WORLD, &NUM_RANKS);
++    DFTRACER_C_INIT(NULL, NULL, NULL);
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+ 
+     int sleep_time = 0;
+ 
+@@ -522,7 +573,11 @@
+     int do_write = 0;
+     if (read_config(cfg_file_path, &params, do_write) < 0) {
+         if (MY_RANK == 0)
++            {
+             printf("Configuration file read failed. Please, check %s\n", cfg_file_path);
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+     ASYNC_MODE    = params.asyncMode;
+@@ -530,13 +585,21 @@
+ 
+     if (NUM_TIMESTEPS <= 0) {
+         if (MY_RANK == 0)
++            {
+             printf("Usage: ./%s /path/to/file #timestep [# mega particles]\n", argv[0]);
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+     if (params.io_op != IO_APPEND) {
+         if (MY_RANK == 0)
++            {
+             printf("Make sure the configuration file has IO_OPERATION=APPEND defined\n");
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+@@ -552,13 +615,19 @@
+     if (dims_cnt > 0) {
+         for (int i = 0; i < dims_cnt; i++) {
+             if (MY_RANK == 0)
++                {
+                 printf("dims[%d] = %llu (total number for the file)\n", i, dims[i]);
++                }
+             total_particles *= dims[i];
+         }
+     }
+     else {
+         if (MY_RANK == 0)
++            {
+             printf("Failed to read dimensions. \n");
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+@@ -571,25 +640,31 @@
+     if (dims_cnt > 0) { // 1D
+         if (params.dim_1 > dims[0] / NUM_RANKS) {
+             if (MY_RANK == 0)
++                {
+                 printf("Failed: Required dimension (%lu) is greater than the allowed dimension per rank "
+                        "(%llu).\n",
+                        params.dim_1, dims[0] / NUM_RANKS);
++                }
+             goto error;
+         }
+     }
+     if (dims_cnt > 1) { // 2D
+         if (params.dim_2 > dims[1]) {
+             if (MY_RANK == 0)
++                {
+                 printf("Failed: Required dimension_2 (%lu) is greater than file dimension (%llu).\n",
+                        params.dim_2, dims[1]);
++                }
+             goto error;
+         }
+     }
+     if (dims_cnt > 2) { // 3D
+         if (params.dim_2 > dims[1]) {
+             if (MY_RANK == 0)
++                {
+                 printf("Failed: Required dimension_3 (%lu) is greater than file dimension (%llu).\n",
+                        params.dim_3, dims[2]);
++                }
+             goto error;
+         }
+     }
+@@ -600,7 +675,11 @@
+ 
+     if (read_elem_cnt > NUM_PARTICLES) {
+         if (MY_RANK == 0)
++            {
+             printf("read_elem_cnt_m <= num_particles must hold.\n");
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+@@ -612,6 +691,8 @@
+ 
+     if (params.num_particles > NUM_PARTICLES) {
+         printf("Number of particle per rank exceeds maximum value: %llu \n", NUM_PARTICLES);
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return -1;
+     }
+ 
+@@ -626,12 +707,16 @@
+ 
+     if (file_id < 0) {
+         if (MY_RANK == 0)
++            {
+             printf("Error with opening file [%s]!\n", file_name);
++            }
+         goto done;
+     }
+ 
+     if (MY_RANK == 0)
++        {
+         printf("Opened HDF5 file... [%s]\n", file_name);
++        }
+ 
+     unsigned long raw_read_time, metadata_time, local_data_size;
+ 
+@@ -640,7 +725,9 @@
+ 
+     if (ret < 0) {
+         if (MY_RANK == 0)
++            {
+             printf("_run_benchmark_read() failed.\n");
++            }
+ 
+         goto error;
+     }
+@@ -723,10 +810,14 @@
+         H5Fclose(file_id);
+         H5Pclose(fapl);
+     }
++    {
+     H5E_END_TRY;
++    }
+ 
+ done:
+     H5close();
++    DFTRACER_C_FUNCTION_END();
++    DFTRACER_C_FINI();
+     MPI_Finalize();
+     return 0;
+ }
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/h5bench_patterns/h5bench_overwrite.c /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/h5bench_patterns/h5bench_overwrite.c
+--- /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/h5bench_patterns/h5bench_overwrite.c	2026-07-09 23:11:32.218666000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/h5bench_patterns/h5bench_overwrite.c	2026-07-10 00:08:19.718308000 -0700
+@@ -21,6 +21,7 @@
+ #include <assert.h>
+ #include "../commons/h5bench_util.h"
+ #include "../commons/async_adaptor.h"
++#include <dftracer/dftracer.h>
+ 
+ // Global Variables and dimensions
+ long long  NUM_PARTICLES = 0, FILE_OFFSET = 0;
+@@ -37,11 +38,16 @@
+ void
+ print_data(int n)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     int i;
+     for (i = 0; i < n; i++)
++        {
+         printf("sample data: %f %f %f %d %f %f %f %f\n", BUF_STRUCT->x[i], BUF_STRUCT->y[i], BUF_STRUCT->z[i],
+                BUF_STRUCT->id_1[i], BUF_STRUCT->id_2[i], BUF_STRUCT->px[i], BUF_STRUCT->py[i],
+                BUF_STRUCT->pz[i]);
++        }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -49,9 +55,13 @@
+ {
+     *plist_id_out = H5Pcreate(H5P_DATASET_XFER);
+     if (data_collective == 1)
++        {
+         H5Pset_dxpl_mpio(*plist_id_out, H5FD_MPIO_COLLECTIVE);
++        }
+     else
++        {
+         H5Pset_dxpl_mpio(*plist_id_out, H5FD_MPIO_INDEPENDENT);
++        }
+ }
+ 
+ // Overwrite dataset
+@@ -59,6 +69,8 @@
+ overwrite_h5_data(bench_params params, time_step *ts, hid_t loc, hid_t *dset_ids, hid_t filespace,
+                   hid_t memspace, unsigned long *read_time, unsigned long *metadata_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     hid_t         dapl;
+     unsigned long t1, t2, t3;
+ 
+@@ -199,7 +211,9 @@
+     *metadata_time = t2 - t1;
+ 
+     if (MY_RANK == 0)
++        {
+         printf("  Overwrite 8 variable completed\n");
++        }
+     H5Pclose(dapl);
+ 
+     if (params.num_dims == 1) {
+@@ -228,6 +242,7 @@
+         free(data_3D_INT);
+         free(data_3D_FLOAT);
+     }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ int
+@@ -247,6 +262,8 @@
+ _set_dataspace_strided_read(unsigned long read_elem_cnt, bench_params params, hid_t *filespace_in,
+                             hid_t *memspace_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (MY_RANK == 0) {
+         printf("Stride parameters: STRIDE_SIZE = %lu, BLOCK_SIZE = %lu, BLOCK_CNT = %lu\n", params.stride,
+                params.block_size, params.block_cnt);
+@@ -256,6 +273,7 @@
+         printf("\n\nInvalid hyperslab setting: (STRIDE_SIZE + BLOCK_SIZE) * BLOCK_CNT"
+                "must be no greater than the number of available particles per rank(%lu).\n\n",
+                params.chunk_dim_1);
++        DFTRACER_C_FUNCTION_END();
+         return 0;
+     }
+ 
+@@ -268,6 +286,7 @@
+                         (hsize_t *)&params.block_cnt,   // block cnt
+                         (hsize_t *)&params.block_size); // block size
+ 
++    DFTRACER_C_FUNCTION_END();
+     return actual_elem_cnt;
+ }
+ 
+@@ -276,6 +295,8 @@
+ _set_dataspace_seq_2D(hid_t *filespace_in_out, hid_t *memspace_out, unsigned long long dim_1,
+                       unsigned long long dim_2)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hsize_t mem_dims[2], file_dims[2];
+     mem_dims[0] = (hsize_t)dim_1;
+     mem_dims[1] = (hsize_t)dim_2;
+@@ -292,6 +313,7 @@
+     block[1]      = dim_2;
+     *memspace_out = H5Screate_simple(2, mem_dims, NULL);
+     H5Sselect_hyperslab(*filespace_in_out, H5S_SELECT_SET, file_starts, NULL, count, block);
++    DFTRACER_C_FUNCTION_END();
+     return dim_1 * dim_2;
+ }
+ 
+@@ -299,6 +321,8 @@
+ _set_dataspace_seq_3D(hid_t *filespace_in_out, hid_t *memspace_out, unsigned long long dim_1,
+                       unsigned long long dim_2, unsigned long long dim_3)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hsize_t mem_dims[3];
+     hsize_t file_dims[3];
+     mem_dims[0]  = (hsize_t)dim_1;
+@@ -320,12 +344,15 @@
+     *memspace_out = H5Screate_simple(3, mem_dims, NULL);
+ 
+     H5Sselect_hyperslab(*filespace_in_out, H5S_SELECT_SET, file_starts, NULL, count, file_range);
++    DFTRACER_C_FUNCTION_END();
+     return dim_1 * dim_2 * dim_3;
+ }
+ 
+ hid_t
+ get_filespace(hid_t file_id)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     char *grp_name  = "/Timestep_0";
+     char *ds_name   = "px";
+     hid_t gid       = H5Gopen2(file_id, grp_name, H5P_DEFAULT);
+@@ -333,6 +360,7 @@
+     hid_t filespace = H5Dget_space(dsid);
+     H5Dclose(dsid);
+     H5Gclose(gid);
++    DFTRACER_C_FUNCTION_END();
+     return filespace;
+ }
+ 
+@@ -340,6 +368,8 @@
+ set_dataspace(bench_params params, unsigned long long try_read_elem_cnt, hid_t *filespace_in_out,
+               hid_t *memspace_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     unsigned long actual_read_cnt = 0;
+     switch (params.access_pattern.pattern_read) {
+         case CONTIG_1D:
+@@ -367,6 +397,7 @@
+             printf("Unknown read pattern\n");
+             break;
+     }
++    DFTRACER_C_FUNCTION_END();
+     return actual_read_cnt;
+ }
+ 
+@@ -375,6 +406,8 @@
+                       unsigned long *total_data_size_out, unsigned long *raw_read_time_out,
+                       unsigned long *inner_metadata_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     *raw_read_time_out               = 0;
+     *inner_metadata_time             = 0;
+     int                nts           = params.cnt_time_step;
+@@ -387,10 +420,15 @@
+     actual_read_cnt = set_dataspace(params, read_elem_cnt, &filespace, &memspace);
+ 
+     if (actual_read_cnt < 1)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return -1;
++        }
+ 
+     if (MY_RANK == 0)
++        {
+         print_params(&params);
++        }
+ 
+     MEM_MONITOR      = mem_monitor_new(nts, ASYNC_MODE, actual_read_cnt, params.io_mem_limit);
+     unsigned long t1 = 0, t2 = 0, t3 = 0, t4 = 0;
+@@ -407,7 +445,9 @@
+ 
+         if (params.cnt_time_step_delay > 0) {
+             if (ts_index > params.cnt_time_step_delay - 1) // delayed close on all ids of the previous ts
++                {
+                 ts_delayed_close(MEM_MONITOR, &meta_time1, dset_cnt);
++                }
+         }
+         mem_monitor_check_run(MEM_MONITOR, &meta_time2, &read_time_imp);
+ 
+@@ -417,7 +457,9 @@
+         meta_time3 = (t2 - t1);
+ 
+         if (MY_RANK == 0)
++            {
+             printf("Reading %s ... \n", grp_name);
++            }
+ 
+         overwrite_h5_data(params, ts, ts->grp_id, ts->dset_ids, filespace, memspace, &read_time_exp,
+                           &meta_time4);
+@@ -440,7 +482,9 @@
+         if (ts_index != nts - 1) { // no sleep after the last ts
+             if (params.compute_time.time_num >= 0) {
+                 if (MY_RANK == 0)
++                    {
+                     printf("Computing... \n");
++                    }
+                 async_sleep(ts->es_meta_close, params.compute_time);
+             }
+         }
+@@ -455,18 +499,22 @@
+     *total_data_size_out = nts * actual_read_cnt * (6 * sizeof(float) + 2 * sizeof(int));
+     H5Sclose(memspace);
+     H5Sclose(filespace);
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ void
+ set_pl(hid_t *fapl, hid_t *gapl)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     *fapl = H5Pcreate(H5P_FILE_ACCESS);
+     H5Pset_fapl_mpio(*fapl, MPI_COMM_WORLD, MPI_INFO_NULL);
+     H5Pset_all_coll_metadata_ops(*fapl, true);
+     H5Pset_coll_metadata_write(*fapl, true);
+     *gapl = H5Pcreate(H5P_GROUP_ACCESS);
+     H5Pset_all_coll_metadata_ops(*gapl, true);
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -483,6 +531,9 @@
+     assert(MPI_THREAD_MULTIPLE == mpi_thread_lvl_provided);
+     MPI_Comm_rank(MPI_COMM_WORLD, &MY_RANK);
+     MPI_Comm_size(MPI_COMM_WORLD, &NUM_RANKS);
++    DFTRACER_C_INIT(NULL, NULL, NULL);
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+ 
+     int sleep_time = 0;
+ 
+@@ -498,7 +549,11 @@
+     int do_write = 0;
+     if (read_config(cfg_file_path, &params, do_write) < 0) {
+         if (MY_RANK == 0)
++            {
+             printf("Configuration file read failed. Please, check %s\n", cfg_file_path);
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+     ASYNC_MODE    = params.asyncMode;
+@@ -506,13 +561,21 @@
+ 
+     if (NUM_TIMESTEPS <= 0) {
+         if (MY_RANK == 0)
++            {
+             printf("Usage: ./%s /path/to/file #timestep [# mega particles]\n", argv[0]);
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+     if (params.io_op != IO_OVERWRITE) {
+         if (MY_RANK == 0)
++            {
+             printf("Make sure the configuration file has IO_OPERATION=OVERWRITE defined\n");
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+@@ -528,13 +591,19 @@
+     if (dims_cnt > 0) {
+         for (int i = 0; i < dims_cnt; i++) {
+             if (MY_RANK == 0)
++                {
+                 printf("dims[%d] = %llu (total number for the file)\n", i, dims[i]);
++                }
+             total_particles *= dims[i];
+         }
+     }
+     else {
+         if (MY_RANK == 0)
++            {
+             printf("Failed to read dimensions. \n");
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+@@ -547,25 +616,31 @@
+     if (dims_cnt > 0) { // 1D
+         if (params.dim_1 > dims[0] / NUM_RANKS) {
+             if (MY_RANK == 0)
++                {
+                 printf("Failed: Required dimension(%lu) is greater than the allowed dimension per rank "
+                        "(%llu).\n",
+                        params.dim_1, dims[0] / NUM_RANKS);
++                }
+             goto error;
+         }
+     }
+     if (dims_cnt > 1) { // 2D
+         if (params.dim_2 > dims[1]) {
+             if (MY_RANK == 0)
++                {
+                 printf("Failed: Required dimension_2 (%lu) is greater than file dimension (%llu).\n",
+                        params.dim_2, dims[1]);
++                }
+             goto error;
+         }
+     }
+     if (dims_cnt > 2) { // 3D
+         if (params.dim_2 > dims[1]) {
+             if (MY_RANK == 0)
++                {
+                 printf("Failed: Required dimension_3 (%lu) is greater than file dimension (%llu).\n",
+                        params.dim_3, dims[2]);
++                }
+             goto error;
+         }
+     }
+@@ -576,7 +651,11 @@
+ 
+     if (read_elem_cnt > NUM_PARTICLES) {
+         if (MY_RANK == 0)
++            {
+             printf("read_elem_cnt_m <= num_particles must hold.\n");
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+@@ -588,6 +667,8 @@
+ 
+     if (params.num_particles > NUM_PARTICLES) {
+         printf("Number of particle per rank exceeds maximum value: %llu \n", NUM_PARTICLES);
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return -1;
+     }
+ 
+@@ -602,12 +683,16 @@
+ 
+     if (file_id < 0) {
+         if (MY_RANK == 0)
++            {
+             printf("Error with opening file [%s]!\n", file_name);
++            }
+         goto done;
+     }
+ 
+     if (MY_RANK == 0)
++        {
+         printf("Opened HDF5 file... [%s]\n", file_name);
++        }
+ 
+     unsigned long raw_read_time, metadata_time, local_data_size;
+ 
+@@ -616,7 +701,9 @@
+ 
+     if (ret < 0) {
+         if (MY_RANK == 0)
++            {
+             printf("_run_benchmark_read() failed.\n");
++            }
+ 
+         goto error;
+     }
+@@ -699,10 +786,14 @@
+         H5Fclose(file_id);
+         H5Pclose(fapl);
+     }
++    {
+     H5E_END_TRY;
++    }
+ 
+ done:
+     H5close();
++    DFTRACER_C_FUNCTION_END();
++    DFTRACER_C_FINI();
+     MPI_Finalize();
+     return 0;
+ }
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/h5bench_patterns/h5bench_read.c /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/h5bench_patterns/h5bench_read.c
+--- /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/h5bench_patterns/h5bench_read.c	2026-07-09 23:11:32.219718000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/h5bench_patterns/h5bench_read.c	2026-07-10 00:08:20.473642000 -0700
+@@ -46,6 +46,7 @@
+ #include <assert.h>
+ #include "../commons/h5bench_util.h"
+ #include "../commons/async_adaptor.h"
++#include <dftracer/dftracer.h>
+ 
+ #ifdef HAVE_SUBFILING
+ #include "H5FDsubfiling.h"
+@@ -68,11 +69,16 @@
+ void
+ print_data(int n)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     int i;
+     for (i = 0; i < n; i++)
++        {
+         printf("sample data: %f %f %f %d %f %f %f %f\n", BUF_STRUCT->x[i], BUF_STRUCT->y[i], BUF_STRUCT->z[i],
+                BUF_STRUCT->id_1[i], BUF_STRUCT->id_2[i], BUF_STRUCT->px[i], BUF_STRUCT->py[i],
+                BUF_STRUCT->pz[i]);
++        }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -80,9 +86,13 @@
+ {
+     *plist_id_out = H5Pcreate(H5P_DATASET_XFER);
+     if (data_collective == 1)
++        {
+         H5Pset_dxpl_mpio(*plist_id_out, H5FD_MPIO_COLLECTIVE);
++        }
+     else
++        {
+         H5Pset_dxpl_mpio(*plist_id_out, H5FD_MPIO_INDEPENDENT);
++        }
+ }
+ 
+ // Create HDF5 file and read data
+@@ -90,6 +100,8 @@
+ read_h5_data(time_step *ts, hid_t loc, hid_t *dset_ids, hid_t filespace, hid_t memspace, hid_t plist_id,
+              unsigned long *read_time, unsigned long *metadata_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hid_t         dapl;
+     unsigned long t1, t2, t3;
+     dapl = H5Pcreate(H5P_DATASET_ACCESS);
+@@ -133,8 +145,11 @@
+     *metadata_time = t2 - t1;
+ 
+     if (MY_RANK == 0)
++        {
+         printf("  Read 8 variable completed\n");
++        }
+     H5Pclose(dapl);
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ int
+@@ -152,6 +167,8 @@
+ _set_dataspace_strided_read(unsigned long read_elem_cnt, bench_params params, hid_t *filespace_in,
+                             hid_t *memspace_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (MY_RANK == 0) {
+         printf("Stride parameters: STRIDE_SIZE = %lu, BLOCK_SIZE = %lu, BLOCK_CNT = %lu\n", params.stride,
+                params.block_size, params.block_cnt);
+@@ -161,6 +178,7 @@
+         printf("\n\nInvalid hyperslab setting: (STRIDE_SIZE + BLOCK_SIZE) * BLOCK_CNT"
+                "must be no greater than the number of available particles per rank(%lu).\n\n",
+                params.chunk_dim_1);
++        DFTRACER_C_FUNCTION_END();
+         return 0;
+     }
+ 
+@@ -173,6 +191,7 @@
+                         (hsize_t *)&params.block_cnt,   // block cnt
+                         (hsize_t *)&params.block_size); // block size
+ 
++    DFTRACER_C_FUNCTION_END();
+     return actual_elem_cnt;
+ }
+ 
+@@ -181,6 +200,8 @@
+ _set_dataspace_seq_2D(hid_t *filespace_in_out, hid_t *memspace_out, unsigned long long dim_1,
+                       unsigned long long dim_2)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hsize_t mem_dims[2], file_dims[2];
+     mem_dims[0] = (hsize_t)dim_1;
+     mem_dims[1] = (hsize_t)dim_2;
+@@ -197,6 +218,7 @@
+     block[1]      = dim_2;
+     *memspace_out = H5Screate_simple(2, mem_dims, NULL);
+     H5Sselect_hyperslab(*filespace_in_out, H5S_SELECT_SET, file_starts, NULL, count, block);
++    DFTRACER_C_FUNCTION_END();
+     return dim_1 * dim_2;
+ }
+ 
+@@ -204,6 +226,8 @@
+ _set_dataspace_seq_3D(hid_t *filespace_in_out, hid_t *memspace_out, unsigned long long dim_1,
+                       unsigned long long dim_2, unsigned long long dim_3)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hsize_t mem_dims[3];
+     hsize_t file_dims[3];
+     mem_dims[0]  = (hsize_t)dim_1;
+@@ -225,12 +249,15 @@
+     *memspace_out = H5Screate_simple(3, mem_dims, NULL);
+ 
+     H5Sselect_hyperslab(*filespace_in_out, H5S_SELECT_SET, file_starts, NULL, count, file_range);
++    DFTRACER_C_FUNCTION_END();
+     return dim_1 * dim_2 * dim_3;
+ }
+ 
+ hid_t
+ get_filespace(hid_t file_id)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     char *grp_name  = "/Timestep_0";
+     char *ds_name   = "px";
+     hid_t gid       = H5Gopen2(file_id, grp_name, H5P_DEFAULT);
+@@ -238,6 +265,7 @@
+     hid_t filespace = H5Dget_space(dsid);
+     H5Dclose(dsid);
+     H5Gclose(gid);
++    DFTRACER_C_FUNCTION_END();
+     return filespace;
+ }
+ 
+@@ -245,6 +273,8 @@
+ set_dataspace(bench_params params, unsigned long long try_read_elem_cnt, hid_t *filespace_in_out,
+               hid_t *memspace_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     unsigned long actual_read_cnt = 0;
+     switch (params.access_pattern.pattern_read) {
+         case CONTIG_1D:
+@@ -272,6 +302,7 @@
+             printf("Unknown read pattern\n");
+             break;
+     }
++    DFTRACER_C_FUNCTION_END();
+     return actual_read_cnt;
+ }
+ 
+@@ -280,6 +311,8 @@
+                     unsigned long *total_data_size_out, unsigned long *raw_read_time_out,
+                     unsigned long *inner_metadata_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     *raw_read_time_out               = 0;
+     *inner_metadata_time             = 0;
+     int                nts           = params.cnt_time_step;
+@@ -301,7 +334,10 @@
+     }
+ 
+     if (actual_read_cnt < 1)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return -1;
++        }
+ 
+ #if H5_VERSION_GE(1, 13, 0)
+     if (H5VLis_connector_registered_by_name("async")) {
+@@ -330,7 +366,9 @@
+ 
+         if (params.cnt_time_step_delay > 0) {
+             if (ts_index > params.cnt_time_step_delay - 1) // delayed close on all ids of the previous ts
++                {
+                 ts_delayed_close(MEM_MONITOR, &meta_time1, dset_cnt);
++                }
+         }
+         mem_monitor_check_run(MEM_MONITOR, &meta_time2, &read_time_imp);
+ 
+@@ -342,7 +380,9 @@
+         meta_time3 = (t2 - t1);
+ 
+         if (MY_RANK == 0)
++            {
+             printf("Reading %s ... \n", grp_name);
++            }
+ 
+         read_h5_data(ts, ts->grp_id, ts->dset_ids, filespace, memspace, plist_id, &read_time_exp,
+                      &meta_time4);
+@@ -365,7 +405,9 @@
+         if (ts_index != nts - 1) { // no sleep after the last ts
+             if (params.compute_time.time_num >= 0) {
+                 if (MY_RANK == 0)
++                    {
+                     printf("Computing... \n");
++                    }
+                 async_sleep(ts->es_meta_close, params.compute_time);
+             }
+         }
+@@ -381,12 +423,15 @@
+     H5Sclose(memspace);
+     H5Sclose(filespace);
+     H5Pclose(plist_id);
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ void
+ set_pl(hid_t *fapl, hid_t *gapl)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     *fapl = H5Pcreate(H5P_FILE_ACCESS);
+     *gapl = H5Pcreate(H5P_GROUP_ACCESS);
+ #ifdef HAVE_SUBFILING
+@@ -400,6 +445,7 @@
+     H5Pset_all_coll_metadata_ops(*fapl, true);
+     H5Pset_coll_metadata_write(*fapl, true);
+ #endif
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -416,6 +462,9 @@
+     assert(MPI_THREAD_MULTIPLE == mpi_thread_lvl_provided);
+     MPI_Comm_rank(MPI_COMM_WORLD, &MY_RANK);
+     MPI_Comm_size(MPI_COMM_WORLD, &NUM_RANKS);
++    DFTRACER_C_INIT(NULL, NULL, NULL);
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+ 
+     int sleep_time = 0;
+ 
+@@ -431,7 +480,11 @@
+     int do_write = 0;
+     if (read_config(cfg_file_path, &params, do_write) < 0) {
+         if (MY_RANK == 0)
++            {
+             printf("Configuration file read failed. Please, check %s\n", cfg_file_path);
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+     ASYNC_MODE    = params.asyncMode;
+@@ -439,18 +492,28 @@
+ 
+     if (NUM_TIMESTEPS <= 0) {
+         if (MY_RANK == 0)
++            {
+             printf("Usage: ./%s /path/to/file #timestep [# mega particles]\n", argv[0]);
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+     if (params.io_op != IO_READ) {
+         if (MY_RANK == 0)
++            {
+             printf("Make sure the configuration file has IO_OPERATION=READ defined\n");
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+     if (params.subfiling)
++        {
+         subfiling = 1;
++        }
+ 
+     hid_t fapl, gapl;
+     set_pl(&fapl, &gapl);
+@@ -464,38 +527,50 @@
+     if (dims_cnt > 0) {
+         for (int i = 0; i < dims_cnt; i++) {
+             if (MY_RANK == 0)
++                {
+                 printf("dims[%d] = %llu (total number for the file)\n", i, dims[i]);
++                }
+             total_particles *= dims[i];
+         }
+     }
+     else {
+         if (MY_RANK == 0)
++            {
+             printf("Failed to read dimensions\n");
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+     if (dims_cnt > 0) { // 1D
+         if (params.dim_1 > dims[0] / NUM_RANKS) {
+             if (MY_RANK == 0)
++                {
+                 printf("Failed: Required dimension(%lu) is greater than the allowed dimension per rank "
+                        "(%llu).\n",
+                        params.dim_1, dims[0] / NUM_RANKS);
++                }
+             goto error;
+         }
+     }
+     if (dims_cnt > 1) { // 2D
+         if (params.dim_2 > dims[1]) {
+             if (MY_RANK == 0)
++                {
+                 printf("Failed: Required dimension_2 (%lu) is greater than file dimension (%llu).\n",
+                        params.dim_2, dims[1]);
++                }
+             goto error;
+         }
+     }
+     if (dims_cnt > 2) { // 3D
+         if (params.dim_2 > dims[1]) {
+             if (MY_RANK == 0)
++                {
+                 printf("Failed: Required dimension_3 (%lu) is greater than file dimension (%llu).\n",
+                        params.dim_3, dims[2]);
++                }
+             goto error;
+         }
+     }
+@@ -506,7 +581,11 @@
+ 
+     if (read_elem_cnt > NUM_PARTICLES) {
+         if (MY_RANK == 0)
++            {
+             printf("read_elem_cnt_m <= num_particles must hold.\n");
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+@@ -527,12 +606,16 @@
+ 
+     if (file_id < 0) {
+         if (MY_RANK == 0)
++            {
+             printf("Error with opening file [%s]!\n", file_name);
++            }
+         goto done;
+     }
+ 
+     if (MY_RANK == 0)
++        {
+         printf("Opened HDF5 file... [%s]\n", file_name);
++        }
+ 
+     unsigned long raw_read_time, metadata_time, local_data_size;
+ 
+@@ -541,7 +624,9 @@
+ 
+     if (ret < 0) {
+         if (MY_RANK == 0)
++            {
+             printf("_run_benchmark_read() failed\n");
++            }
+ 
+         goto error;
+     }
+@@ -627,10 +712,14 @@
+         H5Fclose(file_id);
+         H5Pclose(fapl);
+     }
++    {
+     H5E_END_TRY;
++    }
+ 
+ done:
+     H5close();
++    DFTRACER_C_FUNCTION_END();
++    DFTRACER_C_FINI();
+     MPI_Finalize();
+     return 0;
+ }
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/h5bench_patterns/h5bench_write.c /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/h5bench_patterns/h5bench_write.c
+--- /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/h5bench_patterns/h5bench_write.c	2026-07-09 23:11:32.221696000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/h5bench_patterns/h5bench_write.c	2026-07-10 17:10:05.628225000 -0700
+@@ -45,9 +45,11 @@
+ #include <assert.h>
+ #include <string.h>
+ #include <sys/time.h>
++#include <sys/mman.h>
+ #include <time.h>
+ #include "../commons/h5bench_util.h"
+ #include "../commons/async_adaptor.h"
++#include <dftracer/dftracer.h>
+ #ifdef HAVE_SUBFILING
+ #include "H5FDsubfiling.h"
+ #include "H5FDioc.h"
+@@ -114,6 +116,8 @@
+ hid_t
+ make_compound_type()
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     PARTICLE_COMPOUND_TYPE = H5Tcreate(H5T_COMPOUND, sizeof(particle));
+     H5Tinsert(PARTICLE_COMPOUND_TYPE, "x", HOFFSET(particle, x), H5T_NATIVE_FLOAT);
+     H5Tinsert(PARTICLE_COMPOUND_TYPE, "y", HOFFSET(particle, y), H5T_NATIVE_FLOAT);
+@@ -123,12 +127,15 @@
+     H5Tinsert(PARTICLE_COMPOUND_TYPE, "pz", HOFFSET(particle, pz), H5T_NATIVE_FLOAT);
+     H5Tinsert(PARTICLE_COMPOUND_TYPE, "id_1", HOFFSET(particle, id_1), H5T_NATIVE_INT);
+     H5Tinsert(PARTICLE_COMPOUND_TYPE, "id_2", HOFFSET(particle, id_2), H5T_NATIVE_FLOAT);
++    DFTRACER_C_FUNCTION_END();
+     return PARTICLE_COMPOUND_TYPE;
+ }
+ 
+ hid_t *
+ make_compound_type_separates()
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     PARTICLE_COMPOUND_TYPE_SEPARATES[0] = H5Tcreate(H5T_COMPOUND, sizeof(float));
+     H5Tinsert(PARTICLE_COMPOUND_TYPE_SEPARATES[0], "x", 0, H5T_NATIVE_FLOAT);
+ 
+@@ -153,6 +160,7 @@
+     PARTICLE_COMPOUND_TYPE_SEPARATES[7] = H5Tcreate(H5T_COMPOUND, sizeof(float));
+     H5Tinsert(PARTICLE_COMPOUND_TYPE_SEPARATES[7], "id_2", 0, H5T_NATIVE_FLOAT);
+ 
++    DFTRACER_C_FUNCTION_END();
+     return PARTICLE_COMPOUND_TYPE_SEPARATES;
+ }
+ 
+@@ -160,6 +168,8 @@
+ particle *
+ prepare_data_interleaved(long particle_cnt, unsigned long *data_size_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     particle *data_out = (particle *)malloc(particle_cnt * sizeof(particle));
+ 
+     for (long i = 0; i < particle_cnt; i++) {
+@@ -173,6 +183,7 @@
+         data_out[i].pz   = ((float)2 * i / particle_cnt) * Z_DIM;
+     }
+     *data_size_out = particle_cnt * sizeof(particle);
++    DFTRACER_C_FUNCTION_END();
+     return data_out;
+ }
+ 
+@@ -212,11 +223,16 @@
+ data_contig_md *
+ prepare_data_contig_2D(unsigned long long particle_cnt, long dim_1, long dim_2, unsigned long *data_size_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (particle_cnt != dim_1 * dim_2) {
+         if (MY_RANK == 0)
++            {
+             printf("Invalid dimension definition: dim_1(%ld) * dim_2(%ld) = %ld, must equal num_particles "
+                    "(%llu) per rank.\n",
+                    dim_1, dim_2, dim_1 * dim_2, particle_cnt);
++            }
++        DFTRACER_C_FUNCTION_END();
+         return NULL;
+     }
+     assert(particle_cnt == dim_1 * dim_2);
+@@ -258,11 +274,16 @@
+ prepare_data_contig_3D(unsigned long long particle_cnt, long dim_1, long dim_2, long dim_3,
+                        unsigned long *data_size_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (particle_cnt != dim_1 * dim_2 * dim_3) {
+         if (MY_RANK == 0)
++            {
+             printf("Invalid dimension definition: dim_1(%ld) * dim_2(%ld) * dim_3(%ld) = %ld,"
+                    " must equal num_particles (%llu) per rank.\n",
+                    dim_1, dim_2, dim_3, dim_1 * dim_2 * dim_3, particle_cnt);
++            }
++        DFTRACER_C_FUNCTION_END();
+         return NULL;
+     }
+ 
+@@ -304,6 +325,8 @@
+ void
+ data_free(write_pattern mode, void *data)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     assert(data);
+     switch (mode) {
+         case CONTIG_CONTIG_1D:
+@@ -330,6 +353,7 @@
+         default:
+             break;
+     }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -337,9 +361,13 @@
+ {
+     *plist_id_out = H5Pcreate(H5P_DATASET_XFER);
+     if (data_collective == 1)
++        {
+         H5Pset_dxpl_mpio(*plist_id_out, H5FD_MPIO_COLLECTIVE);
++        }
+     else
++        {
+         H5Pset_dxpl_mpio(*plist_id_out, H5FD_MPIO_INDEPENDENT);
++        }
+ }
+ 
+ int
+@@ -357,6 +385,8 @@
+ unsigned long
+ set_select_spaces_strided(bench_params params, hid_t *filespace_out, hid_t *memspace_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (MY_RANK == 0) {
+         printf("Stride parameters: STRIDE_SIZE = %lu, BLOCK_SIZE = %lu, BLOCK_CNT = %lu\n", params.stride,
+                params.block_size, params.block_cnt);
+@@ -365,6 +395,7 @@
+         printf("\n\nInvalid hyperslab setting: (STRIDE_SIZE + BLOCK_SIZE) * BLOCK_CNT"
+                "must be no greater than the number of available particles per rank(%lu).\n\n",
+                params.chunk_dim_1);
++        DFTRACER_C_FUNCTION_END();
+         return 0;
+     }
+ 
+@@ -376,12 +407,15 @@
+                         (hsize_t *)&params.stride,                               // stride
+                         (hsize_t *)&params.block_cnt,                            // block cnt
+                         (hsize_t *)&params.block_size);                          // block size
++    DFTRACER_C_FUNCTION_END();
+     return actual_elem_cnt;
+ }
+ 
+ int
+ set_select_space_2D_array(hid_t *filespace_out, hid_t *memspace_out, unsigned long dim_1, unsigned long dim_2)
+ { // dim_1 * dim_2 === NUM_PARTICLES
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hsize_t mem_dims[2], file_dims[2];
+     mem_dims[0]  = (hsize_t)dim_1;
+     mem_dims[1]  = (hsize_t)dim_2;
+@@ -398,9 +432,12 @@
+     *filespace_out = H5Screate_simple(2, file_dims, NULL);
+     *memspace_out  = H5Screate_simple(2, mem_dims, NULL);
+     if (MY_RANK == 0)
++        {
+         printf("%lu * %lu 2D array, my x_start = %llu, y_start = %llu, x_blk = %llu, y_blk = %llu\n", dim_1,
+                dim_2, file_starts[0], file_starts[1], block[0], block[1]);
++        }
+     H5Sselect_hyperslab(*filespace_out, H5S_SELECT_SET, file_starts, NULL, count, block);
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+@@ -408,6 +445,8 @@
+ set_select_space_multi_3D_array(hid_t *filespace_out, hid_t *memspace_out, unsigned long dim_1,
+                                 unsigned long dim_2, unsigned long dim_3)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hsize_t mem_dims[3];
+     hsize_t file_dims[3];
+     mem_dims[0]  = (hsize_t)dim_1;
+@@ -430,6 +469,7 @@
+     *memspace_out  = H5Screate_simple(3, mem_dims, NULL);
+ 
+     H5Sselect_hyperslab(*filespace_out, H5S_SELECT_SET, file_starts, NULL, count, file_range);
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+@@ -441,17 +481,25 @@
+                                   hid_t plist_id, data_contig_md *data_in, unsigned long *metadata_time,
+                                   unsigned long *data_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     assert(data_in && data_in->x);
+     hid_t dcpl;
+     if (COMPRESS_INFO.USE_COMPRESS)
++        {
+         dcpl = COMPRESS_INFO.dcpl_id;
++        }
+     else
++        {
+         dcpl = H5P_DEFAULT;
++        }
+ 
+     if (MY_RANK == 0) {
+         if (COMPRESS_INFO.USE_COMPRESS)
++            {
+             printf("Parallel compressed: chunk_dim1 = %llu, chunk_dim2 = %llu\n", COMPRESS_INFO.chunk_dims[0],
+                    COMPRESS_INFO.chunk_dims[1]);
++            }
+     }
+ 
+     unsigned t1 = get_time_usec();
+@@ -498,7 +546,10 @@
+     *data_time     = t3 - t2;
+ 
+     if (MY_RANK == 0)
++        {
+         printf("    %s: Finished writing time step \n", __func__);
++        }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -506,12 +557,18 @@
+                                  hid_t plist_id, data_contig_md *data_in, unsigned long *metadata_time,
+                                  unsigned long *data_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     assert(data_in && data_in->x);
+     hid_t dcpl;
+     if (COMPRESS_INFO.USE_COMPRESS)
++        {
+         dcpl = COMPRESS_INFO.dcpl_id;
++        }
+     else
++        {
+         dcpl = H5P_DEFAULT;
++        }
+ 
+     unsigned t1 = get_time_usec();
+     dset_ids[0] = H5Dcreate_async(loc, "particles", PARTICLE_COMPOUND_TYPE, filespace, H5P_DEFAULT, dcpl,
+@@ -539,7 +596,10 @@
+     *metadata_time = t2 - t1;
+     *data_time     = t3 - t2;
+     if (MY_RANK == 0)
++        {
+         printf("    %s: Finished writing time step \n", __func__);
++        }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -547,12 +607,18 @@
+                                  hid_t plist_id, particle *data_in, unsigned long *metadata_time,
+                                  unsigned long *data_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     assert(data_in);
+     hid_t dcpl;
+     if (COMPRESS_INFO.USE_COMPRESS)
++        {
+         dcpl = COMPRESS_INFO.dcpl_id;
++        }
+     else
++        {
+         dcpl = H5P_DEFAULT;
++        }
+ 
+     unsigned t1 = get_time_usec();
+     dset_ids[0] = H5Dcreate_async(loc, "x", PARTICLE_COMPOUND_TYPE_SEPARATES[0], filespace, H5P_DEFAULT, dcpl,
+@@ -595,7 +661,10 @@
+     *metadata_time = t2 - t1;
+     *data_time     = t3 - t2;
+     if (MY_RANK == 0)
++        {
+         printf("    %s: Finished writing time step \n", __func__);
++        }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -603,12 +672,18 @@
+                                       hid_t memspace, hid_t plist_id, particle *data_in,
+                                       unsigned long *metadata_time, unsigned long *data_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     assert(data_in);
+     hid_t dcpl;
+     if (COMPRESS_INFO.USE_COMPRESS)
++        {
+         dcpl = COMPRESS_INFO.dcpl_id;
++        }
+     else
++        {
+         dcpl = H5P_DEFAULT;
++        }
+     unsigned t1 = get_time_usec();
+     dset_ids[0] = H5Dcreate_async(loc, "particles", PARTICLE_COMPOUND_TYPE, filespace, H5P_DEFAULT, dcpl,
+                                   H5P_DEFAULT, ts->es_meta_create);
+@@ -622,13 +697,18 @@
+     *metadata_time = t2 - t1;
+     *data_time     = t3 - t2;
+     if (MY_RANK == 0)
++        {
+         printf("    %s: Finished writing time step \n", __func__);
++        }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void *
+ _prepare_data(bench_params params, hid_t *filespace_out, hid_t *memspace_out,
+               unsigned long *data_preparation_time, unsigned long *data_size)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     void *data = NULL;
+ 
+     make_compound_type_separates();
+@@ -658,6 +738,7 @@
+             actual_elem_cnt = set_select_spaces_strided(params, filespace_out, memspace_out);
+             if (actual_elem_cnt < 1) {
+                 printf("Strided write setting error.\n");
++                DFTRACER_C_FUNCTION_END();
+                 return NULL;
+             }
+             data     = (void *)prepare_data_contig_1D(actual_elem_cnt, data_size);
+@@ -712,6 +793,7 @@
+             break;
+     }
+     *data_preparation_time = get_time_usec() - t_prep_start;
++    DFTRACER_C_FUNCTION_END();
+     return data;
+ }
+ 
+@@ -720,6 +802,8 @@
+                      void *data, unsigned long data_size, unsigned long *total_data_size_out,
+                      unsigned long *data_time_total, unsigned long *metadata_time_total)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     unsigned long long data_preparation_time;
+ 
+     write_pattern pattern      = params.access_pattern.pattern_write;
+@@ -739,8 +823,11 @@
+ 
+     if (!data) {
+         if (MY_RANK == 0)
++            {
+             printf("Failed to generate data for writing, "
+                    "please check dimension settings in the config file.\n");
++            }
++        DFTRACER_C_FUNCTION_END();
+         return -1;
+     }
+ 
+@@ -748,6 +835,7 @@
+ 
+     if (!MEM_MONITOR) {
+         printf("Invalid MEM_MONITOR returned: NULL\n");
++        DFTRACER_C_FUNCTION_END();
+         return -1;
+     }
+ 
+@@ -766,7 +854,9 @@
+ 
+         if (params.cnt_time_step_delay > 0) {
+             if (ts_index > params.cnt_time_step_delay - 1) // delayed close on all ids of the previous ts
++                {
+                 ts_delayed_close(MEM_MONITOR, &meta_time1, dset_cnt);
++                }
+         }
+ 
+         mem_monitor_check_run(MEM_MONITOR, &meta_time2, &data_time_imp);
+@@ -779,7 +869,9 @@
+         meta_time3 = (t1 - t0);
+ 
+         if (MY_RANK == 0)
++            {
+             printf("Writing %s ... \n", grp_name);
++            }
+ 
+         switch (pattern) {
+             case CONTIG_CONTIG_1D:
+@@ -837,7 +929,9 @@
+         if (ts_index != timestep_cnt - 1) { // no sleep after the last ts
+             if (params.compute_time.time_num >= 0) {
+                 if (MY_RANK == 0)
++                    {
+                     printf("Computing...\n");
++                    }
+                 async_sleep(ts->es_data, params.compute_time);
+             }
+         }
+@@ -855,7 +949,9 @@
+ 
+     H5Tclose(PARTICLE_COMPOUND_TYPE);
+     for (int i = 0; i < 8; i++)
++        {
+         H5Tclose(PARTICLE_COMPOUND_TYPE_SEPARATES[i]);
++        }
+ 
+     *total_data_size_out = timestep_cnt * data_size;
+ 
+@@ -863,12 +959,15 @@
+     H5Sclose(memspace);
+     H5Sclose(filespace);
+     H5Pclose(plist_id);
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ void
+ set_globals(const bench_params *params)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     NUM_PARTICLES = params->num_particles;
+     NUM_TIMESTEPS = params->cnt_time_step;
+     // Following variables only used to generate data
+@@ -896,6 +995,7 @@
+     }
+ 
+     ASYNC_MODE = params->asyncMode;
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ hid_t
+@@ -908,6 +1008,8 @@
+ hid_t
+ set_metadata(hid_t fapl, int align, unsigned long threshold, unsigned long alignment_len, int meta_collective)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hsize_t threshold_o, alignment_len_o;
+     herr_t  ret;
+     if (align == 1) {
+@@ -916,7 +1018,9 @@
+         ret = H5Pget_alignment(fapl, &threshold_o, &alignment_len_o);
+         if (ret < 0)
+             if (MY_RANK == 0)
++                {
+                 printf("H5Pget_alignment failed \n");
++                }
+ 
+         if (MY_RANK == 0) {
+             printf("GPFS alignment settings: ON\n");
+@@ -926,7 +1030,9 @@
+     }
+     if (meta_collective == 1) {
+         if (MY_RANK == 0)
++            {
+             printf("Collective Metadata operations: ON\n");
++            }
+ #if H5_VERSION_GE(1, 10, 0)
+         H5Pset_all_coll_metadata_ops(fapl, 1);
+         H5Pset_coll_metadata_write(fapl, 1);
+@@ -934,7 +1040,49 @@
+     }
+     else {
+         if (MY_RANK == 0)
++            {
+             printf("Collective Metadata operations: OFF\n");
++            }
++    }
++
++    // Lever #2 (L2/software): H5Pset_meta_block_size tuning, gated by env var so it is a
++    // single-variable toggle against the write_v2 baseline (Howison et al. 2010, "Tuning
++    // HDF5 for Lustre File Systems"). Does NOT change MEM_PATTERN/FILE_PATTERN - the
++    // application's actual INTERLEAVED/INTERLEAVED access pattern is unchanged; this only
++    // tunes how HDF5 aggregates metadata block allocations underneath that same pattern.
++    {
++        const char *meta_block_env = getenv("H5BENCH_META_BLOCK_SIZE");
++        if (meta_block_env != NULL) {
++            hsize_t meta_block_size = (hsize_t)strtoull(meta_block_env, NULL, 10);
++            if (meta_block_size > 0) {
++                H5Pset_meta_block_size(fapl, meta_block_size);
++                if (MY_RANK == 0) {
++                    printf("H5Pset_meta_block_size: %llu bytes (via H5BENCH_META_BLOCK_SIZE)\n",
++                           (unsigned long long)meta_block_size);
++                }
++            }
++        }
++    }
++
++    // Lever #1 (this pass) / paged file-space strategy (L2/software), page-buffer half only:
++    // H5Pset_file_space_strategy(PAGE) must be set on the FILE-CREATE plist (FCPL), not this
++    // FAPL - see set_fcpl_page_strategy() below, applied at the H5Fcreate call site. This half
++    // (H5Pset_page_buffer_size) IS a FAPL setting and belongs here; it is a no-op unless the
++    // paired FCPL page strategy is also active on the same file (Li et al. 2025,
++    // arXiv:2506.15114; Howison et al. 2010). Env-gated single-variable toggle.
++    {
++        const char *page_size_env = getenv("H5BENCH_PAGE_BUFFER_SIZE");
++        if (page_size_env != NULL) {
++            hsize_t page_buffer_size = (hsize_t)strtoull(page_size_env, NULL, 10);
++            if (page_buffer_size > 0) {
++                herr_t pbs_ret = H5Pset_page_buffer_size(fapl, page_buffer_size, 0, 0);
++                if (MY_RANK == 0) {
++                    printf("H5Pset_page_buffer_size: %llu bytes ret=%d (via "
++                           "H5BENCH_PAGE_BUFFER_SIZE)\n",
++                           (unsigned long long)page_buffer_size, pbs_ret);
++                }
++            }
++        }
+     }
+ 
+     // Defer metadata flush
+@@ -950,12 +1098,15 @@
+         cache_config.decr_mode         = H5C_decr__off;
+         H5Pset_mdc_config(fapl, &cache_config);
+     }
++    DFTRACER_C_FUNCTION_END();
+     return fapl;
+ }
+ 
+ void
+ print_usage(char *name)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (MY_RANK == 0) {
+         printf("=============== Usage: %s /path_to_config_file /path_to_output_data_file [CSV "
+                "csv_file_path]=============== \n",
+@@ -969,6 +1120,7 @@
+         printf("- For example, when your PATTERN is CC3D, and PARTICLE_CNT_M is 1, setting DIM_1~3 to 64, "
+                "64, and 256 is valid, because 64*64*256 = 1,048,576 (1M); and 10*20*30 is invalid. \n");
+     }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ int
+@@ -979,6 +1131,9 @@
+     assert(MPI_THREAD_MULTIPLE == mpi_thread_lvl_provided);
+     MPI_Comm_rank(MPI_COMM_WORLD, &MY_RANK);
+     MPI_Comm_size(MPI_COMM_WORLD, &NUM_RANKS);
++    DFTRACER_C_INIT(NULL, NULL, NULL);
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     MPI_Comm           comm    = MPI_COMM_WORLD;
+     MPI_Info           info    = MPI_INFO_NULL;
+     char *             num_str = "1024 Ks";
+@@ -992,6 +1147,8 @@
+     if (MY_RANK == 0) {
+         if (argc != 3) {
+             print_usage(argv[0]);
++            DFTRACER_C_FUNCTION_END();
++            DFTRACER_C_FINI();
+             return 0;
+         }
+     }
+@@ -1008,21 +1165,33 @@
+     int do_write = 1;
+     if (read_config(cfg_file_path, &params, do_write) < 0) {
+         if (MY_RANK == 0)
++            {
+             printf("Configuration file read failed. Please, check %s\n", cfg_file_path);
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+     if (params.io_op != IO_WRITE) {
+         if (MY_RANK == 0)
++            {
+             printf("Make sure the configuration file has IO_OPERATION=WRITE defined\n");
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+     if (params.useCompress)
++        {
+         params.data_coll = 1;
++        }
+ 
+     if (params.subfiling)
++        {
+         subfiling = 1;
++        }
+ 
+ #if H5_VERSION_GE(1, 13, 0)
+     if (H5VLis_connector_registered_by_name("async")) {
+@@ -1059,7 +1228,9 @@
+     FILE_OFFSET -= NUM_PARTICLES;
+ 
+     if (MY_RANK == 0)
++        {
+         printf("Total number of particles: %lldM\n", TOTAL_PARTICLES / (M_VAL));
++        }
+ 
+     hid_t fapl      = set_fapl();
+     ALIGN           = params.align;
+@@ -1080,25 +1251,61 @@
+ 
+     void *data = _prepare_data(params, &filespace, &memspace, &data_preparation_time, &data_size);
+ 
++    // Lever #6 (L2/memory): madvise(MADV_HUGEPAGE) on the write buffer to reduce TLB pressure
++    // for this large (~768MB-1.5GB/rank) sequential buffer fill/drain, env-gated single-variable
++    // toggle layered on top of the confirmed lever #2 (cb_nodes+striping) config. Generic HPC
++    // systems-tuning knowledge - no h5bench/Tuolumne-specific paper found for this lever.
++    {
++        const char *hugepage_env = getenv("H5BENCH_MADVISE_HUGEPAGE");
++        if (hugepage_env != NULL && data != NULL && data_size > 0) {
++            int madv_ret = madvise(data, (size_t)data_size, MADV_HUGEPAGE);
++            if (MY_RANK == 0) {
++                printf("madvise(MADV_HUGEPAGE) on %lu byte write buffer ret=%d (via "
++                       "H5BENCH_MADVISE_HUGEPAGE)\n",
++                       (unsigned long)data_size, madv_ret);
++            }
++        }
++    }
++
+     unsigned long t1 = get_time_usec();
+ 
+     hid_t file_id;
+ 
++    // Lever #1 (this pass) / paged file-space strategy, FCPL half: H5Pset_file_space_strategy
++    // takes a FILE-CREATE plist, not the FAPL used elsewhere in this function - a prior attempt
++    // that called it on `fapl` failed with "can't find object for ID" (H5Pfcpl.c) and silently
++    // produced a corrupt/empty file. Paired with H5Pset_page_buffer_size on `fapl` above.
++    hid_t fcpl = H5P_DEFAULT;
++    {
++        const char *page_size_env = getenv("H5BENCH_PAGE_BUFFER_SIZE");
++        if (page_size_env != NULL && strtoull(page_size_env, NULL, 10) > 0) {
++            fcpl              = H5Pcreate(H5P_FILE_CREATE);
++            herr_t pfs_ret    = H5Pset_file_space_strategy(fcpl, H5F_FSPACE_STRATEGY_PAGE, 1, 1);
++            if (MY_RANK == 0) {
++                printf("H5Pset_file_space_strategy(PAGE) on FCPL ret=%d (via "
++                       "H5BENCH_PAGE_BUFFER_SIZE)\n",
++                       pfs_ret);
++            }
++        }
++    }
++
+     unsigned long tfopen_start = get_time_usec();
+     if (params.file_per_proc) {
+         char mpi_rank_output_file_path[4096];
+         sprintf(mpi_rank_output_file_path, "%s/rank_%d_%s", get_dir_from_path(output_file), MY_RANK,
+                 get_file_name_from_path(output_file));
+ 
+-        file_id = H5Fcreate_async(mpi_rank_output_file_path, H5F_ACC_TRUNC, H5P_DEFAULT, fapl, 0);
++        file_id = H5Fcreate_async(mpi_rank_output_file_path, H5F_ACC_TRUNC, fcpl, fapl, 0);
+     }
+     else {
+-        file_id = H5Fcreate_async(output_file, H5F_ACC_TRUNC, H5P_DEFAULT, fapl, 0);
++        file_id = H5Fcreate_async(output_file, H5F_ACC_TRUNC, fcpl, fapl, 0);
+     }
+     unsigned long tfopen_end = get_time_usec();
+ 
+     if (MY_RANK == 0)
++        {
+         printf("Opened HDF5 file... \n");
++        }
+ 
+     MPI_Barrier(MPI_COMM_WORLD);
+     unsigned long t2 = get_time_usec(); // t2 - t1: metadata: creating/opening
+@@ -1109,7 +1316,9 @@
+ 
+     if (stat < 0) {
+         if (MY_RANK == 0)
++            {
+             printf("\n==================== Benchmark Failed ====================\n");
++            }
+         assert(0);
+     }
+ 
+@@ -1201,6 +1410,8 @@
+         }
+     }
+ 
++    DFTRACER_C_FUNCTION_END();
++    DFTRACER_C_FINI();
+     MPI_Finalize();
+     return 0;
+ }
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/h5bench_patterns/h5bench_write_unlimited.c /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/h5bench_patterns/h5bench_write_unlimited.c
+--- /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/h5bench_patterns/h5bench_write_unlimited.c	2026-07-09 23:11:32.223641000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/h5bench_patterns/h5bench_write_unlimited.c	2026-07-10 00:08:22.286273000 -0700
+@@ -23,6 +23,7 @@
+ #include <time.h>
+ #include "../commons/h5bench_util.h"
+ #include "../commons/async_adaptor.h"
++#include <dftracer/dftracer.h>
+ 
+ #define DIM_MAX 3
+ 
+@@ -84,6 +85,8 @@
+ hid_t
+ make_compound_type()
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     PARTICLE_COMPOUND_TYPE = H5Tcreate(H5T_COMPOUND, sizeof(particle));
+     H5Tinsert(PARTICLE_COMPOUND_TYPE, "x", HOFFSET(particle, x), H5T_NATIVE_FLOAT);
+     H5Tinsert(PARTICLE_COMPOUND_TYPE, "y", HOFFSET(particle, y), H5T_NATIVE_FLOAT);
+@@ -93,12 +96,15 @@
+     H5Tinsert(PARTICLE_COMPOUND_TYPE, "pz", HOFFSET(particle, pz), H5T_NATIVE_FLOAT);
+     H5Tinsert(PARTICLE_COMPOUND_TYPE, "id_1", HOFFSET(particle, id_1), H5T_NATIVE_INT);
+     H5Tinsert(PARTICLE_COMPOUND_TYPE, "id_2", HOFFSET(particle, id_2), H5T_NATIVE_FLOAT);
++    DFTRACER_C_FUNCTION_END();
+     return PARTICLE_COMPOUND_TYPE;
+ }
+ 
+ hid_t *
+ make_compound_type_separates()
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     PARTICLE_COMPOUND_TYPE_SEPARATES[0] = H5Tcreate(H5T_COMPOUND, sizeof(float));
+     H5Tinsert(PARTICLE_COMPOUND_TYPE_SEPARATES[0], "x", 0, H5T_NATIVE_FLOAT);
+ 
+@@ -123,6 +129,7 @@
+     PARTICLE_COMPOUND_TYPE_SEPARATES[7] = H5Tcreate(H5T_COMPOUND, sizeof(float));
+     H5Tinsert(PARTICLE_COMPOUND_TYPE_SEPARATES[7], "id_2", 0, H5T_NATIVE_FLOAT);
+ 
++    DFTRACER_C_FUNCTION_END();
+     return PARTICLE_COMPOUND_TYPE_SEPARATES;
+ }
+ 
+@@ -130,6 +137,8 @@
+ particle *
+ prepare_data_interleaved(long particle_cnt, unsigned long *data_size_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     particle *data_out = (particle *)malloc(particle_cnt * sizeof(particle));
+ 
+     for (long i = 0; i < particle_cnt; i++) {
+@@ -143,6 +152,7 @@
+         data_out[i].pz   = ((float)2 * i / particle_cnt) * Z_DIM;
+     }
+     *data_size_out = particle_cnt * sizeof(particle);
++    DFTRACER_C_FUNCTION_END();
+     return data_out;
+ }
+ 
+@@ -182,11 +192,16 @@
+ data_contig_md *
+ prepare_data_contig_2D(unsigned long long particle_cnt, long dim_1, long dim_2, unsigned long *data_size_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (particle_cnt != dim_1 * dim_2) {
+         if (MY_RANK == 0)
++            {
+             printf("Invalid dimension definition: dim_1(%ld) * dim_2(%ld) = %ld, must equal num_particles "
+                    "(%llu) per rank.\n",
+                    dim_1, dim_2, dim_1 * dim_2, particle_cnt);
++            }
++        DFTRACER_C_FUNCTION_END();
+         return NULL;
+     }
+     assert(particle_cnt == dim_1 * dim_2);
+@@ -228,11 +243,16 @@
+ prepare_data_contig_3D(unsigned long long particle_cnt, long dim_1, long dim_2, long dim_3,
+                        unsigned long *data_size_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (particle_cnt != dim_1 * dim_2 * dim_3) {
+         if (MY_RANK == 0)
++            {
+             printf("Invalid dimension definition: dim_1(%ld) * dim_2(%ld) * dim_3(%ld) = %ld,"
+                    " must equal num_particles (%llu) per rank.\n",
+                    dim_1, dim_2, dim_3, dim_1 * dim_2 * dim_3, particle_cnt);
++            }
++        DFTRACER_C_FUNCTION_END();
+         return NULL;
+     }
+ 
+@@ -274,6 +294,8 @@
+ void
+ data_free(write_pattern mode, void *data)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     assert(data);
+     switch (mode) {
+         case CONTIG_CONTIG_1D:
+@@ -300,6 +322,7 @@
+         default:
+             break;
+     }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -307,14 +330,20 @@
+ {
+     *plist_id_out = H5Pcreate(H5P_DATASET_XFER);
+     if (data_collective == 1)
++        {
+         H5Pset_dxpl_mpio(*plist_id_out, H5FD_MPIO_COLLECTIVE);
++        }
+     else
++        {
+         H5Pset_dxpl_mpio(*plist_id_out, H5FD_MPIO_INDEPENDENT);
++        }
+ }
+ 
+ int
+ set_select_spaces_default(bench_params params, hid_t *filespace_out, hid_t *memspace_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hsize_t count[1] = {1};
+ 
+     if (params.useCompress) {
+@@ -326,12 +355,15 @@
+     H5Sselect_hyperslab(*filespace_out, H5S_SELECT_SET, (hsize_t *)&FILE_OFFSET, NULL, count,
+                         (hsize_t *)&NUM_PARTICLES);
+     //    printf("TOTAL_PARTICLES = %d, NUM_PARTICLES = %d \n", TOTAL_PARTICLES, NUM_PARTICLES);
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ unsigned long
+ set_select_spaces_strided(bench_params params, hid_t *filespace_out, hid_t *memspace_out)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (MY_RANK == 0) {
+         printf("Stride parameters: STRIDE_SIZE = %lu, BLOCK_SIZE = %lu, BLOCK_CNT = %lu\n", params.stride,
+                params.block_size, params.block_cnt);
+@@ -340,6 +372,7 @@
+         printf("\n\nInvalid hyperslab setting: (STRIDE_SIZE + BLOCK_SIZE) * BLOCK_CNT"
+                "must be no greater than the number of available particles per rank(%lu).\n\n",
+                params.chunk_dim_1);
++        DFTRACER_C_FUNCTION_END();
+         return 0;
+     }
+ 
+@@ -355,6 +388,7 @@
+                         (hsize_t *)&params.stride,                               // stride
+                         (hsize_t *)&params.block_cnt,                            // block cnt
+                         (hsize_t *)&params.block_size);                          // block size
++    DFTRACER_C_FUNCTION_END();
+     return actual_elem_cnt;
+ }
+ 
+@@ -362,6 +396,8 @@
+ set_select_space_2D_array(bench_params params, hid_t *filespace_out, hid_t *memspace_out, unsigned long dim_1,
+                           unsigned long dim_2)
+ { // dim_1 * dim_2 === NUM_PARTICLES
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hsize_t mem_dims[2], file_dims[2];
+     mem_dims[0]  = (hsize_t)dim_1;
+     mem_dims[1]  = (hsize_t)dim_2;
+@@ -382,9 +418,12 @@
+     }
+ 
+     if (MY_RANK == 0)
++        {
+         printf("%lu * %lu 2D array, my x_start = %llu, y_start = %llu, x_blk = %llu, y_blk = %llu\n", dim_1,
+                dim_2, file_starts[0], file_starts[1], block[0], block[1]);
++        }
+     H5Sselect_hyperslab(*filespace_out, H5S_SELECT_SET, file_starts, NULL, count, block);
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+@@ -392,6 +431,8 @@
+ set_select_space_multi_3D_array(bench_params params, hid_t *filespace_out, hid_t *memspace_out,
+                                 unsigned long dim_1, unsigned long dim_2, unsigned long dim_3)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hsize_t mem_dims[3];
+     hsize_t file_dims[3];
+     mem_dims[0]  = (hsize_t)dim_1;
+@@ -417,6 +458,7 @@
+     }
+ 
+     H5Sselect_hyperslab(*filespace_out, H5S_SELECT_SET, file_starts, NULL, count, file_range);
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+@@ -428,16 +470,24 @@
+                                   hid_t plist_id, data_contig_md *data_in, unsigned long *metadata_time,
+                                   unsigned long *data_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     assert(data_in && data_in->x);
+     hid_t dcpl;
+     if (COMPRESS_INFO.USE_COMPRESS)
++        {
+         dcpl = COMPRESS_INFO.dcpl_id;
++        }
+     else
++        {
+         dcpl = H5P_DEFAULT;
++        }
+     if (MY_RANK == 0) {
+         if (COMPRESS_INFO.USE_COMPRESS)
++            {
+             printf("Parallel compressed: chunk_dim1 = %llu, chunk_dim2 = %llu\n", COMPRESS_INFO.chunk_dims[0],
+                    COMPRESS_INFO.chunk_dims[1]);
++            }
+     }
+ 
+     unsigned t1 = get_time_usec();
+@@ -481,6 +531,7 @@
+     *metadata_time = t2 - t1;
+     *data_time     = t3 - t2;
+     //    if (MY_RANK == 0) printf ("    %s: Finished writing time step \n", __func__);
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -488,12 +539,18 @@
+                                  hid_t plist_id, data_contig_md *data_in, unsigned long *metadata_time,
+                                  unsigned long *data_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     assert(data_in && data_in->x);
+     hid_t dcpl;
+     if (COMPRESS_INFO.USE_COMPRESS)
++        {
+         dcpl = COMPRESS_INFO.dcpl_id;
++        }
+     else
++        {
+         dcpl = H5P_DEFAULT;
++        }
+     unsigned t1 = get_time_usec();
+     dset_ids[0] = H5Dcreate_async(loc, "particles", PARTICLE_COMPOUND_TYPE, filespace, H5P_DEFAULT, dcpl,
+                                   H5P_DEFAULT, ts->es_meta_create);
+@@ -518,7 +575,10 @@
+     *metadata_time = t2 - t1;
+     *data_time     = t3 - t2;
+     if (MY_RANK == 0)
++        {
+         printf("    %s: Finished writing time step \n", __func__);
++        }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -526,12 +586,18 @@
+                                  hid_t plist_id, particle *data_in, unsigned long *metadata_time,
+                                  unsigned long *data_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     assert(data_in);
+     hid_t dcpl;
+     if (COMPRESS_INFO.USE_COMPRESS)
++        {
+         dcpl = COMPRESS_INFO.dcpl_id;
++        }
+     else
++        {
+         dcpl = H5P_DEFAULT;
++        }
+     unsigned t1 = get_time_usec();
+     dset_ids[0] = H5Dcreate_async(loc, "x", PARTICLE_COMPOUND_TYPE_SEPARATES[0], filespace, H5P_DEFAULT, dcpl,
+                                   H5P_DEFAULT, ts->es_meta_create);
+@@ -570,7 +636,10 @@
+     *metadata_time = t2 - t1;
+     *data_time     = t3 - t2;
+     if (MY_RANK == 0)
++        {
+         printf("    %s: Finished writing time step \n", __func__);
++        }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void
+@@ -578,12 +647,18 @@
+                                       hid_t memspace, hid_t plist_id, particle *data_in,
+                                       unsigned long *metadata_time, unsigned long *data_time)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     assert(data_in);
+     hid_t dcpl;
+     if (COMPRESS_INFO.USE_COMPRESS)
++        {
+         dcpl = COMPRESS_INFO.dcpl_id;
++        }
+     else
++        {
+         dcpl = H5P_DEFAULT;
++        }
+     unsigned t1 = get_time_usec();
+     dset_ids[0] = H5Dcreate_async(loc, "particles", PARTICLE_COMPOUND_TYPE, filespace, H5P_DEFAULT, dcpl,
+                                   H5P_DEFAULT, ts->es_meta_create);
+@@ -595,13 +670,18 @@
+     *metadata_time = t2 - t1;
+     *data_time     = t3 - t2;
+     if (MY_RANK == 0)
++        {
+         printf("    %s: Finished writing time step \n", __func__);
++        }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ void *
+ _prepare_data(bench_params params, hid_t *filespace_out, hid_t *memspace_out,
+               unsigned long *data_preparation_time, unsigned long *data_size)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     void *data = NULL;
+ 
+     make_compound_type_separates();
+@@ -631,6 +711,7 @@
+             actual_elem_cnt = set_select_spaces_strided(params, filespace_out, memspace_out);
+             if (actual_elem_cnt < 1) {
+                 printf("Strided write setting error.\n");
++                DFTRACER_C_FUNCTION_END();
+                 return NULL;
+             }
+             data     = (void *)prepare_data_contig_1D(actual_elem_cnt, data_size);
+@@ -685,6 +766,7 @@
+             break;
+     }
+     *data_preparation_time = get_time_usec() - t_prep_start;
++    DFTRACER_C_FUNCTION_END();
+     return data;
+ }
+ 
+@@ -693,6 +775,8 @@
+                      void *data, unsigned long data_size, unsigned long *total_data_size_out,
+                      unsigned long *data_time_total, unsigned long *metadata_time_total)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     unsigned long long data_preparation_time;
+ 
+     write_pattern pattern      = params.access_pattern.pattern_write;
+@@ -712,8 +796,11 @@
+ 
+     if (!data) {
+         if (MY_RANK == 0)
++            {
+             printf("Failed to generate data for writing, "
+                    "please check dimension settings in the config file.\n");
++            }
++        DFTRACER_C_FUNCTION_END();
+         return -1;
+     }
+ 
+@@ -721,6 +808,7 @@
+ 
+     if (!MEM_MONITOR) {
+         printf("Invalid MEM_MONITOR returned: NULL\n");
++        DFTRACER_C_FUNCTION_END();
+         return -1;
+     }
+ 
+@@ -739,7 +827,9 @@
+ 
+         if (params.cnt_time_step_delay > 0) {
+             if (ts_index > params.cnt_time_step_delay - 1) // delayed close on all ids of the previous ts
++                {
+                 ts_delayed_close(MEM_MONITOR, &meta_time1, dset_cnt);
++                }
+         }
+ 
+         mem_monitor_check_run(MEM_MONITOR, &meta_time2, &data_time_imp);
+@@ -751,7 +841,9 @@
+         meta_time3 = (t1 - t0);
+ 
+         if (MY_RANK == 0)
++            {
+             printf("Writing %s ... \n", grp_name);
++            }
+ 
+         switch (pattern) {
+             case CONTIG_CONTIG_1D:
+@@ -807,7 +899,9 @@
+         if (ts_index != timestep_cnt - 1) { // no sleep after the last ts
+             if (params.compute_time.time_num >= 0) {
+                 if (MY_RANK == 0)
++                    {
+                     printf("Computing... \n");
++                    }
+                 async_sleep(ts->es_meta_close, params.compute_time);
+             }
+         }
+@@ -825,7 +919,9 @@
+ 
+     H5Tclose(PARTICLE_COMPOUND_TYPE);
+     for (int i = 0; i < 8; i++)
++        {
+         H5Tclose(PARTICLE_COMPOUND_TYPE_SEPARATES[i]);
++        }
+ 
+     *total_data_size_out = timestep_cnt * data_size;
+ 
+@@ -833,12 +929,15 @@
+     H5Sclose(memspace);
+     H5Sclose(filespace);
+     H5Pclose(plist_id);
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+ void
+ set_globals(const bench_params *params)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     NUM_PARTICLES = params->num_particles;
+     NUM_TIMESTEPS = params->cnt_time_step;
+     // following variables only used to generate data
+@@ -866,6 +965,7 @@
+     }
+ 
+     ASYNC_MODE = params->asyncMode;
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ hid_t
+@@ -878,6 +978,8 @@
+ hid_t
+ set_metadata(hid_t fapl, int align, unsigned long threshold, unsigned long alignment_len, int meta_collective)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hsize_t threshold_o, alignment_len_o;
+     herr_t  ret;
+     if (align == 1) {
+@@ -886,7 +988,9 @@
+         ret = H5Pget_alignment(fapl, &threshold_o, &alignment_len_o);
+         if (ret < 0)
+             if (MY_RANK == 0)
++                {
+                 printf("H5Pget_alignment failed \n");
++                }
+ 
+         if (MY_RANK == 0) {
+             printf("Value of alignment length :  %lld\n", alignment_len_o);
+@@ -895,13 +999,17 @@
+     }
+     if (meta_collective == 1) {
+         if (MY_RANK == 0)
++            {
+             printf("Collective write: enabled.\n");
++            }
+         H5Pset_all_coll_metadata_ops(fapl, 1);
+         H5Pset_coll_metadata_write(fapl, 1);
+     }
+     else {
+         if (MY_RANK == 0)
++            {
+             printf("Collective write: disabled.\n");
++            }
+     }
+ 
+     // Defer metadata flush
+@@ -917,12 +1025,15 @@
+         cache_config.decr_mode         = H5C_decr__off;
+         H5Pset_mdc_config(fapl, &cache_config);
+     }
++    DFTRACER_C_FUNCTION_END();
+     return fapl;
+ }
+ 
+ void
+ print_usage(char *name)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     if (MY_RANK == 0) {
+         printf("=============== Usage: %s /path_to_config_file /path_to_output_data_file [CSV "
+                "csv_file_path]=============== \n",
+@@ -936,6 +1047,7 @@
+         printf("- For example, when your PATTERN is CC3D, and PARTICLE_CNT_M is 1, setting DIM_1~3 to 64, "
+                "64, and 256 is valid, because 64*64*256 = 1,048,576 (1M); and 10*20*30 is invalid. \n");
+     }
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ int
+@@ -946,6 +1058,9 @@
+     assert(MPI_THREAD_MULTIPLE == mpi_thread_lvl_provided);
+     MPI_Comm_rank(MPI_COMM_WORLD, &MY_RANK);
+     MPI_Comm_size(MPI_COMM_WORLD, &NUM_RANKS);
++    DFTRACER_C_INIT(NULL, NULL, NULL);
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     MPI_Comm           comm    = MPI_COMM_WORLD;
+     MPI_Info           info    = MPI_INFO_NULL;
+     char *             num_str = "1024 Ks";
+@@ -957,6 +1072,8 @@
+     if (MY_RANK == 0) {
+         if (argc != 3) {
+             print_usage(argv[0]);
++            DFTRACER_C_FUNCTION_END();
++            DFTRACER_C_FINI();
+             return 0;
+         }
+     }
+@@ -973,25 +1090,39 @@
+     int do_write = 1;
+     if (read_config(cfg_file_path, &params, do_write) < 0) {
+         if (MY_RANK == 0)
++            {
+             printf("Configuration file read failed. Please, check %s\n", cfg_file_path);
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+     if (params.io_op != IO_WRITE) {
+         if (MY_RANK == 0)
++            {
+             printf("Make sure the configuration file has IO_OPERATION=WRITE defined\n");
++            }
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+     if (params.useCompress)
++        {
+         params.data_coll = 1;
++        }
+     else {
+         printf("Make sure the configuration file has COMPRESS=YES \n");
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+     if (MY_RANK == 0)
++        {
+         print_params(&params);
++        }
+ 
+     set_globals(&params);
+ 
+@@ -1015,7 +1146,9 @@
+     FILE_OFFSET -= NUM_PARTICLES;
+ 
+     if (MY_RANK == 0)
++        {
+         printf("Total number of particles: %lldM\n", TOTAL_PARTICLES / (M_VAL));
++        }
+ 
+     hid_t fapl      = set_fapl();
+     ALIGN           = params.align;
+@@ -1048,7 +1181,9 @@
+     unsigned long tfopen_end = get_time_usec();
+ 
+     if (MY_RANK == 0)
++        {
+         printf("Opened HDF5 file... \n");
++        }
+ 
+     MPI_Barrier(MPI_COMM_WORLD);
+     unsigned long t2 = get_time_usec(); // t2 - t1: metadata: creating/opening
+@@ -1059,7 +1194,9 @@
+ 
+     if (stat < 0) {
+         if (MY_RANK == 0)
++            {
+             printf("\n==================== Benchmark Failed ====================\n");
++            }
+         assert(0);
+     }
+ 
+@@ -1149,6 +1286,8 @@
+         }
+     }
+ 
++    DFTRACER_C_FUNCTION_END();
++    DFTRACER_C_FINI();
+     MPI_Finalize();
+     return 0;
+ }
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/metadata_stress/configuration.c /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/metadata_stress/configuration.c
+--- /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/metadata_stress/configuration.c	2026-07-09 23:11:32.230459000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/metadata_stress/configuration.c	2026-07-10 00:08:16.774304000 -0700
+@@ -4,6 +4,7 @@
+ #include <assert.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <dftracer/dftracer.h>
+ 
+ /*
+  *
+@@ -14,6 +15,8 @@
+ int
+ handler(void *user, const char *section, const char *name, const char *value)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     configuration *pconfig = (configuration *)user;
+ 
+ #define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
+@@ -62,6 +65,7 @@
+             strncpy(pconfig->csv_file, value, PATH_MAX);
+         }
+         else {
++            DFTRACER_C_FUNCTION_END();
+             return 0; /* unknown section/name, error */
+         }
+     }
+@@ -106,10 +110,12 @@
+             strncpy(pconfig->csv_file, value, PATH_MAX);
+         }
+         else {
++            DFTRACER_C_FUNCTION_END();
+             return 0; /* unknown name, error */
+         }
+     }
+ 
++    DFTRACER_C_FUNCTION_END();
+     return 1;
+ }
+ 
+@@ -122,6 +128,8 @@
+ int
+ sanity_check(void *user)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     configuration *pconfig = (configuration *)user;
+ 
+     assert(pconfig->version == 0);
+@@ -139,6 +147,7 @@
+     assert(strncmp(pconfig->mpi_io, "independent", 16) == 0 ||
+            strncmp(pconfig->mpi_io, "collective", 16) == 0);
+ 
++    DFTRACER_C_FUNCTION_END();
+     return 0;
+ }
+ 
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/metadata_stress/dataset.c /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/metadata_stress/dataset.c
+--- /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/metadata_stress/dataset.c	2026-07-09 23:11:32.233530000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/metadata_stress/dataset.c	2026-07-10 00:08:17.073363000 -0700
+@@ -2,6 +2,7 @@
+ 
+ #include <assert.h>
+ #include <string.h>
++#include <dftracer/dftracer.h>
+ 
+ /*
+  *
+@@ -13,6 +14,8 @@
+ hid_t
+ create_dataset(const configuration *config, hid_t file, const char *name)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hid_t         result = -1, fspace, dcpl, lcpl;
+     unsigned int  strong_scaling_flg, step_first_flg, chunked_flg;
+     unsigned long total_rows, total_cols, my_rows, my_cols;
+@@ -42,7 +45,9 @@
+             max_dims[2] = dims[2] = (hsize_t)total_cols;
+             if (chunked_flg) {
+                 if (!step_first_flg)
++                    {
+                     max_dims[0] = H5S_UNLIMITED;
++                    }
+                 cdims[0] = 1;
+                 cdims[1] = (hsize_t)my_rows;
+                 cdims[2] = (hsize_t)my_cols;
+@@ -91,6 +96,7 @@
+     assert(H5Sclose(fspace) >= 0);
+ 
+     return result;
++    DFTRACER_C_FUNCTION_END();
+ }
+ 
+ /*
+@@ -103,6 +109,8 @@
+ create_selection(const configuration *config, hid_t fspace, const int proc_row, const int proc_col,
+                  const unsigned int step, const unsigned int array)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     hid_t         result = 0;
+     unsigned int  strong_scaling_flg, step_first_flg;
+     unsigned long my_rows, my_cols;
+@@ -148,4 +156,5 @@
+     assert(H5Sselect_none(fspace) >= 0);
+     assert(H5Sselect_hyperslab(fspace, H5S_SELECT_SET, start, NULL, count, block) >= 0);
+     return result;
++    DFTRACER_C_FUNCTION_END();
+ }
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/metadata_stress/hdf5_iotest.c /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/metadata_stress/hdf5_iotest.c
+--- /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/metadata_stress/hdf5_iotest.c	2026-07-09 23:11:32.237450000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/metadata_stress/hdf5_iotest.c	2026-07-10 00:08:22.846397000 -0700
+@@ -7,6 +7,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include "../commons/h5bench_util.h"
++#include <dftracer/dftracer.h>
+ 
+ #define CONFIG_FILE "hdf5_iotest.ini"
+ 
+@@ -17,10 +18,15 @@
+     int size, rank;
+     MPI_Comm_size(MPI_COMM_WORLD, &size);
+     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
++    DFTRACER_C_INIT(NULL, NULL, NULL);
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     char *ini = argv[1];
+ 
+     if (file_exist(ini) != 0) {
+         printf("Config file not found: %s.\n", ini);
++        DFTRACER_C_FUNCTION_END();
++        DFTRACER_C_FINI();
+         return 0;
+     }
+ 
+@@ -52,6 +58,8 @@
+     {
+         if (ini_parse(ini, handler, &config) < 0) {
+             printf("Can't load '%s'\n", ini);
++            DFTRACER_C_FUNCTION_END();
++            DFTRACER_C_FINI();
+             return 1;
+         }
+ 
+@@ -68,9 +76,17 @@
+ 
+     if (rank == 0) {
+         if (file_create_try(config.hdf5_file) != 0)
++            {
++            DFTRACER_C_FUNCTION_END();
++            DFTRACER_C_FINI();
+             return 0;
++            }
+         if (file_create_try(config.csv_file) != 0)
++            {
++            DFTRACER_C_FUNCTION_END();
++            DFTRACER_C_FINI();
+             return 0;
++            }
+     }
+     /* broadcast the input parameters */
+     MPI_Bcast(&config, sizeof(configuration), MPI_BYTE, 0, MPI_COMM_WORLD);
+@@ -87,7 +103,9 @@
+     rbuf = (double *)calloc(my_rows * my_cols, sizeof(double));
+ 
+     for (i = 0; i < (size_t)my_rows * my_cols; ++i)
++        {
+         wbuf[i] = (double)(my_proc_row + my_proc_col);
++        }
+ 
+     { /* create the in-memory dataspace */
+         hsize_t dims[2];
+@@ -100,9 +118,13 @@
+     assert((dxpl = H5Pcreate(H5P_DATASET_XFER)) >= 0);
+     coll_mpi_io_flg = (strncmp(config.mpi_io, "collective", 16) == 0);
+     if (coll_mpi_io_flg)
++        {
+         assert(H5Pset_dxpl_mpio(dxpl, H5FD_MPIO_COLLECTIVE) >= 0);
++        }
+     else
++        {
+         assert(H5Pset_dxpl_mpio(dxpl, H5FD_MPIO_INDEPENDENT) >= 0);
++        }
+ 
+     assert((fapl = H5Pcreate(H5P_FILE_ACCESS)) >= 0);
+     assert(H5Pset_fapl_mpio(fapl, MPI_COMM_WORLD, MPI_INFO_NULL) >= 0);
+@@ -397,6 +419,8 @@
+         fclose(fptr);
+     }
+ 
++    DFTRACER_C_FUNCTION_END();
++    DFTRACER_C_FINI();
+     MPI_Finalize();
+ 
+     return 0;
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/metadata_stress/ini.c /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/metadata_stress/ini.c
+--- /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/baseline/source/metadata_stress/ini.c	2026-07-09 23:11:32.240470000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/h5bench/20260710_061131/annotated/source/metadata_stress/ini.c	2026-07-10 00:08:17.326323000 -0700
+@@ -20,6 +20,7 @@
+ #include <string.h>
+ 
+ #include "ini.h"
++#include <dftracer/dftracer.h>
+ 
+ #if !INI_USE_STACK
+ #include <stdlib.h>
+@@ -38,9 +39,14 @@
+ static char *
+ rstrip(char *s)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     char *p = s + strlen(s);
+     while (p > s && isspace((unsigned char)(*--p)))
++        {
+         *p = '\0';
++        }
++    DFTRACER_C_FUNCTION_END();
+     return s;
+ }
+ 
+@@ -49,7 +55,9 @@
+ lskip(const char *s)
+ {
+     while (*s && isspace((unsigned char)(*s)))
++        {
+         s++;
++        }
+     return (char *)s;
+ }
+ 
+@@ -86,6 +94,8 @@
+ int
+ ini_parse_stream(ini_reader reader, void *stream, ini_handler handler, void *user)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "mem");
+     /* Uses a fair bit of stack (use heap instead if you need to) */
+ #if INI_USE_STACK
+     char line[INI_MAX_LINE];
+@@ -111,6 +121,7 @@
+ #if !INI_USE_STACK
+     line = (char *)malloc(INI_INITIAL_ALLOC);
+     if (!line) {
++        DFTRACER_C_FUNCTION_END();
+         return -2;
+     }
+ #endif
+@@ -162,7 +173,9 @@
+             /* Non-blank line with leading whitespace, treat as continuation
+                of previous name's value (as per Python configparser). */
+             if (!HANDLER(user, section, prev_name, start) && !error)
++                {
+                 error = lineno;
++                }
+         }
+ #endif
+         else if (*start == '[') {
+@@ -192,7 +205,9 @@
+ #if INI_ALLOW_INLINE_COMMENTS
+                 end = find_chars_or_comment(value, NULL);
+                 if (*end)
++                    {
+                     *end = '\0';
++                    }
+ #endif
+                 value = lskip(value);
+                 rstrip(value);
+@@ -200,7 +215,9 @@
+                 /* Valid name[=:]value pair found, call handler */
+                 strncpy0(prev_name, name, sizeof(prev_name));
+                 if (!HANDLER(user, section, name, value) && !error)
++                    {
+                     error = lineno;
++                    }
+             }
+             else if (!error) {
+                 /* No '=' or ':' found on name[=:]value line */
+@@ -225,6 +242,7 @@
+     free(line);
+ #endif
+ 
++    DFTRACER_C_FUNCTION_END();
+     return error;
+ }
+ 
+@@ -239,14 +257,20 @@
+ int
+ ini_parse(const char *filename, ini_handler handler, void *user)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "io");
+     FILE *file;
+     int   error;
+ 
+     file = fopen(filename, "r");
+     if (!file)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return -1;
++        }
+     error = ini_parse_file(file, handler, user);
+     fclose(file);
++    DFTRACER_C_FUNCTION_END();
+     return error;
+ }
+ 
+@@ -255,6 +279,8 @@
+ static char *
+ ini_reader_string(char *str, int num, void *stream)
+ {
++    DFTRACER_C_FUNCTION_START();
++    DFTRACER_C_FUNCTION_UPDATE_STR("comp", "cpu");
+     ini_parse_string_ctx *ctx          = (ini_parse_string_ctx *)stream;
+     const char *          ctx_ptr      = ctx->ptr;
+     size_t                ctx_num_left = ctx->num_left;
+@@ -262,20 +288,26 @@
+     char                  c;
+ 
+     if (ctx_num_left == 0 || num < 2)
++        {
++        DFTRACER_C_FUNCTION_END();
+         return NULL;
++        }
+ 
+     while (num > 1 && ctx_num_left != 0) {
+         c = *ctx_ptr++;
+         ctx_num_left--;
+         *strp++ = c;
+         if (c == '\n')
++            {
+             break;
++            }
+         num--;
+     }
+ 
+     *strp         = '\0';
+     ctx->ptr      = ctx_ptr;
+     ctx->num_left = ctx_num_left;
++    DFTRACER_C_FUNCTION_END();
+     return str;
+ }
+ 
