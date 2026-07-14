@@ -315,7 +315,7 @@ class DftracerUtilsService(MCPService):
             app_name: Optional[str] = None,
             directory: str = ".",
             output_dir: Optional[str] = None,
-            chunk_size_mb: float = 4.0,
+            chunk_size_mb: int = 4,
             force: bool = False,
             compress: bool = True,
             verify: bool = False,
@@ -344,8 +344,8 @@ class DftracerUtilsService(MCPService):
                 cmd += ["-o", output_dir]
             else:
                 cmd += ["-o", "./split"]
-            if chunk_size_mb != 4.0:
-                cmd += ["-s", str(chunk_size_mb)]
+            if chunk_size_mb != 4:
+                cmd += ["-s", str(int(chunk_size_mb))]
             if verify:
                 cmd.append("--verify")
             if force:

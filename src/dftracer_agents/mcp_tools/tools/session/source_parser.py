@@ -490,8 +490,18 @@ def _collect_braceless(
         rng = child.get("range", {})
         start = _resolve_line(rng.get("begin", {}), line_offsets)
         end   = _resolve_line(rng.get("end",   {}), line_offsets)
-        if start and end:
-            result.append((start, end))
+        # Guard against unresolvable / out-of-file locations (e.g. macro
+        # expansions whose spellingLoc points at a header, or an
+        # expansionLoc that resolves past this file's own line count).
+        # A bogus line number here previously caused either an IndexError
+        # in _insert_braces (line >= len(lines)) or silent corruption
+        # (line 0 aliasing the last line via negative indexing).
+        max_line = len(line_offsets)
+        if not start or not end or start > end:
+            return
+        if start > max_line or end > max_line:
+            return
+        result.append((start, end))
 
     inner = node.get("inner", [])
 
@@ -546,9 +556,26 @@ def _insert_braces(
     # Sort descending so insertions don't shift earlier line numbers
     pairs = sorted(set(braceless), key=lambda p: (-p[0], -p[1]))
 
+    # Ranges are assumed disjoint/properly nested so that processing
+    # highest-start-first never disturbs the (still-unprocessed, lower-start)
+    # indices used later. When a range's END reaches into or past a
+    # later-processed (higher-start) range — which happens with VPIC-style
+    # macro-expanded statements whose clang-reported end location overshoots
+    # the actual statement — that assumption breaks: the earlier insertion's
+    # line shift lands on top of this range's stale end-index, splitting a
+    # single if/else into two disconnected compound blocks (a real syntax
+    # error). Track the lowest start seen so far and skip any pair whose end
+    # reaches at or past it, rather than risk corrupting the file.
+    min_start_seen = None
     for start, end in pairs:
+        if min_start_seen is not None and end >= min_start_seen:
+            continue  # overlaps an already-scheduled range — skip, don't corrupt
+        min_start_seen = start
+
         si = start - 1  # 0-based
         ei = end   - 1
+        if si < 0 or ei >= len(lines) or si > ei:
+            continue  # out-of-range location — skip defensively
 
         # Determine indentation from the body line
         body_line = lines[si]

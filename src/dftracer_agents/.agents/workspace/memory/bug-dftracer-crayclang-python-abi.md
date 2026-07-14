@@ -1,0 +1,17 @@
+---
+name: bug-dftracer-crayclang-python-abi
+description: RESOLVED - dftracer Cray-clang libstdc++ ABI mismatch fixed via nostdlib++ static link + two-pass configure + vendored yaml-cpp
+metadata:
+  type: project
+---
+
+FULLY RESOLVED (2026-07-14, vpic-kokkos session on Tuolumne). Root cause: `/usr/lib64/libstdc++.so.6` on this system (every node) lacks `GLIBCXX_3.4.26`, `GLIBCXX_3.4.29`, `CXXABI_1.3.13` that Cray-clang-built dftracer binaries require, AND `libdftracer_core.so`/`dftracer_service` also dynamically link the TCE-Python-provided `libyaml-cpp.so` (itself missing the same symbols).
+
+**Fix (3 parts, all required together):**
+1. `-static-libstdc++` is a silent no-op with Cray clang (`clang++: warning: argument unused during compilation`) — use `-nostdlib++ <path-to-libstdc++.a> -lm` instead, passed via `CMAKE_SHARED_LINKER_FLAGS`/`CMAKE_EXE_LINKER_FLAGS`. Find the static archive via a GCC toolset module, e.g. `/opt/rh/gcc-toolset-13/root/usr/lib/gcc/x86_64-redhat-linux/13/libstdc++.a` on Tuolumne (load `gcc/13.3.1-magic` module to confirm the path, then unload it / re-source the Cray env before building — do NOT build with GCC loaded as CC/CXX, only to locate the archive).
+2. Force dftracer to build its OWN vendored yaml-cpp instead of finding the system TCE one: pass `-DCMAKE_DISABLE_FIND_PACKAGE_yaml-cpp=ON` on the dependency-bootstrap pass ONLY (see below) so `find_package(yaml-cpp QUIET)` in `dependency/CMakeLists.txt` fails over to `dftracer_install_external_project(yaml-cpp ...)`, which clones+builds yaml-cpp 0.6.3 from source with the same Cray-clang + static-libstdc++ flags. Do NOT keep this flag on the second (main-build) pass — the top-level `CMakeLists.txt` has its own `find_package(yaml-cpp REQUIRED)` which errors if the disable flag is still set (`A REQUIRED package cannot be disabled`); it will find the freshly-vendored copy fine via `CMAKE_PREFIX_PATH`/`-Dyaml-cpp_DIR` once installed. If a CMake configure ever aborts mid-way after setting this flag, the value persists in `CMakeCache.txt` (`UNINITIALIZED=ON`) even if a later invocation omits the `-D` — either explicitly pass `=OFF` or wipe the build dir; editing the cache file with `sed` risks corrupting it (parse errors) — prefer a full fresh build dir over cache surgery.
+3. The two-pass configure requirement (see `dftracer-build-dftracer` skill pitfalls.md) — pass 1 with `DFTRACER_INSTALL_DEPENDENCIES=ON` (+ flag #2 above) builds cpp-logger/brahma/gotcha/libuv/yaml-cpp; pass 2 with `DFTRACER_INSTALL_DEPENDENCIES=OFF` (yaml-cpp disable flag removed/OFF) builds the real dftracer_core/dftracer_service/preload targets, now linking against the freshly vendored yaml-cpp.
+
+**Verification:** `ldd libdftracer_core.so.4.1.0` and `ldd dftracer_service` both show zero `not found`/version-mismatch lines after this fix (only harmless Cray Fortran runtime libs like `libmodules.so.1` show `not found` in a login-node shell — those resolve fine on compute nodes and are unrelated to C++/tracer functionality). VPIC (pure C++/MPI app, FUNCTION-mode annotated) then ran to completion and produced real, substantial `.pfw.gz` traces (135k+ events/rank) — full pipeline unblocked.
+
+See `[[feedback-always-function-mode]]`, `dftracer-build-dftracer` skill pitfalls.md, and `_install_dftracer_cmake` in `src/dftracer_agents/mcp_tools/tools/session/install.py` (now implements the two-pass sequence automatically).

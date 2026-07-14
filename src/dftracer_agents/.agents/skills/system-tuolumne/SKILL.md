@@ -731,6 +731,24 @@ Rules this cost us:
 - Before proposing affinity work, check whether `pin_memory` is already enabled and whether the
   launcher already binds sensibly (`hwloc-bind --get`, `flux run --verbose`).
 
+### Launcher-level CPU affinity has no measurable effect — confirmed twice
+
+`flux cpu-affinity` (launcher-level pinning) showed no measurable effect across two different
+workloads on Tuolumne MI300A: the ScaFFold PyTorch DDP run above, and a vpic-kokkos Kokkos-OpenMP
+run (2026-07-14). Do not propose launcher-level affinity tuning as an optimization lever on this
+system — if thread placement matters, tune it INSIDE the process instead (`OMP_PLACES`/
+`OMP_PROC_BIND` for OpenMP, or the equivalent runtime-level affinity API for the framework in
+use), not via the job launcher.
+
+### MI300A unified CPU+GPU HBM makes pinned-memory/cross-NUMA levers structurally inert
+
+On MI300A, CPU and GPU share the same HBM memory domain (APU architecture — no discrete device
+memory, no explicit host-device transfer). This means pinned-host-memory optimizations and
+cross-NUMA-node placement levers that matter on discrete-GPU systems have no analogous headroom
+here — don't propose them as optimizations on this system. NUMA-aware allocation *within* the
+unified domain could still matter; it just isn't the same lever as classic pinned-memory/NUMA
+tuning.
+
 ### Lustre client readahead is already at max — don't propose tuning it
 
 `/p/lustre5` client-side readahead (`llite.*.max_read_ahead_mb`) is already set to 512 MB per

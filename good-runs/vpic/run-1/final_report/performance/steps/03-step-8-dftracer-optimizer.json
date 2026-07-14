@@ -1,0 +1,43 @@
+{
+  "run_id": "vpic_kokkos/20260714_155730",
+  "key": "STEP 8: dftracer-optimizer",
+  "index": 3,
+  "agent": "dftracer-optimizer",
+  "notes": "VPIC Kokkos Weibel; comm-dominant (82% MPI_Allreduce+boundary_p); route 4 component subagents, weight comm",
+  "status": "superseded",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 68.977,
+  "wall_s": 68.977,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 68.977,
+      "error": "",
+      "start_ns": 1784054237424669794,
+      "end_ns": 1784054306401249852
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

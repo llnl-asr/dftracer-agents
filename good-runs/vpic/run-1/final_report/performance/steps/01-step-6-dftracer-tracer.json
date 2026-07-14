@@ -1,0 +1,43 @@
+{
+  "run_id": "vpic_kokkos/20260714_155730",
+  "key": "STEP 6: dftracer-tracer",
+  "index": 1,
+  "agent": "dftracer-tracer",
+  "notes": "Best-case trace run on 1 node, allocation <flux-jobid>, using Weibel.Linux binary with more ranks/steps than smoke test",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 241.823,
+  "wall_s": 241.823,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 241.823,
+      "error": "",
+      "start_ns": 1784053395735768822,
+      "end_ns": 1784053637558445108
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

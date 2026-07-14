@@ -2,7 +2,7 @@
   "enabled": true,
   "tracking_uri": "http://127.0.0.1:5001",
   "experiment": "dftracer-agents",
-  "parent_run_id": "0fc9057cbbc443c28be97c00044dadd6",
-  "ui_url": "http://127.0.0.1:5001/#/experiments/1/runs/0fc9057cbbc443c28be97c00044dadd6",
+  "parent_run_id": "&lt;mlflow-run-id&gt;",
+  "ui_url": "http://127.0.0.1:5001/#/experiments/1/runs/&lt;mlflow-run-id&gt;",
   "error": ""
 }

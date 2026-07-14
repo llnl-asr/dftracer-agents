@@ -67,6 +67,16 @@ own documented numerical tolerance) before/after.
 
 - **Thread-count matching** — `OMP_NUM_THREADS`/`MKL_NUM_THREADS` set to the physical
   core/CU count, not oversubscribed (see `strategies.py` L2 `compute_time` entry).
+  Confirmed high-value on vpic-kokkos (2026-07-14, Tuolumne): a Kokkos-OpenMP build's
+  run script never set `OMP_NUM_THREADS`/`OMP_PROC_BIND`/`OMP_PLACES`, silently running
+  1 thread/rank with 6 idle cores/rank (96 cores/node ÷ 16 ranks/node). Adding
+  `-c<cores_per_task>` to the launcher (`flux run -c6 ...`) plus
+  `OMP_NUM_THREADS=6 OMP_PROC_BIND=spread OMP_PLACES=cores` — a pure runtime env
+  change, no rebuild — cut job wall time 41% (210.2s → 124.0s) at 128 ranks/8 nodes.
+  Don't trust an app's own internal thread-count print to confirm this: VPIC prints
+  a legacy `n_pipeline` counter unrelated to the Kokkos execution space and stayed at
+  `1` even as wall time dropped — verify via measured wall-clock time, not an
+  app-reported thread count. See `workload-vpic-kokkos`.
 - **Auto-tuning mode** — enable vendor kernel-search/auto-tune mode for the actual problem
   shape (MIOpen find-mode, cuDNN benchmark=True).
 

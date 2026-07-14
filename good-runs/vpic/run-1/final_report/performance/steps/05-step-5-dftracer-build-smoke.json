@@ -1,0 +1,51 @@
+{
+  "run_id": "vpic_kokkos/20260714_155730",
+  "key": "STEP 5: dftracer-build-smoke",
+  "index": 5,
+  "agent": "dftracer-build-smoke",
+  "notes": "Retry after allocation expiry; polling new allocation <flux-jobid> (spare <flux-jobid>) for RUN state before build/smoke",
+  "status": "running",
+  "tries": 2,
+  "retries": 1,
+  "failed_attempts": 1,
+  "successful_attempts": 0,
+  "exec_s": 263.965,
+  "wall_s": 525.468,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "timeout",
+      "duration_s": 257.48,
+      "error": "Allocation <flux-jobid> nearly expired (~6 min left) before annotated build could finish; build fixed two blocking issues (missing kokkos submodule symlink, missing dftracer include/lib flags) but rebuild+smoke could not complete in remaining window",
+      "start_ns": 1784047302342360878,
+      "end_ns": 1784047559822748172
+    },
+    {
+      "number": 2,
+      "status": "running",
+      "duration_s": 6.485,
+      "error": "",
+      "start_ns": 1784047821326024442,
+      "end_ns": null
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

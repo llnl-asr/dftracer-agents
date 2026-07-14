@@ -81,3 +81,19 @@ sections:
     Event counts mislead. A category can dominate the trace and cost nothing:
     e.g. STDIO 166,952 events but only 1.50s aggregate (~9us/op, ~11-byte writes), while POSIX
     670,158 events cost 65.5s. Always aggregate `dur` per category/op before ranking.
+- title: Verify comp= labels via containment analysis, don't trust the function name
+  body: |
+    A `comp=` annotation tag reflects what the annotator GUESSED a function does from its
+    name, not what a trace-level time breakdown actually shows. Confirmed on vpic-kokkos
+    (2026-07-14): `dump_energies` was annotated `comp="io"` (its name suggests a dump/I/O
+    routine) but interval-containment analysis (does the child span's [ts, ts+dur] fall
+    inside the parent's?) showed 99.7% of its wall time was `MPI_Allreduce` — a
+    communication routine, not I/O.
+
+    For any FUNCTION-mode-annotated app, before recommending a fix for the category a
+    `comp=` label implies, do a containment pass: for each top-level annotated function,
+    sum the duration of its nested child spans grouped by their own category/name, and
+    check which category actually dominates. Do this especially before recommending an
+    I/O-side optimization — I/O-named functions are the most common mislabeling target
+    since "dump"/"write"/"checkpoint" names get assigned `comp="io"` by the cost-filter
+    heuristic regardless of what the function body actually spends time on.

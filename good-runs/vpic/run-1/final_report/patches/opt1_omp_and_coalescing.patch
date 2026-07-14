@@ -1,0 +1,219 @@
+diff --git a/sample/benchmark.cxx b/sample/benchmark.cxx
+index a12408d..c9bc2f3 100644
+--- a/sample/benchmark.cxx
++++ b/sample/benchmark.cxx
+@@ -15,7 +15,7 @@
+ 
+ //??????????????????????????????????????????????????????????????????????
+ 
+-#define ENABLE_OUTPUT 0
++#define ENABLE_OUTPUT 1
+ 
+ #include <ctime>
+ 
+diff --git a/src/species_advance/species_advance.h b/src/species_advance/species_advance.h
+index ca45aa7..dd28f1e 100644
+--- a/src/species_advance/species_advance.h
++++ b/src/species_advance/species_advance.h
+@@ -348,6 +348,13 @@ double
+ energy_p_kokkos( const species_t            * RESTRICT sp,
+           const interpolator_array_t * RESTRICT ia );
+ 
++// Local-only (no MPI reduction) variant of energy_p_kokkos — see energy_p.cc.
++// Used by dump_energies to coalesce all species' energy reductions into one
++// mp_allsum_d call.
++double
++energy_p_local( const species_t            * RESTRICT sp,
++          const interpolator_array_t * RESTRICT ia );
++
+ // In rho_p.cxx
+ 
+ #ifdef USE_LEGACY_PARTICLE_ARRAY
+diff --git a/src/species_advance/standard/energy_p.cc b/src/species_advance/standard/energy_p.cc
+index 0aefd82..cdaf62a 100644
+--- a/src/species_advance/standard/energy_p.cc
++++ b/src/species_advance/standard/energy_p.cc
+@@ -226,3 +226,23 @@ energy_p_kokkos(const species_t* RESTRICT sp,
+     mp_allsum_d( &local, &global, 1 );
+     return global*(static_cast<double>(sp->g->cvac) * static_cast<double>(sp->g->cvac));
+ }
++
++// Local-only (no MPI reduction) variant of energy_p_kokkos, used by
++// dump_energies to coalesce all species' energy reductions into a single
++// mp_allsum_d call instead of one per species. Scaling by cvac^2 is applied
++// per-species before the caller sums across species, which is equivalent
++// to applying it after (cvac is the same grid constant for every species),
++// so this produces bit-identical physics to calling energy_p_kokkos per
++// species and summing the globally-reduced results.
++double
++energy_p_local(const species_t* RESTRICT sp,
++               const interpolator_array_t* RESTRICT ia) {
++    if(!sp || !ia || sp->g != ia->g) ERROR(("Bad args"));
++
++    float qdt_2mc = (sp->q*sp->g->dt)/(2*sp->m*sp->g->cvac);
++
++    double local = energy_p_kernel(ia->k_i_d, sp->k_p_d, sp->k_p_i_d, qdt_2mc, sp->m, sp->np);
++    Kokkos::fence();
++
++    return local*(static_cast<double>(sp->g->cvac) * static_cast<double>(sp->g->cvac));
++}
+diff --git a/src/vpic/dump.cc b/src/vpic/dump.cc
+index 93bfd0c..912fbbd 100644
+--- a/src/vpic/dump.cc
++++ b/src/vpic/dump.cc
+@@ -13,6 +13,7 @@
+ 
+ #include "vpic.h"
+ #include "dumpmacros.h"
++#include <dftracer/dftracer.h>
+ #include "../util/io/FileUtils.h"
+ 
+ /* -1 means no ranks talk */
+@@ -39,6 +40,8 @@ int vpic_simulation::dump_cwd(char * dname, size_t size) {
+ void
+ vpic_simulation::dump_energies( const char *fname,
+                                 int append ) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   double en_f[6], en_p;
+   species_t *sp;
+   FileIO fileIO;
+@@ -68,9 +71,27 @@ vpic_simulation::dump_energies( const char *fname,
+                   en_f[0], en_f[1], en_f[2],
+                   en_f[3], en_f[4], en_f[5] );
+ 
+-  LIST_FOR_EACH(sp,species_list) {
+-    en_p = energy_p_kokkos( sp, interpolator_array );
+-    if( rank()==0 && status!=fail ) fileIO.print( " %e", en_p );
++  // PATCH #1 (species subset): coalesce all species' energy reductions
++  // into ONE mp_allsum_d call instead of one blocking MPI_Allreduce per
++  // species (message-aggregation, see Thakur & Gropp, IJHPCA 2005).
++  // energy_p_local computes the same physically-scaled per-species value
++  // as energy_p_kokkos but without its internal per-species mp_allsum_d.
++  {
++    int n_species = 0;
++    LIST_FOR_EACH(sp,species_list) n_species++;
++    if( n_species>0 ) {
++      double en_p_local[n_species], en_p_global[n_species];
++      int i = 0;
++      LIST_FOR_EACH(sp,species_list) {
++        en_p_local[i++] = energy_p_local( sp, interpolator_array );
++      }
++      mp_allsum_d( en_p_local, en_p_global, n_species );
++      i = 0;
++      LIST_FOR_EACH(sp,species_list) {
++        if( rank()==0 && status!=fail ) fileIO.print( " %e", en_p_global[i] );
++        i++;
++      }
++    }
+   }
+ 
+   if( rank()==0 && status!=fail ) {
+@@ -83,6 +104,8 @@ vpic_simulation::dump_energies( const char *fname,
+ 
+ void
+ vpic_simulation::dump_species( const char *fname ) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   species_t *sp;
+   FileIO fileIO;
+ 
+@@ -98,6 +121,8 @@ vpic_simulation::dump_species( const char *fname ) {
+ 
+ void
+ vpic_simulation::dump_materials( const char *fname ) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   FileIO fileIO;
+   material_t *m;
+   if( rank() ) return;
+@@ -140,6 +165,8 @@ namespace dump_type {
+ 
+ void
+ vpic_simulation::dump_grid( const char *fbase ) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   char fname[max_filename_bytes];
+   FileIO fileIO;
+   int dim[4];
+@@ -183,6 +210,8 @@ vpic_simulation::dump_grid( const char *fbase ) {
+ 
+ void
+ vpic_simulation::dump_fields( const char *fbase, int ftag ) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+     // Update the fields if necessary
+     if (step() > field_array->last_copied)
+         field_array->copy_to_host();
+@@ -223,6 +252,8 @@ void
+ vpic_simulation::dump_hydro( const char *sp_name,
+                              const char *fbase,
+                              int ftag ) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+ 
+ 
+   species_t *sp;
+@@ -291,6 +322,8 @@ vpic_simulation::dump_particles( const char *sp_name,
+                                  const char *fbase,
+                                  int ftag )
+ {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+ 
+     species_t *sp;
+     char fname[max_filename_bytes];
+@@ -416,6 +449,8 @@ static HydroInfo hydroInfo[5] = {
+ void
+ vpic_simulation::create_field_list( char * strlist,
+                                     DumpParameters & dumpParams ) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "cpu");
+   strcpy(strlist, "");
+   for(size_t i(0), pass(0); i<total_field_groups; i++)
+     if(dumpParams.output_vars.bitset(field_indeces[i])) {
+@@ -428,6 +463,8 @@ vpic_simulation::create_field_list( char * strlist,
+ void
+ vpic_simulation::create_hydro_list( char * strlist,
+                                     DumpParameters & dumpParams ) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "cpu");
+   strcpy(strlist, "");
+   for(size_t i(0), pass(0); i<total_hydro_groups; i++)
+     if(dumpParams.output_vars.bitset(hydro_indeces[i])) {
+@@ -440,6 +477,8 @@ vpic_simulation::create_hydro_list( char * strlist,
+ void
+ vpic_simulation::print_hashed_comment( FileIO & fileIO,
+                                        const char * comment) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   fileIO.print("################################################################################\n");
+   fileIO.print("# %s\n", comment);
+   fileIO.print("################################################################################\n");
+@@ -448,6 +487,8 @@ vpic_simulation::print_hashed_comment( FileIO & fileIO,
+ void
+ vpic_simulation::global_header( const char * base,
+                                 std::vector<DumpParameters *> dumpParams ) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   if( rank() ) return;
+ 
+   // Open the file for output
+@@ -575,6 +616,8 @@ vpic_simulation::global_header( const char * base,
+ 
+ void
+ vpic_simulation::field_dump( DumpParameters & dumpParams ) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+ 
+     // Update the fields if necessary
+     if (step() > field_array->last_copied)
+@@ -727,6 +770,8 @@ vpic_simulation::field_dump( DumpParameters & dumpParams ) {
+ void
+ vpic_simulation::hydro_dump( const char * speciesname,
+                              DumpParameters & dumpParams ) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+ 
+   // Create directory for this time step
+   char timeDir[max_filename_bytes];

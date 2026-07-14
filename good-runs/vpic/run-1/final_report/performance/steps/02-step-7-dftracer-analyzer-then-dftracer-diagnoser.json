@@ -1,0 +1,43 @@
+{
+  "run_id": "vpic_kokkos/20260714_155730",
+  "key": "STEP 7: dftracer-analyzer then dftracer-diagnoser",
+  "index": 2,
+  "agent": "dftracer-analyzer",
+  "notes": "Analyzing best_case traces (16 ranks, 1 node, Weibel deck) with posix preset, cluster_n_workers=32",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 284.228,
+  "wall_s": 284.228,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 284.228,
+      "error": "",
+      "start_ns": 1784053698935356590,
+      "end_ns": 1784053983163666484
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

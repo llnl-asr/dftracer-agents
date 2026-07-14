@@ -1,0 +1,43 @@
+{
+  "run_id": "vpic_kokkos/20260714_155730",
+  "key": "STEP 3: dftracer-build-dftracer",
+  "index": 3,
+  "agent": "dftracer-build-dftracer",
+  "notes": "VPIC-Kokkos CPU-only; HIP OFF, HDF5 OFF, MPI ON (cray-mpich/9.0.1); CC=cc CXX=CC Cray wrappers from env_tuolumne.sh",
+  "status": "completed",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 821.172,
+  "wall_s": 821.172,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "completed",
+      "duration_s": 821.172,
+      "error": "",
+      "start_ns": 1784045231141312533,
+      "end_ns": 1784046052313791999
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

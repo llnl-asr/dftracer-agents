@@ -1,0 +1,43 @@
+{
+  "run_id": "vpic_kokkos/20260714_155730",
+  "key": "STEP 2: dftracer-build-app",
+  "index": 2,
+  "agent": "dftracer-build-app",
+  "notes": "Building original VPIC+Kokkos with CMake; Serial+OpenMP backend; MPI enabled; confirming two-stage vpic-wrapper + deck-compilation pattern",
+  "status": "superseded",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 22.005,
+  "wall_s": 22.005,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 22.005,
+      "error": "",
+      "start_ns": 1784045209136226618,
+      "end_ns": 1784045231141290883
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

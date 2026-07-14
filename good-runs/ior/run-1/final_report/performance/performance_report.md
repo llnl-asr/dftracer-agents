@@ -9,7 +9,7 @@
 - **Attempts:** 23 tries, 8 retries, 1 failed
 - **Tools:** 0 calls (0 MCP), 0 failed, 0.0 s total
 - **API errors:** 0 · **Compactions:** 0
-- **MLflow:** http://127.0.0.1:7002/#/experiments/1/runs/dfe6b36183864ec7afe8cfb6b292b930
+- **MLflow:** http://127.0.0.1:7002/#/experiments/1/runs/&lt;mlflow-run-id&gt;
 
 ## Per-step
 

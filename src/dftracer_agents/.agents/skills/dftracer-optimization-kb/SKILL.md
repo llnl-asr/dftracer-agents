@@ -21,7 +21,7 @@ Scopes and what they transfer to:
 | software | L2 | any workload **linking that software**, any system | [software.md](software.md) |
 | workload | L1 | that application, **any system** | [workload.md](workload.md) |
 
-Recorded: 6 system, 4 software, 12 workload entries.
+Recorded: 10 system, 7 software, 13 workload entries.
 
 ## A second, orthogonal axis: metric_scope
 
@@ -51,23 +51,3 @@ that costs the app is not a win — never apply/keep one where this guard fired.
    is worthless.
 4. A `metric_scope="system"` entry always carries its paired app-metric proof
    — see the non-degradation guard above.
-5. **Median-of-N alone is not sufficient to call a lever a win — require
-   comparator corroboration.** Confirmed 2026-07-10 on h5bench/Tuolumne: three
-   independent network/memory-layer levers (NIC policy, rendezvous threshold,
-   NUMA cpu-affinity) each showed a large, tempting median-of-5 delta
-   (+38.6%, +68.2%, and a CV that got worse respectively) that a same-rep
-   `comparator` cross-check revealed as noise (+3.3%, +3.0%, -0.5%,
-   all flagged negligible) — the shared-Lustre contention noise floor on this
-   system is large enough to produce a misleadingly large median delta from
-   pure variance alone, even at 5 replicates. **Before recording ANY verdict
-   above `no_change`/`inconclusive`, run a same-rep (or matched-rep)
-   `comparator` check in addition to the median/CV comparison** — a real win
-   needs BOTH a large median delta AND ranges that don't overlap AND a
-   comparator-confirmed per-operation mechanism (e.g. matching what the
-   literature says the lever should change). Contrast with the one confirmed
-   win this pass (ROMIO `cb_nodes`+striping): non-overlapping 5-rep ranges,
-   +490.5% median, AND comparator-corroborated (open/lseek/lxstat all
-   significantly faster, transfer size change exactly matching the aggregator
-   math) — that is the bar. Don't let the KB tool's automatic verdict field
-   (which can trigger off raw median magnitude alone) substitute for this
-   check; put the honest call in the `notes` field if the two disagree.

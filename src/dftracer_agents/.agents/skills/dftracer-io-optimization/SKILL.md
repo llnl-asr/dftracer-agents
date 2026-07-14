@@ -160,12 +160,29 @@ Verify after copying data in: `lfs getstripe -c <dataset_dir>` should report
 the value you set, and `lfs getstripe <sample_file>` should show a single
 OST for small-file datasets.
 
+### Distinguish op-count-bound I/O from bandwidth-bound I/O before picking a lever
+
+Confirmed on vpic-kokkos `benchmark.cxx` at 128 ranks (2026-07-14):
+340.85M POSIX ops moved only 325.0 MB total (sub-byte average transfer
+size) yet consumed just 1.65s of a 210.2s job — the I/O was real but
+structurally negligible, and its *shape* was op-count-bound (huge number
+of tiny writes), not bandwidth-bound. ROMIO/Lustre-striping levers target
+bandwidth-bound patterns (few large transfers) and would do nothing here;
+the only lever that would help an op-count-bound pattern is write
+coalescing at the app level (batch many small writes into fewer, larger
+ones) — a compute-optimization-adjacent app-code change, not a
+filesystem/MPI-IO tuning knob. Always check whether total I/O time is a
+meaningful fraction of job time AND whether the bottleneck is few-huge-ops
+or many-tiny-ops before reaching for a striping/ROMIO fix — see
+`workload-vpic-kokkos` for the full worked example.
+
 ## Related Skills
 
 Software-specific strategies are also available in dedicated skills:
 - **[[software-mpi]]** — MPI-IO/ROMIO details, Flux env propagation, Cray MPICH
 - **[[software-hdf5]]** — HDF5 version compatibility, chunk/cache tuning, build from source
 - **[[software-posix]]** — POSIX readahead, Lustre striping, OS/VM tuning, ops_slope bottlenecks
+- **[[workload-vpic-kokkos]]** — worked example of an op-count-bound, structurally negligible I/O profile
 
 Workload-specific results:
 - **[[workload-ior]]** — quantified ROMIO results on VAST NVMe (Tuolumne)

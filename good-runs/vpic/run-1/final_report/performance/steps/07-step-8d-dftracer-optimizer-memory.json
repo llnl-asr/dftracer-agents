@@ -1,0 +1,43 @@
+{
+  "run_id": "vpic_kokkos/20260714_155730",
+  "key": "STEP 8d: dftracer-optimizer-memory",
+  "index": 7,
+  "agent": "dftracer-optimizer-memory",
+  "notes": "Light memory pass; memory not instrumented in STEP 7. No trial runs (tight ~33min shared alloc). VPIC-Kokkos on MI300A APU unified HBM.",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 63.733,
+  "wall_s": 63.733,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 63.733,
+      "error": "",
+      "start_ns": 1784054349157421234,
+      "end_ns": 1784054412889972588
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

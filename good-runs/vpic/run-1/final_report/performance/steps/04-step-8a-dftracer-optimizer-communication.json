@@ -1,0 +1,43 @@
+{
+  "run_id": "vpic_kokkos/20260714_155730",
+  "key": "STEP 8a: dftracer-optimizer-communication",
+  "index": 4,
+  "agent": "dftracer-optimizer-communication",
+  "notes": "VPIC-Kokkos comm bottleneck: dump_energies MPI_Allreduce (1.65s) + boundary_p_kokkos MPI_Wait (0.91s) = 82% of advance()",
+  "status": "superseded",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 19.3,
+  "wall_s": 19.3,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 19.3,
+      "error": "",
+      "start_ns": 1784054306401277092,
+      "end_ns": 1784054325701454835
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

@@ -496,16 +496,54 @@ def _install_dftracer_cmake(
         if flag not in cmake_flags:
             cmake_flags.append(flag)
 
-    # 1. cmake configure
-    r_cfg = _run(
-        ["cmake", "-S", str(src), "-B", str(bld)] + cmake_flags,
+    # dftracer's top-level CMakeLists bootstraps its own vendored dependencies
+    # (cpp-logger, brahma, gotcha, libuv) via `-DDFTRACER_INSTALL_DEPENDENCIES=ON`.
+    # On a first-ever configure of a build directory, that flag ONLY registers
+    # dependency-fetch/build targets — it prints "downloading dependencies.
+    # Please run make for downloading dependencies and then do reconfigure
+    # without dependency flag" and the SAME build produces zero dftracer_core /
+    # dftracer_service targets to compile (a `cmake --build` at this point exits
+    # 0 almost instantly with no compiler invocations at all — easy to mistake
+    # for "nothing needed rebuilding"). The main library/executable targets only
+    # appear after a SECOND configure of the SAME build directory with
+    # `-DDFTRACER_INSTALL_DEPENDENCIES=OFF` (now that CMake's dependency
+    # find_package calls succeed against what pass 1 just installed). This is
+    # not a one-off bootstrap needed only on a brand new checkout — it is
+    # required on EVERY from-scratch cmake-based dftracer build (confirmed
+    # 2026-07-14 rebuilding dftracer for vpic-kokkos after a stale build dir
+    # was lost mid-session). Skipping straight to a single configure+build
+    # silently produces an install with NO updated dftracer_core/_service
+    # binaries, while reporting a clean `cmake --build` exit code.
+    # 1a. cmake configure — pass 1 (dependency bootstrap)
+    r_cfg1 = _run(
+        ["cmake", "-S", str(src), "-B", str(bld)] + cmake_flags +
+        ["-DDFTRACER_INSTALL_DEPENDENCIES=ON"],
         timeout=300,
     )
-    steps["cmake_configure"] = r_cfg
-    if not r_cfg["success"]:
+    steps["cmake_configure_pass1_deps"] = r_cfg1
+    if not r_cfg1["success"]:
         return {"success": False, "steps": steps, "prefix": str(install_prefix)}
 
-    # 2. cmake build
+    r_bld1 = _run(
+        ["cmake", "--build", str(bld), "--parallel", str(jobs)],
+        timeout=1800,
+    )
+    steps["cmake_build_pass1_deps"] = r_bld1
+    if not r_bld1["success"]:
+        return {"success": False, "steps": steps, "prefix": str(install_prefix)}
+
+    # 1b. cmake configure — pass 2 (real dftracer_core/_service targets appear
+    # now that dependencies are marked installed)
+    r_cfg2 = _run(
+        ["cmake", "-S", str(src), "-B", str(bld)] + cmake_flags +
+        ["-DDFTRACER_INSTALL_DEPENDENCIES=OFF"],
+        timeout=300,
+    )
+    steps["cmake_configure_pass2_main"] = r_cfg2
+    if not r_cfg2["success"]:
+        return {"success": False, "steps": steps, "prefix": str(install_prefix)}
+
+    # 2. cmake build — pass 2 (actually compiles dftracer_core/_service/etc.)
     r_bld = _run(
         ["cmake", "--build", str(bld), "--parallel", str(jobs)],
         timeout=1800,

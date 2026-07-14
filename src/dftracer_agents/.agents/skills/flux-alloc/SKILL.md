@@ -259,6 +259,28 @@ one instance you're clearing).
 3. Never submit in a bare loop without a completion check between iterations — that is exactly
    the pattern that caused the pileup above.
 
+## `--exclusive` on two co-scheduled jobs targeting the same nodes deadlocks (MANDATORY)
+
+**Never pass `--exclusive` to more than one `flux run` that must run concurrently on the same node
+set inside an allocation.** `--exclusive` means "give this job sole ownership of these nodes,
+don't co-schedule anything else on them" — if a helper/sidecar job (e.g. a per-node monitoring
+daemon meant to run *alongside* the main job) requests `--exclusive` on the same N nodes the main
+job also needs, the scheduler will hold the first job's nodes and leave the second job stuck in
+`S` (pending) forever, since neither job's exclusive request can be satisfied while the other
+holds the nodes.
+
+**Why:** confirmed on a vpic-kokkos 8-node run (2026-07-14) — a per-node `dftracer_service`
+daemon job launched with `--exclusive -N8 -n8` and backgrounded via `&` correctly started, but the
+main `benchmark.Linux` job (`--exclusive -N8 -n128`, same 8 nodes) sat in `S` state indefinitely
+behind it. Diagnosed by checking `flux proxy <alloc> flux jobs -a` and seeing the app job stuck
+`S` while the sidecar job showed `R`.
+
+**How to apply:** inside an allocation that is *already* exclusive to you (from `flux alloc`),
+don't add `--exclusive` to the individual `flux run` calls for jobs meant to co-exist on the same
+nodes (sidecar daemons + the main app run) — drop it from all of them. Reserve `--exclusive` on an
+individual `flux run` only when that job genuinely must be the sole occupant of the nodes it
+targets (e.g. a benchmark run inside a shared/non-exclusive allocation).
+
 ## Full-allocation parallel job spawner
 
 When the user asks to "use all available resources" or "spawn jobs to use the entire allocation":
@@ -410,6 +432,17 @@ killing the proxy client kills the job inside the allocation. Launch it with
 `run_in_background: true` (or `flux submit` inside the allocation) and poll.
 
 Queue note: 8-node `pbatch` jobs may sit in SCHED indefinitely; `pdebug` usually schedules at once.
+
+**Use the scheduler's own ETA to pace polling instead of guessing an interval.** A job still in
+`SCHED` state carries the scheduler's own start-time estimate in its annotations —
+`flux jobs -no "{id} {annotations.sched.t_estimate}" <JOBID>` returns a Unix epoch timestamp
+(the same number the human-readable `INFO` column shows as `eta:24.32m` in default `flux jobs`
+output). Compute minutes-until-start as `(t_estimate - time.time()) / 60` and set your poll
+delay close to that, rather than polling every few minutes blind — e.g. if the estimate says
+24 minutes out, don't check back in 3-5 minute increments; wait closer to the estimate (leaving
+a little buffer since estimates can move) and re-check. `t_estimate` itself moves over time as
+the scheduler re-plans, so treat it as a moving target you re-read each time, not a fixed
+deadline.
 
 ## Run length: make the run long enough to measure
 

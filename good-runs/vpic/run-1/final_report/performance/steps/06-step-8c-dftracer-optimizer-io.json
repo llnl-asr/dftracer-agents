@@ -1,0 +1,43 @@
+{
+  "run_id": "vpic_kokkos/20260714_155730",
+  "key": "STEP 8c: dftracer-optimizer-io",
+  "index": 6,
+  "agent": "dftracer-optimizer-io",
+  "notes": "Light I/O pass; I/O <0.2% of total, no real file I/O in Weibel smoke deck. No trial runs.",
+  "status": "superseded",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 13.191,
+  "wall_s": 13.191,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 13.191,
+      "error": "",
+      "start_ns": 1784054335966553196,
+      "end_ns": 1784054349157398494
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}
