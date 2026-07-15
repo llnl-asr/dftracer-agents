@@ -104,13 +104,44 @@ def _diff_trees(old: Path, new: Path, out: Path) -> int:
     return len(r.stdout.splitlines())
 
 
+def _anonymize_script(path: Path, ws: Path) -> None:
+    """Replace every literal occurrence of the workspace's absolute path with
+    ``$WS`` (sourced from ``config.ini`` by ``lib_load_config.sh``).
+
+    This is what makes a collected script safe to keep in a git-tracked
+    ``final_report/`` folder: the workspace path is a real, session-specific
+    absolute filesystem path (and its final path component is often a
+    timestamp, its parents may contain a username) — exactly the kind of PII
+    the project's privacy policy forbids persisting. Every script MUST be
+    anonymized this way; never ship a copied wrapper script unmodified.
+    """
+    text = path.read_text()
+    ws_str = str(ws)
+    if ws_str in text:
+        text = text.replace(ws_str, "${WS}")
+    # A script that used $WS/$WORKSPACE_ROOT already (from an earlier,
+    # config-aware wrapper) needs the loader sourced; a raw tmp/-collected
+    # script needs it prepended so ${WS} actually resolves.
+    if "lib_load_config.sh" not in text:
+        lines = text.splitlines(keepends=True)
+        shebang = lines[0] if lines and lines[0].startswith("#!") else "#!/bin/bash\n"
+        rest = lines[1:] if lines and lines[0].startswith("#!") else lines
+        loader = (
+            'HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n'
+            'source "$HERE/lib_load_config.sh"\n\n'
+        )
+        text = shebang + loader + "".join(rest)
+    path.write_text(text)
+
+
 def _collect_scripts(ws: Path, dest: Path, runs: List[str]) -> List[str]:
-    """Copy each run's wrapper script into ``final_report/scripts/``.
+    """Copy each run's wrapper script into ``final_report/scripts/``, anonymized.
 
     Wrapper scripts are written to ``<ws>/tmp/`` by the tracer/optimizer steps
     (a wrapper is required because ``flux run`` does not accept ``-x VAR`` and
     env does not cross the ``flux proxy`` boundary). Anything matching the run
-    name is collected.
+    name is collected, then every absolute-path/PII occurrence is stripped via
+    ``_anonymize_script`` so the copy is safe to keep git-tracked.
     """
     dest.mkdir(parents=True, exist_ok=True)
     copied: List[str] = []
@@ -122,20 +153,113 @@ def _collect_scripts(ws: Path, dest: Path, runs: List[str]) -> List[str]:
             target = dest / f"run_{run}.sh"
             shutil.copy2(cand, target)
             target.chmod(0o755)
+            _anonymize_script(target, ws)
             copied.append(target.name)
             break
     return copied
 
 
+def _write_config_ini(dest: Path, state: Dict[str, Any]) -> None:
+    """Emit ``config.ini``: the ONLY place a real path/session value should
+    ever need to go. Every generated script sources it (via
+    ``lib_load_config.sh``) instead of embedding an absolute path directly —
+    this is what keeps the rest of ``final_report/`` git-safe and reusable.
+
+    Flat ``KEY=VALUE`` (no ``[sections]``) so ``lib_load_config.sh`` can
+    source it directly with ``set -a; source config.ini; set +a``.
+    """
+    app_name = state.get("app_name", "")
+    app_url = state.get("url") or state.get("app", "")
+    app_ref = state.get("ref", "main")
+    lines = [
+        "# Reproducibility config for this session's final_report/.",
+        "# ---------------------------------------------------------------",
+        "# This file is the ONLY place a real filesystem path or",
+        "# session-specific value should ever go. Every script under",
+        "# scripts/ sources this file (via scripts/lib_load_config.sh)",
+        "# instead of hardcoding paths, so the scripts themselves never",
+        "# contain a username or absolute user path (project privacy",
+        "# policy: git-tracked deliverables must never embed PII).",
+        "#",
+        "# HOW TO USE: set WORKSPACE_ROOT below to wherever this session's",
+        "# workspace lives on your system, then run scripts/run_all.sh",
+        "# <flux-alloc-id> (or scripts/install.sh first, for a from-scratch",
+        "# reproduction).",
+        "",
+        "# --- Required: set this before running anything -------------------",
+        "WORKSPACE_ROOT=/path/to/your/session/workspace",
+        "",
+        "# --- App -----------------------------------------------------------",
+        f"APP_NAME={app_name}",
+        f"APP_REPO_URL={app_url}",
+        f"APP_REF={app_ref}",
+        "",
+        "# --- Compiler selection (override if not using system `cc`/`CC`) ---",
+        "CC_CMD=cc",
+        "CXX_CMD=CC",
+        "",
+    ]
+    p = dest / "config.ini"
+    p.write_text("\n".join(lines) + "\n")
+
+
+def _write_lib_load_config(dest: Path) -> None:
+    """Emit the generic config loader every other script sources.
+
+    Deliberately app-agnostic: it only sets ``WS``/``CC``/``CXX`` and
+    validates ``WORKSPACE_ROOT`` was actually edited. Anything app-specific
+    (module loads, build flags) belongs in ``install.sh``/the run scripts
+    themselves, which can read additional keys out of the same config.ini.
+    """
+    body = """#!/bin/bash
+# Source this from every other script: loads config.ini and validates
+# WORKSPACE_ROOT was actually set. No script other than this one should
+# ever contain a hardcoded absolute path -- everything comes from config.ini.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="${CONFIG_FILE:-$HERE/../config.ini}"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo "ERROR: config file not found: $CONFIG_FILE" >&2
+  exit 1
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "$CONFIG_FILE"
+set +a
+
+if [ -z "$WORKSPACE_ROOT" ] || [ "$WORKSPACE_ROOT" = "/path/to/your/session/workspace" ]; then
+  echo "ERROR: set WORKSPACE_ROOT in $CONFIG_FILE to your actual session workspace path before running." >&2
+  exit 1
+fi
+
+WS="$WORKSPACE_ROOT"
+export WS
+export CC="${CC_CMD:-cc}"
+export CXX="${CXX_CMD:-CC}"
+
+# OUTPUT_ROOT: where run scripts write their own dataset/traces output.
+# Defaults to WS itself; override (e.g. to a scratch validation directory,
+# kept separate from the original session's own run data) via config.ini or
+# the environment before sourcing this file.
+OUTPUT_ROOT="${OUTPUT_ROOT:-$WS}"
+mkdir -p "$OUTPUT_ROOT"
+export OUTPUT_ROOT
+"""
+    p = dest / "lib_load_config.sh"
+    p.write_text(body)
+    p.chmod(0o755)
+
+
 def _write_run_all(dest: Path, scripts: List[str], alloc_hint: str,
-                   params_root: Optional[Path] = None,
-                   obj_dir_hint: str = "$WS/annotated/source/object") -> None:
+                   params_root: Optional[Path] = None) -> None:
     """Emit ``run_all.sh`` driving every collected case in ladder order.
 
-    Each case's parameter file is staged into the app's build dir first. Apps
-    like Flash-X ignore a par-file argument and always read a fixed filename
-    from cwd, so without staging every case would silently run the *last*
-    iteration's configuration.
+    Each case's parameter file is staged into the app's build dir first (app
+    frameworks that read a fixed filename from cwd, like Flash-X's
+    ``flash.par``, silently run the *last* iteration's configuration
+    otherwise). All paths come from ``config.ini`` via ``lib_load_config.sh``
+    — no absolute path is embedded here.
     """
     lines = [
         "#!/bin/bash",
@@ -147,9 +271,9 @@ def _write_run_all(dest: Path, scripts: List[str], alloc_hint: str,
         "set -e",
         f'ALLOC="${{1:-{alloc_hint}}}"',
         'if [ -z "$ALLOC" ]; then echo "usage: $0 <flux_alloc_id>"; exit 1; fi',
-        'HERE="$(cd "$(dirname "$0")" && pwd)"',
-        'WS="${WS:-$(cd "$HERE/../.." && pwd)}"',
-        f'OBJ="{obj_dir_hint}"',
+        'HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
+        'source "$HERE/lib_load_config.sh"',
+        'OBJ="$WS/annotated/source/object"',
         "",
     ]
     for s in scripts:
@@ -163,7 +287,7 @@ def _write_run_all(dest: Path, scripts: List[str], alloc_hint: str,
                         f'   # this case\'s config; app reads it from cwd'
                     )
         lines += [
-            f'flux proxy "$ALLOC" flux run -N8 -n384 --exclusive bash "$HERE/{s}"',
+            f'flux proxy "$ALLOC" bash "$HERE/{s}"',
             "",
         ]
     p = dest / "run_all.sh"
@@ -172,36 +296,39 @@ def _write_run_all(dest: Path, scripts: List[str], alloc_hint: str,
 
 
 def _write_install(dest: Path, state: Dict[str, Any]) -> None:
-    """Emit ``install.sh`` reconstructing dependencies + the app build."""
+    """Emit ``install.sh`` reconstructing dependencies + the app build.
+
+    App build systems vary too much to auto-derive generically (CMake vs.
+    Make vs. a framework-specific ``setup`` script), so this always emits a
+    templated skeleton that reads paths from config.ini and points the
+    reader at the exact patches to re-apply — NOT a guess at build commands
+    for an app this tool has no reliable way to introspect. If the session's
+    own build step recorded exact commands (state["build_commands"]), those
+    are inlined instead of the placeholder.
+    """
+    app_name = state.get("app_name", "the application")
     dft = state.get("dftracer_install_prefix", "<dftracer_prefix>")
+    build_cmds = state.get("build_commands", "")
+    build_block = (
+        build_cmds if build_cmds else
+        f'# TODO: fill in the exact build commands for {app_name}.\n'
+        f'# See ../patches/annotated.patch for the source-level changes and\n'
+        f'# ../plan/pipeline_plan.md for the build flags this session used.\n'
+        f'echo "EDIT scripts/install.sh with this app\'s real build commands" >&2\n'
+        f'exit 1'
+    )
     body = f"""#!/bin/bash
 # Rebuild the session's dependencies and application from scratch.
-# Adjust WS to wherever you want the workspace to live.
+# Edit ../config.ini (WORKSPACE_ROOT) before running this.
 set -e
-WS="${{WS:-$(cd "$(dirname "$0")/../.." && pwd)}}"
+HERE="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+source "$HERE/lib_load_config.sh"
 
-# 1) HDF5 must be built from source (never the Cray/system module).
-#    Expected at $WS/hdf5_1.14 with lib/libhdf5.so* present.
-test -f "$WS/hdf5_1.14/lib/libhdf5.so" || {{
-  echo "ERROR: build+install HDF5 1.14.x into $WS/hdf5_1.14 first"; exit 1; }}
+# dftracer install prefix used by this session (for reference only --
+# re-install from source into $WS, never reuse a path from another machine):
+#   {dft}
 
-# 2) dftracer (MPI + HDF5 on; HIP/ROCm OFF for CPU-only workloads).
-#    Installed prefix used by this session:
-#      {dft}
-
-# 3) Application build.
-#    Flash-X: the SERIAL HDF5 IO unit is the default and makes
-#    useCollectiveHDF5 inert -- always pass +parallelIO.
-cd "$WS/annotated/source"
-bash setup Sedov -auto -3d +parallelIO
-
-# `setup` regenerates object/ from scratch: re-apply the dftracer build config
-# and the constructor/destructor shim AFTER it runs, never before.
-cp "$WS/tmp/opt1_backup/Makefile.h"           object/Makefile.h
-cp "$WS/tmp/opt1_backup/dftracer_init_fini.c" object/dftracer_init_fini.c
-
-cd object && make -j16
-echo "built: $PWD/flashx"
+{build_block}
 """
     p = dest / "install.sh"
     p.write_text(body)
@@ -244,6 +371,8 @@ def _session_final_report_impl(
     conversation_md: str = "",
     readme_md: str = "",
     alloc_hint: str = "",
+    validated: bool = False,
+    validation_notes: str = "",
 ) -> str:
     """Standalone implementation of ``session_final_report`` (see module docstring).
 
@@ -328,6 +457,8 @@ def _session_final_report_impl(
 
     # ---- scripts --------------------------------------------------------
     scripts_dir = final / "scripts"
+    _write_config_ini(final, state)
+    _write_lib_load_config(scripts_dir)
     collected = _collect_scripts(ws, scripts_dir, runs)
     _write_install(scripts_dir, state)
     _write_run_all(scripts_dir, collected, alloc_hint,
@@ -352,7 +483,16 @@ def _session_final_report_impl(
     # ---- narrative documents -------------------------------------------
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     hdr = f"<!-- generated by session_final_report for {run_id} at {stamp} -->\n\n"
-    (final / "REPORT.md").write_text(hdr + (report_md or "# Report\n\n(not supplied)\n"))
+    val_line = (
+        f"**Self-contained validation: PASSED** ({validation_notes or 'reproduced via scripts/ + config.ini'})\n\n"
+        if validated else
+        "**Self-contained validation: NOT YET RUN.** Before considering this report "
+        "final, copy config.ini + scripts/ to a scratch location (or point "
+        "OUTPUT_ROOT at an isolated subdirectory), fill in WORKSPACE_ROOT, and "
+        "run scripts/run_all.sh <alloc-id> end to end — then re-call "
+        "session_final_report with validated=True.\n\n"
+    )
+    (final / "REPORT.md").write_text(hdr + val_line + (report_md or "# Report\n\n(not supplied)\n"))
     (final / "CONVERSATION.md").write_text(
         hdr + (conversation_md or "# Conversational report\n\n(not supplied)\n"))
     (final / "README.md").write_text(
@@ -363,9 +503,17 @@ def _session_final_report_impl(
         final_report_dir=str(final),
         runs=runs,
         patches=patches,
-        scripts=collected + ["install.sh", "run_all.sh"],
+        scripts=collected + ["install.sh", "run_all.sh", "lib_load_config.sh"],
+        config="config.ini",
         logs_copied=n_logs,
         performance=performance or "no performance/ dir (pipeline was not profiled)",
+        validated=validated,
+        reminder=(
+            None if validated else
+            "Run a self-contained validation (config.ini + scripts/run_all.sh, "
+            "output isolated from the original run data) before calling this "
+            "done; re-call with validated=True once it passes."
+        ),
     )
 
 
@@ -666,17 +814,26 @@ def register_final_report_tools(mcp: FastMCP) -> None:
         conversation_md: str = "",
         readme_md: str = "",
         alloc_hint: str = "",
+        validated: bool = False,
+        validation_notes: str = "",
     ) -> str:
-        """Assemble a self-contained ``final_report/`` folder for a session.
+        """Assemble a self-contained, reproducible ``final_report/`` folder.
 
         Collects, from what is already on disk (never re-running the app):
 
+        * ``config.ini`` — the ONLY place a real path/session value goes
+          (``WORKSPACE_ROOT`` placeholder + app/compiler settings). Every
+          script sources it via ``scripts/lib_load_config.sh`` instead of
+          hardcoding a path, so nothing else here can leak a username or
+          absolute user path (git-tracked deliverables must never embed PII).
+        * ``scripts/`` — ``lib_load_config.sh`` (generic config loader),
+          ``install.sh`` (rebuild deps + app), one ``run_<case>.sh`` per case
+          (collected from ``tmp/`` and automatically re-pathed to use
+          ``$WS``/``config.ini`` instead of the literal absolute path — see
+          ``_anonymize_script``), and ``run_all.sh`` to drive them in order.
         * ``patches/`` — ``annotated.patch`` (baseline→annotated source) and,
           per optimization iteration, ``opt<n>.patch`` (source delta) plus
-          ``opt<n>.config.diff`` (parameter-file / run-wrapper delta, which is
-          where Make-based apps actually record an iteration's change).
-        * ``scripts/`` — ``install.sh`` (rebuild deps + app), one
-          ``run_<case>.sh`` per case, and ``run_all.sh`` to drive them in order.
+          ``opt<n>.config.diff`` (parameter-file / run-wrapper delta).
         * ``plan/`` — the final ``pipeline_plan.md`` that was executed, its
           changelog, and ``plan_evolution.diff`` vs the first tracked revision.
         * ``logs/`` — the build/run logs each case referenced.
@@ -685,17 +842,32 @@ def register_final_report_tools(mcp: FastMCP) -> None:
         The three narrative documents are passed in by the caller: the agent
         knows what was found and why, and this tool must not invent results.
 
+        **Mandatory before considering a session's final_report/ done:** run a
+        self-contained validation — point ``OUTPUT_ROOT`` (in config.ini or
+        the environment) at a scratch directory isolated from the session's
+        own run data, fill in ``WORKSPACE_ROOT``, and execute
+        ``scripts/run_all.sh <alloc-id>`` end to end using ONLY what's in
+        ``final_report/``. Once it reproduces the reported results, re-call
+        this tool with ``validated=True`` and a short ``validation_notes``
+        summary — this stamps REPORT.md with a pass/fail marker instead of
+        leaving reproducibility as an unverified claim.
+
         Args:
             run_id: Session identifier returned by ``session_create``.
             report_md: Markdown body for ``REPORT.md`` (what was done, results).
             conversation_md: Markdown body for ``CONVERSATION.md`` (narrative).
             readme_md: Markdown body for ``README.md`` (manual reproduction).
             alloc_hint: Default Flux allocation id baked into ``run_all.sh``.
+            validated: Set True only after the self-contained validation above
+                has actually been run and passed.
+            validation_notes: One-line summary of what the validation run
+                measured (e.g. "124.2s vs 124.0-124.6s expected band").
 
         Returns:
             JSON with ``status``, ``final_report_dir``, the ``runs`` discovered,
-            a ``patches`` map of filename→line count, the ``scripts`` written,
-            and ``logs_copied``.
+            a ``patches`` map of filename→line count, the ``scripts``/``config``
+            written, ``logs_copied``, ``validated``, and (if not yet validated)
+            a ``reminder`` to run the validation before calling this done.
         """
         return _session_final_report_impl(
             run_id=run_id,
@@ -703,4 +875,6 @@ def register_final_report_tools(mcp: FastMCP) -> None:
             conversation_md=conversation_md,
             readme_md=readme_md,
             alloc_hint=alloc_hint,
+            validated=validated,
+            validation_notes=validation_notes,
         )
