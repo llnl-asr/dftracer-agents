@@ -75,6 +75,29 @@ sections:
        every non-applied row, verbatim from the subagent that produced it. Never
        drop a row when merging; the completeness of this table across all four
        components is the deliverable the user asked for.
+
+       Columns (MANDATORY, standing format for every optimization report): `#`,
+       `Strategy`, `Description of Optimization`, `Potential App Impact`,
+       `Potential System Impact`, `Actual App Impact`, `Actual System Impact`,
+       `Weighted Score`, `Citation`, `Type`, `Prior result here`, `Status`,
+       `Why (if not applied)`. Build this via `opt_proposal_table` — pass every
+       candidate's `app_impact_pct`/`system_impact_pct` (POTENTIAL: % of current
+       application wall time / system throughput-bandwidth-utilization it could
+       plausibly move — a bounded estimate capped by the relevant measured
+       bottleneck bucket from the diagnoser, never fabricated; `0` when not
+       applicable, never omit the field) and — once a row is actually applied and
+       measured — `actual_app_impact_pct`/`actual_system_impact_pct` (the real
+       before/after delta). Potential and Actual are reported SIDE BY SIDE, never
+       one overwriting the other; Actual stays `—` until a real measurement exists.
+       The tool sorts every row by a 50/50 weighted score of the POTENTIAL values
+       (`0.5*app_impact_pct + 0.5*system_impact_pct`, descending) automatically —
+       do not re-sort or hand-order rows yourself. This sort order IS the apply
+       order: run the highest-weighted-score row first, then the next, etc.
+       (most-impactful to least-impactful, MANDATORY). State the measurement basis
+       for every non-zero potential estimate (which trace/run it's bounded by) in
+       the row's trailing note so an estimate is never presented as a measured
+       result. `citation` is mandatory on every row (paper > docs > web > session);
+       an uncited proposal is rejected by the tool, never rendered as a guess.
     2. **One merged iteration/results table** — every measured change across all
        four components, with citations, deltas, and replicate-noise bands, in the
        canonical I/O -> communication -> memory -> compute order.
@@ -90,6 +113,27 @@ sections:
     5. `opt_kb_render()` once, after all four subagents' `opt_kb_record` calls have
        landed, so the rendered `dftracer-optimization-kb` skill reflects the whole
        session, not a partial one.
+- title: Re-diagnose after the loop and ask before iterating (MANDATORY, standing rule)
+  body: |
+    After every row in the merged table has been applied (or explicitly skipped),
+    the loop is NOT done yet — one more mandatory step:
+    1. Trace + re-run the diagnoser (`dftracer-diagnoser`) against a fresh trace of
+       the current (post-optimization) state, exactly like the original diagnosis.
+    2. Compare the new bottleneck list to the one this optimization pass started
+       from — explicitly report whether the ranking shifted (a bottleneck that was
+       #2 before may now be #1 once #1 was fixed; something previously negligible
+       may now be visible once the dominant cost shrank) or whether a genuinely NEW
+       bottleneck appeared that wasn't visible before (e.g. a load imbalance masked
+       by a larger cost that's now gone).
+    3. Estimate the next round's potential impact ceiling from this fresh
+       diagnosis — this is the key decision metric: if the remaining bottlenecks'
+       combined potential is small, further iteration has low expected value; if a
+       large bottleneck newly surfaced or shifted to #1, another pass may be worth
+       it.
+    4. Report this comparison and next-round-potential estimate to the user, then
+       ASK whether to keep iterating (another full four-component pass) or stop
+       here. Never loop into another optimization pass automatically — this is a
+       user decision point, not an agent decision.
 - title: Return
   body: |
     The merged checklist table (all four components, every category, every

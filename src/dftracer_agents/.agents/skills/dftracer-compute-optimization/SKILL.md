@@ -14,6 +14,8 @@ compute-specific catalog: the metric key used by the MCP optimization tools is `
 
 ## MANDATORY: Exhaustive Dimension Checklist (walk ALL, every session)
 
+Every row in the resulting `opt_proposal_table` MUST carry `app_impact_pct` (% of current application wall time, measured or bounded-estimate) and `system_impact_pct` (throughput/bandwidth/utilization effect, 0 if not measured/applicable) — columns: `#`, `Strategy`, `Description of Optimization`, `App Impact`, `System Impact`, `Weighted Score` (50/50 weighted, auto-sorted descending by the tool). Never omit these fields.
+
 Never stop at the first compute fix that helps. Every compute-optimization pass walks this
 full checklist and records a verdict for EACH category (Applied & measured / Applicable, not
 measured / Not applicable — with reason), exactly like the I/O checklist:

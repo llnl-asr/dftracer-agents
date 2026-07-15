@@ -67,6 +67,43 @@ sections:
 - title: Report Structure
   body: "The final report MUST include these sections:\n\n### 1. Executive Summary\n- Session ID, application name, system\n- Overall pipeline status (success / partial / failed)\n- Top 3 bottlenecks found (if any)\n- Top 3 optimizations applied (if any)\n- Key metric improvement (if optimization was run)\n\n### 2. Per-Agent Contributions\n\nFor EACH agent that ran, include:\n- **Agent name**\n- **What it did** (one sentence)\n- **Key findings** (bullet points)\n- **Artifacts produced** (file paths)\n- **Tool findings vs manual analysis** (if applicable \u2014 see analyzer/diagnoser)\n\n### 3. Tool Findings vs Manual Analysis (Explicit Separation)\n\nCreate a table with three columns:\n- **Finding**\n- **Source** (TOOL or MANUAL)\n- **Details**\n\nThis is required for the analyzer and diagnoser stages. If an agent did not\nproduce this table, note it as missing.\n\n### 4. Bottleneck Diagnosis\n- Ranked bottleneck list (I/O \u2192 comm \u2192 mem \u2192 compute)\n- Severity scores (from dfdiagnoser\
     \ or manual assessment)\n- Metric evidence for each bottleneck\n\n### 5. Optimization Proposals\n- L1 (application), L2 (middleware), L3 (system) proposals\n- Each proposal MUST include:\n  - Description\n  - Citation (authors, title, venue/year, URL)\n  - Expected impact\n  - Status (applied / pending / unsupported)\n\n### 6. Iteration Results (if optimization loop ran)\n- Table: iteration | applied change | metric before | metric after | delta%\n- Best configuration found\n- Convergence status (converged / exhausted / regressed / max_iters)\n\n### 7. Lessons Learned\n- New skills created or updated\n- New agent definition changes\n- New MCP tools added or fixed\n- Pitfalls discovered and their fixes\n\n### 8. Recommendations for Future Runs\n- What worked well\n- What needs improvement\n- Known limitations (e.g., tool incompatibilities)\n"
+- title: Reproducibility package — config.ini + self-contained validation (MANDATORY)
+  body: |
+    `session_final_report` now always writes `config.ini` (the ONLY place a
+    real path/session value goes — every script sources it via
+    `scripts/lib_load_config.sh` instead of hardcoding a path) and
+    anonymizes every collected script's absolute paths automatically. That
+    part is mechanical and always happens. What is NOT automatic, and IS
+    your job as the final stage:
+
+    1. **Verify the emitted `scripts/` actually cover every run this session
+       made**, end to end — not just the ones the tool's generic
+       `tmp/*<run>*.sh` glob happened to match. If a run used a bespoke
+       wrapper (a topology/env-var A/B test, a `perf stat`-wrapped roofline
+       check, etc.) that the tool didn't discover, add it to
+       `scripts/` by hand, sourcing `lib_load_config.sh` the same way, so
+       `run_all.sh` reproduces the WHOLE session's evidence, not a subset.
+    2. **Run the self-contained validation before calling the report done.**
+       Copy or point `OUTPUT_ROOT` (in `config.ini` or the environment) at a
+       directory ISOLATED from the original session's own `dataset/`/`traces/`
+       (e.g. `<WS>/final_folder_validate/`), fill in `WORKSPACE_ROOT`, and
+       run `scripts/run_all.sh <alloc-id>` using ONLY what's in
+       `final_report/` — no session-thread memory, no re-deriving a path by
+       hand. Confirm it reproduces the reported result within noise.
+    3. **Re-call `session_final_report` with `validated=True` and a short
+       `validation_notes`** once the run above passes — this stamps
+       `REPORT.md` with a pass/fail marker instead of leaving
+       reproducibility as an unverified claim. If it does NOT reproduce,
+       fix `final_report/` (missing script, wrong config default, stale
+       patch) and re-validate before shipping — never report `validated=True`
+       for a run that actually failed.
+    4. **Never let a script in `final_report/scripts/` contain an absolute
+       path, username, or session-specific job/allocation id.** These are
+       git-tracked deliverables — the same anonymity rule that applies to
+       memory/skills applies here. `_anonymize_script` handles paths it can
+       see; verify anything you added or edited by hand the same way
+       (`grep` the workspace's absolute path across `scripts/` before
+       finishing).
 - title: End-of-session finalization — syncs + privacy (MANDATORY, in this order)
   body: |
     After the report is written you finalize the session. Nothing is "done"

@@ -552,16 +552,36 @@ def register_optimization_kb_tools(mcp: FastMCP) -> None:
         """Render optimization proposals as a citation-backed markdown table.
 
         Every row MUST carry a citation; uncited proposals are rejected rather than
-        silently rendered, because an uncited proposal is a guess. Rows are sorted
-        by citation quality (paper > docs > web > session) and then by level, so the
-        best-evidenced change is applied first.
+        silently rendered, because an uncited proposal is a guess. Every row MUST also
+        carry ``app_impact_pct`` and ``system_impact_pct`` — the POTENTIAL % of current
+        application wall time the strategy could plausibly move (a bounded estimate
+        capped by the relevant measured bottleneck bucket from the diagnoser) and the
+        POTENTIAL effect on system-level throughput/bandwidth/utilization (network
+        bytes moved, storage bandwidth, CPU-core utilization). Use ``0`` (not a missing
+        field) for "not applicable" so every row sorts deterministically — never omit
+        these two fields. Once a row is actually applied and measured, fill in
+        ``actual_app_impact_pct`` / ``actual_system_impact_pct`` (real before/after
+        delta) so the table reports **potential vs. actual side by side** — never
+        overwrite the potential estimate with the actual result, both stay visible.
+
+        Rows are sorted by a 50/50 weighted score of the POTENTIAL
+        ``app_impact_pct``/``system_impact_pct`` (``0.5*app + 0.5*system``,
+        descending) — this determines apply order: run the highest-potential row
+        first, then re-rank remaining rows against the post-apply diagnosis before
+        picking the next one, since one applied change can shift which bottleneck is
+        now largest. Citation quality (paper > docs > web > session) is the tiebreaker
+        for equal scores.
 
         Each row is cross-referenced against the KB, so the table shows whether this
         exact lever has already been tried on this system/workload — and what it did.
 
         Args:
             proposals_json: JSON list; each item needs ``level`` (L1/L2/L3),
-                ``bottleneck``, ``change``, ``expected_delta``, ``citation``.
+                ``bottleneck``, ``change``, ``expected_delta``, ``citation``,
+                ``app_impact_pct`` (potential, number, 0 if N/A),
+                ``system_impact_pct`` (potential, number, 0 if N/A),
+                ``actual_app_impact_pct`` (optional, filled in after measuring),
+                ``actual_system_impact_pct`` (optional, filled in after measuring).
             system / workload / software: context for the prior-result lookup.
 
         Returns:
@@ -575,6 +595,12 @@ def register_optimization_kb_tools(mcp: FastMCP) -> None:
         if not isinstance(props, list):
             return _err("proposals_json must be a JSON list")
 
+        def _pct(v) -> float:
+            return float(v) if isinstance(v, (int, float)) else 0.0
+
+        def _pct_or_none(v):
+            return float(v) if isinstance(v, (int, float)) else None
+
         accepted, rejected = [], []
         for p in props:
             cit = (p.get("citation") or "").strip()
@@ -583,6 +609,11 @@ def register_optimization_kb_tools(mcp: FastMCP) -> None:
                 continue
             p = dict(p)
             p["citation_type"] = _classify_citation(cit)
+            p["app_impact_pct"] = _pct(p.get("app_impact_pct"))
+            p["system_impact_pct"] = _pct(p.get("system_impact_pct"))
+            p["actual_app_impact_pct"] = _pct_or_none(p.get("actual_app_impact_pct"))
+            p["actual_system_impact_pct"] = _pct_or_none(p.get("actual_system_impact_pct"))
+            p["weighted_score"] = 0.5 * p["app_impact_pct"] + 0.5 * p["system_impact_pct"]
             pr = _find_prior(p.get("change", ""), p.get("level", ""),
                              system, workload, software)
             if pr:
@@ -594,27 +625,44 @@ def register_optimization_kb_tools(mcp: FastMCP) -> None:
                 p["prior"] = "untried here"
             accepted.append(p)
 
-        accepted.sort(key=lambda p: (_CITATION_RANK.index(p["citation_type"])
+        accepted.sort(key=lambda p: (-p["weighted_score"],
+                                     _CITATION_RANK.index(p["citation_type"])
                                      if p["citation_type"] in _CITATION_RANK else 9,
                                      str(p.get("level", ""))))
 
-        md = ["| # | Level | Bottleneck | Proposed change | Expected gain | Evidence | Type | Prior result here | Status | Why (if not applied) |\n",
-              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"]
+        md = ["| # | Strategy | Description of Optimization | Potential App Impact | Potential System Impact | Actual App Impact | Actual System Impact | Weighted Score | Citation | Type | Prior result here | Status | Why (if not applied) |\n",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"]
         for i, p in enumerate(accepted, 1):
+            strategy = f"{p.get('level','')}: {p.get('bottleneck','')}".strip(": ")
+            actual_app = f"{p['actual_app_impact_pct']:.0f}%" if p["actual_app_impact_pct"] is not None else "—"
+            actual_sys = f"{p['actual_system_impact_pct']:.0f}%" if p["actual_system_impact_pct"] is not None else "—"
             md.append(
-                f"| {i} | {p.get('level','')} | {p.get('bottleneck','')} "
-                f"| {p.get('change','')} | {p.get('expected_delta','')} "
+                f"| {i} | {strategy} "
+                f"| {p.get('change','')} | {p['app_impact_pct']:.0f}% "
+                f"| {p['system_impact_pct']:.0f}% | {actual_app} | {actual_sys} "
+                f"| {p['weighted_score']:.1f} "
                 f"| {p.get('citation','')} | {p['citation_type']} | {p['prior']} "
                 f"| {p.get('status','proposed')} | {p.get('skip_reason','')} |\n"
             )
-        note = ("\nApply **one row at a time**, measure, then `opt_kb_record` the result "
-                "before moving to the next — otherwise the attribution is worthless.\n"
+        note = ("\nApply **one row at a time, in table order (highest weighted score "
+                "first)**, measure, then `opt_kb_record` the result before moving to "
+                "the next — otherwise the attribution is worthless. Potential/System "
+                "Impact are bounded estimates capped by the relevant measured "
+                "bottleneck bucket; Actual columns stay '—' until a real before/after "
+                "measurement exists, then both potential and actual stay visible side "
+                "by side (never overwrite one with the other).\n"
                 "Every considered candidate belongs in this table, applied or not: set "
                 "`status` to `applied`/`not-applied`/`deferred` and fill `skip_reason` for "
                 "anything not applied (e.g. doesn't match the diagnosed bottleneck, no time/"
                 "budget this pass, superseded by a stronger same-layer candidate, KB already "
                 "shows it's a no-op here). Never omit a candidate from the table just because "
-                "you decided not to run it.\n")
+                "you decided not to run it.\n"
+                "After every row in this table has been applied (or explicitly skipped), "
+                "re-run the diagnoser against a fresh trace and compare the bottleneck list "
+                "to the one this table was built from: report whether the ranking shifted "
+                "(a bottleneck that was #2 may now be #1 once #1 is fixed), estimate the "
+                "next round's potential impact ceiling, and ask the user whether to keep "
+                "iterating before starting another pass — do not loop automatically.\n")
         return _ok(f"{len(accepted)} accepted, {len(rejected)} rejected (uncited)",
                    markdown="".join(md) + note,
                    accepted=accepted, rejected=rejected)

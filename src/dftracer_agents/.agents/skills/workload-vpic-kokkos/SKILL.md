@@ -139,9 +139,44 @@ patch is physics-preserving. Measured wall-time delta on a 2-species
 124.03s) — removing 1 extra blocking call out of ~1000 timesteps is below
 the noise floor at this species count. Expect a real time win only for
 decks with many species or much higher `energies_interval` frequency.
-**PATCH #1's field-energy half + PATCH #2 (`MPI_Iallreduce`) remain
-unapplied** — still the highest-confidence *un-applied* lever for a
-future session with more time.
+
+**PATCH #1's field-energy half — ATTEMPTED AND REVERTED (2026-07-14):
+DO NOT grow `field_advance_kernels_t` (do not add any member to it, for
+any reason).** Adding a new function-pointer member to this struct (even
+completely unused, unregistered, and never called — tested with a plain
+`void*` pad field) causes a **reproducible segfault ~35s into every
+128-rank/8-node run**, at a different random rank/node each time (never
+the same rank twice across 3 reproductions), always before the first
+`status_interval` print — i.e. inside the very first real physics
+`advance()`, nowhere near the field-energy dump code that was the actual
+target of the patch. Isolated via 3 successive A/B tests on the same
+allocation: (1) full patch — crash; (2) call path reverted to the
+old `energy_f_kokkos()` but struct member left in place, unused — same
+crash; (3) struct member replaced with a plain unregistered `void*` pad
+of the same size, everything else reverted — still crashes. This proves
+the crash is caused by `field_advance_kernels_t`'s SIZE changing at all,
+independent of what the new member is, whether it's used, or whether it's
+`CHECKPT_SYM`/`RESTORE_SYM`-registered. Root cause not found (ruled out:
+the coalescing logic itself, the CHECKPT_SYM machinery specifically —
+`checkpt_field_advance_kernels`/`restore_field_advance_kernels` are only
+invoked when checkpointing is actually triggered, which this deck never
+does since `restart_interval=0`, so they can't be firing at runtime here
+at all). Suspect: something elsewhere in the codebase — possibly in the
+MPI boundary-exchange (`boundary_p.cc`) buffer serialization, since
+`field_array_t` embeds `field_advance_kernels_t kernel[1]` BY VALUE
+followed immediately by `field_buffers_t* fb` and several `Kokkos::View`
+members whose byte offsets shift when `kernel[1]`'s size changes — assumes
+a hardcoded layout/offset somewhere that a header-only, fully-rebuilt
+change doesn't fix. **Do not re-attempt growing this struct without first
+finding that hardcoded assumption; reverted via `git checkout` on all 6
+touched files (`field_advance.h`/`.cc`, `sfa.cc`, `sfa_private.h`,
+`energy_f.cc`, `vacuum_energy_f.cc`), keeping only the species-only half
+above.** PATCH #2 (`MPI_Iallreduce`) is unaffected by this finding since it
+doesn't require a struct change — still the next thing to try, but only
+after finding a way to expose a local-only field-energy variant WITHOUT
+growing this specific struct (e.g. a free function outside the kernel
+vtable, dispatched via the existing single-material `if` check duplicated
+at the call site in `dump.cc` instead of via a new struct member).
 
 **PATCH #2 (stacks on #1):** switch to non-blocking `MPI_Iallreduce` for the
 coalesced energy reduction, since the result is only consumed by rank-0's
