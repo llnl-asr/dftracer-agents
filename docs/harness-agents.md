@@ -64,8 +64,8 @@ order) and differ only in frontmatter:
 | field | claude (`.claude/agents/*.md`) | opencode (`.opencode/agents/*.md`) | copilot (`.github/agents/*.agent.md`) |
 |---|---|---|---|
 | model | class alias (`haiku`/`sonnet`/`opus`) | `provider/model-id` (e.g. `ollama/qwen3.5:32b`) | bare model id |
-| tools | comma-separated string | map `{"*": false, <tool>: true}` (allowlist) | YAML list |
-| MCP tool names | `mcp__dftracer__analyze` | `dftracer_analyze` | `dftracer/analyze` |
+| permission/tools | comma-separated string | `permission:` map `{"*": "deny", <tool>: "allow"}` (allowlist) | YAML list |
+| MCP tool names | `mcp__dftracer__analyze` | `dftracer_analyze` | `dftracer/<tool>` |
 | built-ins | `Read, Bash, Edit, Grep` | `read, bash, edit, grep` | `read, shell, edit, search` |
 | skills | `skills:` frontmatter key | injected "Load your skills first" body section calling `skill_load(...)` | same injected section |
 | extras | `effort`, `isolation`, `model_level` kept | `mode: subagent` added | `name` kept |
@@ -77,9 +77,10 @@ agent with a colliding name is never clobbered.
 
 Caveats:
 
-- OpenCode's `tools:` frontmatter key is deprecated upstream in favor of
-  `permission:`; it still works and expresses our allowlist. If it is ever
-  removed, switch `render_opencode` to emit a `permission:` map.
+- OpenCode's `permission:` frontmatter key is the v1.1.1 format (replacing the
+  deprecated `tools:` field). We emit
+  `permission: {"*": "deny", <tool>: "allow"}` with string allow/deny values.
+  The old `tools:` field with boolean values is no longer generated.
 - Copilot tool names (`shell`, `search`, `dftracer/<tool>`) follow the
   custom-agents reference; if an agent runs with missing tools in Copilot,
   adjust `_COPILOT_BUILTIN` / `_copilot_tool_name` in `agent_templates.py`.
