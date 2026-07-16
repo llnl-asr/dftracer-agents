@@ -1,6 +1,7 @@
 """Workspace bootstrap helpers for the dftracer agent harnesses."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -52,7 +53,8 @@ def _link_dir(dest: Path, source: Path) -> str:
         return "already_done"
     if dest.exists():
         return "conflict"
-    dest.symlink_to(source, target_is_directory=True)
+    rel = os.path.relpath(source, dest.parent)
+    dest.symlink_to(rel, target_is_directory=True)
     return "installed"
 
 
@@ -86,12 +88,14 @@ def _link_memory_dir(dest: Path, source: Path) -> str:
             # Refuse rather than silently pick a winner.
             return "conflict"
         dest.rmdir()
-        dest.symlink_to(source, target_is_directory=True)
+        rel = os.path.relpath(source, dest.parent)
+        dest.symlink_to(rel, target_is_directory=True)
         return "migrated" if migrated else "installed"
     elif dest.exists():
         return "conflict"
 
-    dest.symlink_to(source, target_is_directory=True)
+    rel = os.path.relpath(source, dest.parent)
+    dest.symlink_to(rel, target_is_directory=True)
     return "installed"
 
 
@@ -110,10 +114,12 @@ def _link_file(dest: Path, source: Path) -> str:
         except OSError:
             return "conflict"
 
-        dest.symlink_to(source)
+        rel = os.path.relpath(source, dest.parent)
+        dest.symlink_to(rel)
         return "replaced"
 
-    dest.symlink_to(source)
+    rel = os.path.relpath(source, dest.parent)
+    dest.symlink_to(rel)
     return "installed"
 
 
