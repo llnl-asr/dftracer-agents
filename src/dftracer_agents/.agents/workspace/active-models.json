@@ -22,7 +22,7 @@
       "model_by_level": {}
     },
     "copilot": {
-      "provider": "ollama",
+      "provider": "copilot",
       "class_by_level": {
         "level_1": "haiku",
         "level_2": "sonnet",
