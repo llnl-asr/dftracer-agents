@@ -607,7 +607,7 @@ test/test_dfanalyzer_service.py::test_summarize_trace_on_sample_data PASSED
 test/test_dftracer_utils_mcp_tools.py::test_pgzip_on_empty_dir_succeeds PASSED
 test/test_dftracer_utils_mcp_tools.py::test_tool_and_subprocess_fail_consistently[info] PASSED
 ...
-33 passed, 3 skipped
+150+ passed, 3 skipped
 ```
 
 The 3 skipped tests are `server` (blocks forever), `aggregator_mpi`, and `call_tree_mpi` (require an MPI build).
