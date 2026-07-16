@@ -1,7 +1,7 @@
 """Tests for the agent template rendering and model resolution pipeline.
 
 Verifies:
-- YAML agent templates load correctly (24 templates, no legacy .md files)
+- YAML agent templates load correctly (dynamic count, no legacy .md files)
 - common-sections.yaml shared sections resolve via `- include:`
 - render_claude / render_opencode / render_copilot produce correct frontmatter
 - harness_models resolves providers and models per harness
@@ -21,6 +21,24 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 if str(REPO / "src") not in sys.path:
     sys.path.insert(0, str(REPO / "src"))
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+def _expected_template_count():
+    """Return the expected number of agent templates (excluding common-sections.yaml)."""
+    from dftracer_agents.agent_templates import templates_dir
+    return len(list(templates_dir().glob("*.yaml"))) - 1  # minus common-sections.yaml
+
+
+def _extract_frontmatter(rendered: str) -> str:
+    """Extract the YAML frontmatter between the first two --- delimiters."""
+    if not rendered.startswith("---\n"):
+        return ""
+    parts = rendered.split("---\n", 2)
+    return parts[1] if len(parts) >= 2 else ""
 
 
 # ---------------------------------------------------------------------------
@@ -77,10 +95,11 @@ class TestTemplateLoading:
             f"Expected an included self-learning section, got titles: {included_titles}"
 
     def test_load_all_templates_count(self):
-        """Should load exactly 24 agent templates (excluding common-sections.yaml and .md files)."""
+        """Should load exactly the expected number of agent templates."""
         from dftracer_agents.agent_templates import load_all_templates
         templates = load_all_templates()
-        assert len(templates) == 24, f"Expected 24 templates, got {len(templates)}"
+        expected = _expected_template_count()
+        assert len(templates) == expected, f"Expected {expected} templates, got {len(templates)}"
         names = sorted(t["name"] for t in templates)
         assert "dftracer-analyzer" in names
         assert "dftracer-project-router" in names
@@ -107,6 +126,23 @@ class TestTemplateLoading:
                 f"Invalid model_level {tmpl['model_level']} in {tmpl['name']}"
             assert "sections" in tmpl
             assert len(tmpl["sections"]) > 0
+
+    def test_load_template_include_body_matches_common_sections(self):
+        """An included section's body should match common-sections.yaml verbatim."""
+        from dftracer_agents.agent_templates import load_template, load_common_sections, templates_dir
+        common = load_common_sections()
+        tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
+        
+        section_name = "self-learning-feed-lessons-back-into-skills"
+        expected_body = common[section_name]["body"]
+        
+        # Find the included section by matching the title from common-sections
+        included = [s for s in tmpl["sections"] if s["title"] == common[section_name]["title"]]
+        assert len(included) >= 1, f"Expected included section '{section_name}' not found"
+        
+        for section in included:
+            assert section["body"] == expected_body, \
+                "Included section body should match common-sections.yaml verbatim"
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +180,28 @@ class TestRenderClaude:
         assert "dftracer-analyzer" in out
         assert "Pipeline stage 5" in out
 
+    def test_render_claude_effort_isolation_skills_frontmatter(self):
+        """Claude frontmatter should include effort, isolation, skills when present."""
+        from dftracer_agents.agent_templates import load_template, render_claude, templates_dir
+        tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
+        models = {"level_1": "haiku", "level_2": "sonnet", "level_3": "sonnet", "level_4": "opus"}
+        out = render_claude(tmpl, models)
+        fm = _extract_frontmatter(out)
+        assert "effort:" in fm, "Missing effort: in claude frontmatter"
+        assert "low" in fm, "Missing effort value 'low'"
+        assert "isolation:" in fm, "Missing isolation: in claude frontmatter"
+        assert "worktree" in fm, "Missing isolation value 'worktree'"
+        assert "skills:" in fm, "Missing skills: in claude frontmatter"
+        assert "dftracer-context-economy" in fm, "Missing skill name in frontmatter"
+
+    def test_render_claude_no_skill_preamble_in_body(self):
+        """Claude uses skills: frontmatter key, NOT the body preamble."""
+        from dftracer_agents.agent_templates import load_template, render_claude, templates_dir
+        tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
+        models = {"level_1": "haiku", "level_2": "sonnet", "level_3": "sonnet", "level_4": "opus"}
+        out = render_claude(tmpl, models)
+        assert "Locate your skills via the graph first" not in out
+
 
 class TestRenderOpencode:
     def test_render_opencode_frontmatter(self):
@@ -176,9 +234,10 @@ class TestRenderOpencode:
         assert "'*': false" in out or '"*": false' in out
         # MCP tools reshaped: mcp__dftracer__analyze -> dftracer_analyze
         assert "dftracer_analyze" in out
-        # Built-ins lowercased
-        assert "read" in out.lower()
-        assert "bash" in out.lower()
+        # Built-ins lowercased - check in frontmatter specifically
+        fm = _extract_frontmatter(out)
+        assert "read" in fm  # Read -> read in opencode frontmatter
+        assert "bash" in fm  # Bash -> bash in opencode frontmatter
 
     def test_render_opencode_no_mcp_double_underscore(self):
         """OpenCode frontmatter tool names should NOT contain mcp__ prefix.
@@ -199,6 +258,38 @@ class TestRenderOpencode:
         fm = out.split("---\n", 2)[1] if out.startswith("---\n") else out
         assert "mcp__dftracer__" not in fm, \
             "OpenCode frontmatter should reshape mcp__dftracer__X to dftracer_X"
+
+    def test_render_opencode_skill_preamble_present(self):
+        """OpenCode output should contain skill preamble when template has skills."""
+        from dftracer_agents.agent_templates import load_template, render_opencode, templates_dir
+        tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
+        models = {"level_1": "ollama/qwen3.5:9b", "level_2": "x", "level_3": "ollama/qwen3-coder:480b-cloud", "level_4": "x"}
+        out = render_opencode(tmpl, models)
+        assert "Locate your skills via the graph first" in out
+        assert "dftracer-context-economy" in out
+
+    def test_render_opencode_no_skills_no_preamble(self):
+        """Template without skills should not produce a preamble."""
+        from dftracer_agents.agent_templates import render_opencode
+        minimal_tmpl = {
+            "name": "test-agent", "description": "A test agent", "model_level": "level_1",
+            "tools": ["Read", "Bash"], "sections": [{"title": "Task", "body": "Do the thing."}],
+        }
+        models = {"level_1": "ollama/qwen3.5:9b", "level_2": "x", "level_3": "x", "level_4": "x"}
+        out = render_opencode(minimal_tmpl, models)
+        assert "Locate your skills via the graph first" not in out
+
+    def test_render_opencode_builtin_tool_mappings(self):
+        """Verify specific built-in tool name mappings in frontmatter."""
+        from dftracer_agents.agent_templates import load_template, render_opencode, templates_dir
+        tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
+        models = {"level_1": "ollama/qwen3.5:9b", "level_2": "x", "level_3": "ollama/qwen3-coder:480b-cloud", "level_4": "x"}
+        out = render_opencode(tmpl, models)
+        fm = _extract_frontmatter(out)
+        # OpenCode mappings: Read->read, Bash->bash, Edit->edit
+        assert "read" in fm, "Read should map to 'read' in opencode frontmatter"
+        assert "bash" in fm, "Bash should map to 'bash' in opencode frontmatter"
+        assert "edit" in fm, "Edit should map to 'edit' in opencode frontmatter"
 
 
 class TestRenderCopilot:
@@ -233,6 +324,46 @@ class TestRenderCopilot:
         fm = out.split("---\n", 2)[1] if out.startswith("---\n") else out
         assert "mcp__dftracer__" not in fm
 
+    def test_render_copilot_skill_preamble_present(self):
+        """Copilot output should contain skill preamble when template has skills."""
+        from dftracer_agents.agent_templates import load_template, render_copilot, templates_dir
+        tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
+        models = {"level_1": "x", "level_2": "x", "level_3": "gpt-5-codex", "level_4": "x"}
+        out = render_copilot(tmpl, models)
+        assert "Locate your skills via the graph first" in out
+
+    def test_render_copilot_no_skills_no_preamble(self):
+        """Template without skills should not produce a preamble."""
+        from dftracer_agents.agent_templates import render_copilot
+        minimal_tmpl = {
+            "name": "test-agent", "description": "A test agent", "model_level": "level_1",
+            "tools": ["Read", "Bash"], "sections": [{"title": "Task", "body": "Do the thing."}],
+        }
+        models = {"level_1": "x", "level_2": "x", "level_3": "x", "level_4": "x"}
+        out = render_copilot(minimal_tmpl, models)
+        assert "Locate your skills via the graph first" not in out
+
+    def test_render_copilot_builtin_tool_mappings(self):
+        """Verify specific copilot built-in tool name mappings in frontmatter."""
+        from dftracer_agents.agent_templates import load_template, render_copilot, templates_dir
+        tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
+        models = {"level_1": "x", "level_2": "x", "level_3": "gpt-5-codex", "level_4": "x"}
+        out = render_copilot(tmpl, models)
+        fm = _extract_frontmatter(out)
+        # Copilot mappings: Bash->shell (NOT bash), Edit->edit, Read->read
+        assert "shell" in fm, "Bash should map to 'shell' in copilot frontmatter"
+        assert "edit" in fm, "Edit should map to 'edit' in copilot frontmatter"
+        assert "read" in fm, "Read should map to 'read' in copilot frontmatter"
+
+    def test_render_copilot_model_omitted_when_unresolved(self):
+        """Copilot frontmatter should NOT have model: key when model is UNRESOLVED."""
+        from dftracer_agents.agent_templates import load_template, render_copilot, templates_dir
+        tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
+        models = {"level_1": "x", "level_2": "x", "level_3": "UNRESOLVED", "level_4": "x"}
+        out = render_copilot(tmpl, models)
+        fm = _extract_frontmatter(out)
+        assert "model:" not in fm, "model: should be omitted when UNRESOLVED"
+
 
 class TestRenderAll:
     def test_render_all_returns_three_harnesses(self):
@@ -245,9 +376,10 @@ class TestRenderAll:
     def test_render_all_has_all_templates(self):
         from dftracer_agents.agent_templates import render_all
         out = render_all()
+        expected = _expected_template_count()
         for harness in ("claude", "opencode", "copilot"):
-            assert len(out[harness]) == 24, \
-                f"Expected 24 rendered files for {harness}, got {len(out[harness])}"
+            assert len(out[harness]) == expected, \
+                f"Expected {expected} rendered files for {harness}, got {len(out[harness])}"
 
     def test_render_all_file_paths(self):
         from dftracer_agents.agent_templates import render_all, HARNESS_OUTPUT
@@ -266,6 +398,41 @@ class TestRenderAll:
             for rel_path, content in files.items():
                 assert f"generated-by: dftracer-agents ({harness})" in content, \
                     f"{rel_path} missing generation marker for {harness}"
+
+
+# ---------------------------------------------------------------------------
+# Cross-harness content differences
+# ---------------------------------------------------------------------------
+
+class TestRenderCrossHarness:
+    """Same template → different frontmatter formats per harness."""
+    
+    def test_same_template_different_frontmatter_format(self):
+        from dftracer_agents.agent_templates import load_template, render_claude, render_opencode, render_copilot, templates_dir
+        tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
+        models_claude = {"level_1": "haiku", "level_2": "sonnet", "level_3": "sonnet", "level_4": "opus"}
+        models_opencode = {"level_1": "ollama/qwen3.5:9b", "level_2": "ollama/qwen3.5:32b", "level_3": "ollama/qwen3-coder:480b-cloud", "level_4": "ollama/deepseek-v3.2:cloud"}
+        models_copilot = {"level_1": "gpt-5-codex-mini", "level_2": "gpt-5-codex", "level_3": "gpt-5-codex", "level_4": "gpt-5-codex-pro"}
+        
+        claude_out = render_claude(tmpl, models_claude)
+        opencode_out = render_opencode(tmpl, models_opencode)
+        copilot_out = render_copilot(tmpl, models_copilot)
+        
+        claude_fm = _extract_frontmatter(claude_out)
+        opencode_fm = _extract_frontmatter(opencode_out)
+        copilot_fm = _extract_frontmatter(copilot_out)
+        
+        # Claude: tools as comma-separated string
+        assert "tools:" in claude_fm
+        # OpenCode: tools as map with "*": false
+        assert "'*': false" in opencode_fm or '"*": false' in opencode_fm
+        # Copilot: tools as YAML list with dftracer/ format
+        assert "dftracer/analyze" in copilot_fm
+        
+        # Verify they are meaningfully different
+        assert claude_fm != opencode_fm
+        assert opencode_fm != copilot_fm
+        assert claude_fm != copilot_fm
 
 
 # ---------------------------------------------------------------------------
@@ -290,9 +457,12 @@ class TestHarnessModels:
         assert DEFAULT_PROVIDER_BY_HARNESS["opencode"] == "ollama"
         assert DEFAULT_PROVIDER_BY_HARNESS["copilot"] == "copilot"
 
-    def test_load_active_config(self):
+    def test_load_active_config(self, tmp_path):
         from dftracer_agents.harness_models import load_active_config, HARNESSES
-        config = load_active_config()
+        # Set up workspace structure in tmp_path to avoid falling back to bundled workspace
+        workspace = tmp_path / "src" / "dftracer_agents" / ".agents" / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        config = load_active_config(target_root=tmp_path)
         assert config.get("version") == 1
         harnesses = config.get("harnesses", {})
         for harness in HARNESSES:
@@ -302,17 +472,23 @@ class TestHarnessModels:
             assert "class_by_level" in entry
             assert "model_by_level" in entry
 
-    def test_active_config_copilot_provider_is_copilot(self):
+    def test_active_config_copilot_provider_is_copilot(self, tmp_path):
         """After our fix, the committed template should have copilot -> copilot."""
         from dftracer_agents.harness_models import load_active_config
-        config = load_active_config()
+        # Set up workspace structure in tmp_path to avoid falling back to bundled workspace
+        workspace = tmp_path / "src" / "dftracer_agents" / ".agents" / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        config = load_active_config(target_root=tmp_path)
         assert config["harnesses"]["copilot"]["provider"] == "copilot", \
             f"Expected copilot provider 'copilot', got '{config['harnesses']['copilot']['provider']}'"
 
-    def test_resolve_models(self):
+    def test_resolve_models(self, tmp_path):
         from dftracer_agents.harness_models import load_active_config, resolve_models, LEVELS
-        config = load_active_config()
-        resolved = resolve_models(config)
+        # Set up workspace structure in tmp_path to avoid falling back to bundled workspace
+        workspace = tmp_path / "src" / "dftracer_agents" / ".agents" / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        config = load_active_config(target_root=tmp_path)
+        resolved = resolve_models(config, target_root=tmp_path)
         for harness in ("claude", "opencode", "copilot"):
             assert harness in resolved
             entry = resolved[harness]
@@ -339,6 +515,49 @@ class TestHarnessModels:
             assert models["copilot"][level] != "UNRESOLVED", \
                 f"copilot {level} should be resolved, got UNRESOLVED"
 
+    def test_update_harness_config_provider_override(self, tmp_path):
+        from dftracer_agents.harness_models import update_harness_config, load_active_config
+        update_harness_config(harnesses=["opencode"], provider="claude", target_root=tmp_path)
+        config = load_active_config(target_root=tmp_path)
+        assert config["harnesses"]["opencode"]["provider"] == "claude"
+
+    def test_update_harness_config_class_overrides(self, tmp_path):
+        from dftracer_agents.harness_models import update_harness_config, load_active_config
+        update_harness_config(harnesses=["claude"], class_overrides={"level_3": "opus"}, target_root=tmp_path)
+        config = load_active_config(target_root=tmp_path)
+        assert config["harnesses"]["claude"]["class_by_level"]["level_3"] == "opus"
+
+    def test_update_harness_config_model_overrides(self, tmp_path):
+        from dftracer_agents.harness_models import update_harness_config, load_active_config
+        update_harness_config(harnesses=["copilot"], model_overrides={"level_2": "gpt-5-codex-pro"}, target_root=tmp_path)
+        config = load_active_config(target_root=tmp_path)
+        assert config["harnesses"]["copilot"]["model_by_level"]["level_2"] == "gpt-5-codex-pro"
+
+    def test_update_harness_config_no_overrides_preserves(self, tmp_path):
+        from dftracer_agents.harness_models import update_harness_config, load_active_config
+        update_harness_config(harnesses=["claude"], class_overrides={"level_3": "opus"}, target_root=tmp_path)
+        update_harness_config(harnesses=["claude"], target_root=tmp_path)
+        config = load_active_config(target_root=tmp_path)
+        assert config["harnesses"]["claude"]["class_by_level"]["level_3"] == "opus"
+
+    def test_resolve_models_with_model_overrides(self, tmp_path):
+        """model_by_level overrides should take priority over class-based defaults."""
+        from dftracer_agents.harness_models import resolve_models, save_active_config
+        config = {
+            "version": 1,
+            "harnesses": {
+                "opencode": {
+                    "provider": "ollama",
+                    "class_by_level": {"level_1": "haiku", "level_2": "sonnet", "level_3": "sonnet", "level_4": "opus"},
+                    "model_by_level": {"level_3": "custom-model-override"},
+                },
+            },
+        }
+        save_active_config(config, target_root=tmp_path)
+        resolved = resolve_models(config, target_root=tmp_path)
+        assert resolved["opencode"]["level_3"] == "custom-model-override"
+        assert resolved["opencode"]["level_1"] != "UNRESOLVED"
+
 
 # ---------------------------------------------------------------------------
 # E2E — install_agents
@@ -362,9 +581,10 @@ class TestInstallAgentsE2E:
         claude_files = list((tmp_path / ".claude" / "agents").glob("*.md"))
         opencode_files = list((tmp_path / ".opencode" / "agents").glob("*.md"))
         copilot_files = list((tmp_path / ".github" / "agents").glob("*.agent.md"))
-        assert len(claude_files) == 24, f"Expected 24 claude files, got {len(claude_files)}"
-        assert len(opencode_files) == 24, f"Expected 24 opencode files, got {len(opencode_files)}"
-        assert len(copilot_files) == 24, f"Expected 24 copilot files, got {len(copilot_files)}"
+        expected = _expected_template_count()
+        assert len(claude_files) == expected, f"Expected {expected} claude files, got {len(claude_files)}"
+        assert len(opencode_files) == expected, f"Expected {expected} opencode files, got {len(opencode_files)}"
+        assert len(copilot_files) == expected, f"Expected {expected} copilot files, got {len(copilot_files)}"
 
     def test_install_agents_claude_content(self, tmp_path):
         from dftracer_agents.agents import install_agents
@@ -412,6 +632,21 @@ class TestInstallAgentsE2E:
         assert all(a == "already_installed" for a in actions2), \
             f"Second install should be idempotent, got actions: {set(actions2)}"
 
+    def test_install_agents_conflict_detection(self, tmp_path):
+        """Pre-existing file without generation marker should NOT be overwritten."""
+        from dftracer_agents.agents import install_agents
+        conflict_dir = tmp_path / ".claude" / "agents"
+        conflict_dir.mkdir(parents=True, exist_ok=True)
+        conflict_file = conflict_dir / "dftracer-analyzer.md"
+        original_content = "# This is my custom agent, do not overwrite!\n"
+        conflict_file.write_text(original_content)
+        
+        result = install_agents(target_root=tmp_path)
+        
+        assert conflict_file.read_text() == original_content, "Conflict file was overwritten!"
+        assert str(conflict_file) in result["conflicts"], \
+            f"Conflict not reported: {result['conflicts']}"
+
 
 # ---------------------------------------------------------------------------
 # bootstrap — relative symlinks
@@ -435,36 +670,33 @@ class TestBootstrapRelativeSymlinks:
         from dftracer_agents.bootstrap import ensure_workspace_setup
         ensure_workspace_setup(target_root=tmp_path, force=True)
         mcp = tmp_path / ".mcp.json"
-        if mcp.is_symlink():
-            target = os.readlink(mcp)
-            assert not os.path.isabs(target), \
-                f".mcp.json symlink is absolute: {target}"
+        assert mcp.is_symlink(), f".mcp.json is not a symlink"
+        target = os.readlink(mcp)
+        assert not os.path.isabs(target), f".mcp.json symlink is absolute: {target}"
 
     def test_opencode_jsonc_symlink_relative(self, tmp_path):
         from dftracer_agents.bootstrap import ensure_workspace_setup
         ensure_workspace_setup(target_root=tmp_path, force=True)
         opencode = tmp_path / ".opencode" / "opencode.jsonc"
-        if opencode.is_symlink():
-            target = os.readlink(opencode)
-            assert not os.path.isabs(target), \
-                f"opencode.jsonc symlink is absolute: {target}"
+        assert opencode.is_symlink(), f".opencode/opencode.jsonc is not a symlink"
+        target = os.readlink(opencode)
+        assert not os.path.isabs(target), f"opencode.jsonc symlink is absolute: {target}"
 
     def test_vscode_mcp_json_symlink_relative(self, tmp_path):
         from dftracer_agents.bootstrap import ensure_workspace_setup
         ensure_workspace_setup(target_root=tmp_path, force=True)
         vscode = tmp_path / ".vscode" / "mcp.json"
-        if vscode.is_symlink():
-            target = os.readlink(vscode)
-            assert not os.path.isabs(target), \
-                f".vscode/mcp.json symlink is absolute: {target}"
+        assert vscode.is_symlink(), f".vscode/mcp.json is not a symlink"
+        target = os.readlink(vscode)
+        assert not os.path.isabs(target), f".vscode/mcp.json symlink is absolute: {target}"
 
     def test_symlinks_resolve_correctly(self, tmp_path):
         """Relative symlinks should actually resolve to the right files."""
         from dftracer_agents.bootstrap import ensure_workspace_setup
         ensure_workspace_setup(target_root=tmp_path, force=True)
         mcp = tmp_path / ".mcp.json"
-        if mcp.is_symlink():
-            assert mcp.exists(), f".mcp.json symlink is broken: {os.readlink(mcp)}"
-            content = mcp.read_text()
-            assert "dftracer" in content
-            assert "5000" in content  # port should be 5000 after our fix
+        assert mcp.is_symlink(), f".mcp.json is not a symlink"
+        assert mcp.exists(), f".mcp.json symlink is broken: {os.readlink(mcp)}"
+        content = mcp.read_text()
+        assert "dftracer" in content
+        assert "5000" in content  # port should be 5000 after our fix
