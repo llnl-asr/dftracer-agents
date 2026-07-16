@@ -1,0 +1,13 @@
+{
+  // OpenCode project configuration for dftracer-agents
+  // See docs/harnesses.rst for harness-specific notes.
+  // Model levels are resolved from:
+  //   src/dftracer_agents/.agents/workspace/models.yaml
+  "mcp": {
+    "dftracer": {
+      "type": "remote",
+      "url": "http://127.0.0.1:5000/mcp",
+      "enabled": true
+    }
+  }
+}

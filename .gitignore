@@ -35,7 +35,7 @@ workspaces/
 # rendered agent copies (generated from src/dftracer_agents/.agents/agents/*.yaml)
 .github/agents/
 .claude/settings.json
-.opencode/
+/.opencode/
 .vscode/mcp.json
 AGENTS.md
 CLAUDE.md
