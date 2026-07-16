@@ -36,7 +36,7 @@ harness       output path                    frontmatter dialect
 ============  =============================  ==========================================
 claude        .claude/agents/<name>.md       model: <class>; tools: comma string
 opencode      .opencode/agents/<name>.md     mode: subagent; model: provider/id;
-                                             tools: {"*": false, <tool>: true} map
+                                             permission: {"*": deny, <tool>: allow} map
 copilot       .github/agents/<name>.agent.md tools: YAML list; mcp as server/tool
 ============  =============================  ==========================================
 
@@ -297,11 +297,12 @@ def render_opencode(template: Dict[str, Any], level_models: Dict[str, str]) -> s
         "model": level_models.get(template["model_level"], "UNRESOLVED"),
     }
     if template.get("tools"):
-        # Allowlist semantics: everything off, then the listed tools on.
-        tools_map: Dict[str, bool] = {"*": False}
+        # Allowlist semantics: everything denied, then the listed tools allowed.
+        # OpenCode v1.1.1 uses "permission" (not "tools") with allow/deny strings.
+        permission_map: Dict[str, str] = {"*": "deny"}
         for tool in template["tools"]:
-            tools_map[_opencode_tool_name(tool)] = True
-        fields["tools"] = tools_map
+            permission_map[_opencode_tool_name(tool)] = "allow"
+        fields["permission"] = permission_map
     return _frontmatter(fields, "opencode") + _skill_preamble(template) + _body_markdown(template)
 
 

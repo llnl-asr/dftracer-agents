@@ -3,6 +3,7 @@
   // See docs/harnesses.rst for harness-specific notes.
   // Model levels are resolved from:
   //   src/dftracer_agents/.agents/workspace/models.yaml
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "dftracer": {
       "type": "remote",
