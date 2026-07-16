@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 # Ensure the package is importable when running from the repo root.
 REPO = Path(__file__).resolve().parent.parent
@@ -41,6 +42,16 @@ def _extract_frontmatter(rendered: str) -> str:
     return parts[1] if len(parts) >= 2 else ""
 
 
+def _parse_frontmatter(rendered: str) -> dict:
+    """Extract and YAML-parse the frontmatter between --- delimiters."""
+    fm_text = _extract_frontmatter(rendered)
+    if not fm_text:
+        return {}
+    return yaml.safe_load(fm_text) or {}
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
 # ---------------------------------------------------------------------------
 # agent_templates — loading
 # ---------------------------------------------------------------------------
@@ -214,13 +225,13 @@ class TestRenderOpencode:
             "level_4": "ollama/deepseek-v3.2:cloud",
         }
         out = render_opencode(tmpl, models)
-        assert out.startswith("---\n")
-        assert "generated-by: dftracer-agents (opencode)" in out
-        assert "mode: subagent" in out
-        # model should be provider/model-id format
-        assert "model: ollama/qwen3-coder:480b-cloud" in out  # level_3
+        fm = _parse_frontmatter(out)
+        assert fm["mode"] == "subagent"
+        assert fm["model"] == "ollama/qwen3-coder:480b-cloud"
+        assert fm["description"]  # non-empty
 
-    def test_render_opencode_tools_map(self):
+    def test_render_opencode_permission_map(self):
+        """OpenCode permission map: allowlist semantics with deny/allow strings."""
         from dftracer_agents.agent_templates import load_template, render_opencode, templates_dir
         tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
         models = {
@@ -230,14 +241,15 @@ class TestRenderOpencode:
             "level_4": "ollama/deepseek-v3.2:cloud",
         }
         out = render_opencode(tmpl, models)
-        # Tools should be a map with "*": false
-        assert "'*': false" in out or '"*": false' in out
-        # MCP tools reshaped: mcp__dftracer__analyze -> dftracer_analyze
-        assert "dftracer_analyze" in out
-        # Built-ins lowercased - check in frontmatter specifically
-        fm = _extract_frontmatter(out)
-        assert "read" in fm  # Read -> read in opencode frontmatter
-        assert "bash" in fm  # Bash -> bash in opencode frontmatter
+        fm = _parse_frontmatter(out)
+        perm = fm["permission"]
+        assert perm["*"] == "deny", "Wildcard must be deny"
+        assert perm["read"] == "allow"
+        assert perm["bash"] == "allow"
+        assert perm["dftracer_analyze"] == "allow"
+        # All values must be strings (allow/deny), not booleans
+        for v in perm.values():
+            assert isinstance(v, str), f"Permission values must be strings, got {v!r}"
 
     def test_render_opencode_no_mcp_double_underscore(self):
         """OpenCode frontmatter tool names should NOT contain mcp__ prefix.
@@ -280,16 +292,69 @@ class TestRenderOpencode:
         assert "Locate your skills via the graph first" not in out
 
     def test_render_opencode_builtin_tool_mappings(self):
-        """Verify specific built-in tool name mappings in frontmatter."""
+        """Verify ALL built-in tool name mappings and Claude-style names absent."""
+        from dftracer_agents.agent_templates import (
+            load_template, render_opencode, _OPENCODE_BUILTIN, templates_dir
+        )
+        tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
+        models = {"level_1": "ollama/qwen3.5:9b", "level_2": "x",
+                  "level_3": "ollama/qwen3-coder:480b-cloud", "level_4": "x"}
+        out = render_opencode(tmpl, models)
+        fm = _parse_frontmatter(out)
+        perm = fm["permission"]
+        # All 9 built-in mappings in the source constant
+        expected = {
+            "Read": "read", "Write": "write", "Edit": "edit", "Bash": "bash",
+            "Grep": "grep", "Glob": "glob", "WebFetch": "webfetch",
+            "Task": "task", "TodoWrite": "todowrite",
+        }
+        assert len(_OPENCODE_BUILTIN) == 9, f"Expected 9 builtin mappings, got {len(_OPENCODE_BUILTIN)}"
+        # Verify mappings for tools the template actually lists
+        for claude_name, opencode_name in expected.items():
+            if claude_name in tmpl.get("tools", []):
+                assert opencode_name in perm, f"{claude_name}→{opencode_name} missing from permission map"
+        # Claude-style PascalCase names must NOT appear as permission keys
+        for claude_name in expected:
+            assert claude_name not in perm, f"Claude-style '{claude_name}' should not be a permission key"
+
+    def test_render_opencode_description(self):
+        """Description field should be present and non-empty in opencode frontmatter."""
         from dftracer_agents.agent_templates import load_template, render_opencode, templates_dir
         tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
-        models = {"level_1": "ollama/qwen3.5:9b", "level_2": "x", "level_3": "ollama/qwen3-coder:480b-cloud", "level_4": "x"}
+        models = {"level_1": "x", "level_2": "x",
+                  "level_3": "ollama/qwen3-coder:480b-cloud", "level_4": "x"}
         out = render_opencode(tmpl, models)
-        fm = _extract_frontmatter(out)
-        # OpenCode mappings: Read->read, Bash->bash, Edit->edit
-        assert "read" in fm, "Read should map to 'read' in opencode frontmatter"
-        assert "bash" in fm, "Bash should map to 'bash' in opencode frontmatter"
-        assert "edit" in fm, "Edit should map to 'edit' in opencode frontmatter"
+        fm = _parse_frontmatter(out)
+        assert "description" in fm
+        assert isinstance(fm["description"], str)
+        assert len(fm["description"]) > 0
+
+    def test_render_opencode_body_content(self):
+        """Rendered output should contain section titles from the template."""
+        from dftracer_agents.agent_templates import load_template, render_opencode, templates_dir
+        tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
+        models = {"level_1": "x", "level_2": "x",
+                  "level_3": "ollama/qwen3-coder:480b-cloud", "level_4": "x"}
+        out = render_opencode(tmpl, models)
+        first_section = tmpl["sections"][0]
+        assert f"## {first_section['title']}" in out, \
+            f"Section title '{first_section['title']}' missing from rendered body"
+
+    def test_render_opencode_mcp_tool_pattern_consistency(self):
+        """mcp__<server>__<tool> should consistently become <server>_<tool>."""
+        from dftracer_agents.agent_templates import (
+            render_opencode, _opencode_tool_name, load_template, templates_dir
+        )
+        # Test the function directly
+        assert _opencode_tool_name("mcp__dftracer__analyze") == "dftracer_analyze"
+        assert _opencode_tool_name("mcp__dftracer__diagnose") == "dftracer_diagnose"
+        # Test via full render
+        tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
+        models = {"level_1": "x", "level_2": "x", "level_3": "x", "level_4": "x"}
+        out = render_opencode(tmpl, models)
+        fm = _parse_frontmatter(out)
+        perm = fm["permission"]
+        assert "dftracer_analyze" in perm, "dftracer_analyze should be in permission map"
 
 
 class TestRenderCopilot:
@@ -419,19 +484,19 @@ class TestRenderCrossHarness:
         copilot_out = render_copilot(tmpl, models_copilot)
         
         claude_fm = _extract_frontmatter(claude_out)
-        opencode_fm = _extract_frontmatter(opencode_out)
+        opencode_parsed = _parse_frontmatter(opencode_out)
         copilot_fm = _extract_frontmatter(copilot_out)
         
         # Claude: tools as comma-separated string
         assert "tools:" in claude_fm
-        # OpenCode: tools as map with "*": false
-        assert "'*': false" in opencode_fm or '"*": false' in opencode_fm
+        # OpenCode: permission map with "*": deny
+        assert opencode_parsed["permission"]["*"] == "deny"
         # Copilot: tools as YAML list with dftracer/ format
         assert "dftracer/analyze" in copilot_fm
         
         # Verify they are meaningfully different
-        assert claude_fm != opencode_fm
-        assert opencode_fm != copilot_fm
+        assert claude_fm != str(opencode_parsed)
+        assert str(opencode_parsed) != copilot_fm
         assert claude_fm != copilot_fm
 
 
@@ -603,13 +668,15 @@ class TestInstallAgentsE2E:
         assert analyzer.is_file()
         content = analyzer.read_text()
         assert "generated-by: dftracer-agents (opencode)" in content
-        assert "mode: subagent" in content
-        assert "ollama/" in content  # provider prefix for opencode
-        # MCP tools reshaped
-        assert "dftracer_analyze" in content
-        # Frontmatter should NOT have mcp__ prefix (body prose may reference it)
-        fm = content.split("---\n", 2)[1] if content.startswith("---\n") else content
-        assert "mcp__dftracer__" not in fm
+        fm = _parse_frontmatter(content)
+        assert fm["mode"] == "subagent"
+        assert "ollama/" in fm["model"]
+        perm = fm["permission"]
+        assert perm["*"] == "deny"
+        assert perm["dftracer_analyze"] == "allow"
+        # No mcp__ prefix in permission keys
+        for key in perm:
+            assert "mcp__" not in key, f"Permission key '{key}' should not contain mcp__"
 
     def test_install_agents_copilot_content(self, tmp_path):
         from dftracer_agents.agents import install_agents
@@ -646,6 +713,42 @@ class TestInstallAgentsE2E:
         assert conflict_file.read_text() == original_content, "Conflict file was overwritten!"
         assert str(conflict_file) in result["conflicts"], \
             f"Conflict not reported: {result['conflicts']}"
+
+
+# ---------------------------------------------------------------------------
+# opencode.jsonc template validity
+# ---------------------------------------------------------------------------
+
+class TestOpenCodeJsonc:
+    def test_opencode_jsonc_template_validity(self):
+        """opencode.jsonc should have valid structure with $schema, mcp, dftracer."""
+        import json, re
+        from pathlib import Path
+        jsonc_path = (Path(__file__).resolve().parent.parent
+                      / "src" / "dftracer_agents" / ".agents" / "workspace"
+                      / ".opencode" / "opencode.jsonc")
+        raw = jsonc_path.read_text()
+        # Strip JSONC comments (// at start of line or after content, but not in strings)
+        lines = []
+        for line in raw.splitlines():
+            # Find // that's not inside a string (simple heuristic: after quotes)
+            comment_pos = line.find('//')
+            if comment_pos >= 0:
+                # Check if it's inside a string by counting quotes before it
+                before = line[:comment_pos]
+                if before.count('"') % 2 == 0:
+                    line = before
+            lines.append(line)
+        stripped = '\n'.join(lines)
+        config = json.loads(stripped)
+        assert "$schema" in config, "Missing $schema key"
+        assert config["$schema"] == "https://opencode.ai/config.json"
+        assert "mcp" in config, "Missing mcp key"
+        assert "dftracer" in config["mcp"], "Missing dftracer entry in mcp"
+        dftracer = config["mcp"]["dftracer"]
+        assert dftracer["type"] == "remote"
+        assert "url" in dftracer
+        assert dftracer["enabled"] is True
 
 
 # ---------------------------------------------------------------------------
