@@ -145,6 +145,7 @@ sections:
     yourself; the user should see all four subagents' proposals distinctly
     attributed to their component.
 - include: self-learning-confirmation-gate
+- include: never-manual-when-a-restart-is-needed
 - include: logs-go-to-artifacts
 - include: context-economy-locate-don-t-read
 - title: Step Profiling (MANDATORY, orchestrator-level)

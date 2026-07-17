@@ -39,6 +39,7 @@ sections:
     - PROPOSE any new pitfall AND the working recipe to the main thread for user confirmation before it is persisted (see the confirmation gate below); never write lesson/skill files yourself.
 - include: self-learning-feed-lessons-back-into-skills
 - include: self-learning-confirmation-gate
+- include: never-manual-when-a-restart-is-needed
 - include: logs-go-to-artifacts
 - include: capture-the-run-record-before-you-finish
 - title: 'Precondition: the annotated tree must have passed validation'

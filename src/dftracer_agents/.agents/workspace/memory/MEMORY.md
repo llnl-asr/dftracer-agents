@@ -43,3 +43,4 @@
 - [bug-dftracer-service-stop-state-path](bug-dftracer-service-stop-state-path.md) — dftracer_service stop reports "No running server found" even though the daemon is confirmed running — unfixed, workaround is flux cancel
 - [bug-diagnoser-zero-observations-checkpoint](bug-diagnoser-zero-observations-checkpoint.md) — diagnose() reports 0 metric observations against a checkpoint the analyzer just populated with real data — reproduced twice, workaround is reading analyzer's own console summary
 - [project-vpic-kokkos-8node-validation](project-vpic-kokkos-8node-validation.md) — VPIC-Kokkos annotate/optimize/8-node-validate session on Tuolumne — 41% measured speedup from OMP threading fix, plus a verified correctness-preserving MPI_Allreduce coalescing patch
+- [feedback-software-vs-workload-naming](feedback_software_vs_workload_naming.md) — apps annotated/instrumented by dftracer use software-<name>, not workload-<name> (reserved for traced scientific workloads)

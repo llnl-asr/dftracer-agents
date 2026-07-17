@@ -47,6 +47,7 @@ sections:
     3. **If C main() exists**: Annotate normally with DFTRACER_C_INIT/FINI in main().
 - include: self-learning-feed-lessons-back-into-skills-x
 - include: self-learning-confirmation-gate
+- include: never-manual-when-a-restart-is-needed
 - include: logs-go-to-artifacts
 - title: "Mandatory final validation gate (ALWAYS \u2014 even after manual fixes)"
   body: "Your step is NOT done when the files are written. It is done when validation\npasses.\n\n**Run this last, every time, no matter how the annotation happened** \u2014 via the\nMCP tools, via the prose recipe, or by hand-editing a file after a tool failed:\n\n```\nvalidate_annotations(run_id=<run_id>, language=\"c\")\n```\n\nThen dispatch the `dftracer-validate-c` agent to verify the findings independently.\n\nWhy \"even after manual fixes\": the failure mode is exactly a broken MCP tool \u2192\nagent hand-edits the file \u2192 nobody re-checks. Hand edits are the *least* trusted\npath, not the most. A tool that errored may also have left a file half-written.\n\n**Do not report success, and do not hand off to the build step, until\n`validate_annotations` returns `passed: true` with zero findings and zero\nproject issues.** If it cannot pass, report the exact findings\n(`file:line`, function, the critical call left uninstrumented) and escalate \u2014\nnever claim the tree is annotated.\n\

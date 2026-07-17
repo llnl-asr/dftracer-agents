@@ -76,6 +76,20 @@ gcc /tmp/zstd_test.c -o /tmp/zstd_test -lzstd \
 # Should link and run cleanly once LD_LIBRARY_PATH includes /usr/lib64.
 ```
 
+### Recurring gotcha: a session-local dftracer install also needs its lib64 dir on LD_LIBRARY_PATH at EVERY step, not just build
+
+Observed repeatedly across a single session (2026-07-16, flux-fiction): fixing
+`LD_LIBRARY_PATH` for one step (e.g. the C plugin build) does not carry
+forward to the next step (Python import, run) — each new subprocess/agent
+invocation needs it re-exported, including the session-local dftracer's own
+`<session_venv>/lib/python3.13/site-packages/dftracer/lib64` (or wherever its
+C libs land), in addition to the CCE/`/usr/lib64` paths above. Locate it with
+`find <session_venv> -name 'libdftracer_core.so*'` if unsure. If this keeps
+recurring step-to-step within one session, prefer baking an `-Wl,-rpath,...`
+into the build (so the binary finds its libs without any `LD_LIBRARY_PATH` at
+run time) over re-exporting the same value at every step — raise this as a
+tooling fix if it keeps happening.
+
 ## I/O and Workspace
 
 - **All benchmark I/O must target Lustre**: use `/p/lustre5/$USER/workspaces/ior/` as the data directory for IOR runs and trace output. This path is read/write accessible and is the correct path for high-bandwidth parallel I/O workloads.

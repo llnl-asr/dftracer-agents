@@ -132,6 +132,7 @@ sections:
     result of each step (sync summary, memory file updated, scan verdict).
 - include: self-learning-feed-lessons-back-into-skills
 - include: self-learning-confirmation-gate
+- include: never-manual-when-a-restart-is-needed
 - include: logs-go-to-artifacts
 - include: context-economy-locate-don-t-read
 - include: pipeline-profiling

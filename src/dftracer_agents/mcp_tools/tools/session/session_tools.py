@@ -263,6 +263,7 @@ def _session_build_annotated_impl(
     extra_cmake_flags: str = "",
     custom_build_cmd: str = "",
     build_subdir: str = "",
+    extra_meson_flags: str = "",
 ) -> str:
     """Standalone implementation of session_build_annotated.
 
@@ -371,6 +372,46 @@ def _session_build_annotated_impl(
 
         r_ins = _run(["make", "install"], cwd=build_ann, timeout=300)
         steps["install"] = r_ins
+
+    elif bt == "meson":
+        env: Dict[str, str] = {}
+        if dft_prefix:
+            # Meson reads CFLAGS/LDFLAGS from the environment ONLY at the
+            # first `meson setup` — set them unconditionally here so a
+            # project whose meson.build does manual `cc.find_library`/
+            # `has_header` (no dftracer.pc, no CMake config file — dftracer
+            # ships neither for its C API) still finds dftracer's headers
+            # and library without needing a per-project meson.build patch.
+            pc_path = state.get("dftracer_pkg_config_path", "")
+            if not pc_path:
+                pc_path = f"{dft_prefix}/lib/pkgconfig"
+            env["PKG_CONFIG_PATH"] = pc_path
+            env["CFLAGS"] = f"-I{dft_prefix}/include"
+            env["LDFLAGS"] = f"-L{dft_prefix}/lib64 -L{dft_prefix}/lib -Wl,-rpath,{dft_prefix}/lib64 -Wl,-rpath,{dft_prefix}/lib -ldftracer_core"
+
+        flags = [f"-Dprefix={install_ann}"] + (
+            extra_meson_flags.split() if extra_meson_flags else []
+        )
+        if (build_ann / "meson-info").exists():
+            flags = ["--reconfigure"] + flags
+        r_cfg = _run(
+            ["meson", "setup", str(build_ann), str(ann)] + flags,
+            env=env if env else None,
+            timeout=300,
+        )
+        steps["configure"] = r_cfg
+        if not r_cfg["success"]:
+            return _err("meson setup failed for annotated source", **r_cfg)
+
+        r_bld = _run(["meson", "compile", "-C", str(build_ann), f"-j{jobs}"], timeout=600)
+        steps["build"] = r_bld
+        if not r_bld["success"]:
+            return _err("meson compile failed for annotated source", **r_bld)
+
+        r_ins = _run(["meson", "install", "-C", str(build_ann)], timeout=300)
+        steps["install"] = r_ins
+        if not r_ins["success"]:
+            return _err("meson install failed for annotated source", **r_ins)
 
     elif bt == "python":
         pip = ws / "install" / "bin" / "pip"
@@ -1642,6 +1683,7 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         extra_cmake_flags: str = "",
         extra_configure_flags: str = "",
         extra_pip_flags: str = "",
+        extra_meson_flags: str = "",
     ) -> str:
         """Configure the build system for the *original* cloned source.
 
@@ -1653,8 +1695,18 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
           -DCMAKE_BUILD_TYPE=RelWithDebInfo [extra_cmake_flags]``
         * **autotools** — ``autoreconf -fi`` (if ``configure`` does not exist),
           then ``./configure --prefix=<install> [extra_configure_flags]``
+        * **meson** — ``meson setup build source -Dprefix=<install>
+          [extra_meson_flags]`` (project-specific ``option()``s from
+          ``meson.options``/``meson_options.txt`` go in ``extra_meson_flags``,
+          e.g. ``"-Duse_system_flux=true"`` — always read that file first, see
+          [[software-meson]]).
         * **python** — ``python3 -m venv install/`` followed by
-          ``pip install -e source/ [extra_pip_flags]``
+          ``pip install -e source/ [extra_pip_flags]``. If ``pyproject.toml``
+          declares ``build-backend = "mesonpy"``, project-specific meson
+          options must be forwarded via
+          ``extra_pip_flags='--config-settings=setup-args="-Doption=value"'``
+          (see [[software-pip]]) — this branch does not otherwise know about
+          meson.options.
 
         Side effects:
             * Creates ``<workspace>/build/`` and ``<workspace>/install/``.
@@ -1674,6 +1726,9 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             extra_pip_flags: Space-separated flags appended to
                 ``pip install -e``.  Ignored for non-Python projects.
                 Defaults to ``""``.
+            extra_meson_flags: Space-separated additional ``-D`` flags appended
+                to ``meson setup`` (e.g. ``"-Duse_system_flux=true"``).
+                Ignored for non-meson projects.  Defaults to ``""``.
 
         Returns:
             JSON string with keys:
@@ -1727,6 +1782,15 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 "--disable-dependency-tracking",  # avoids config.status .deps failures
             ] + (extra_configure_flags.split() if extra_configure_flags else [])
             r = _run([str(src / "configure")] + flags, cwd=build, timeout=300)
+        elif bt == "meson":
+            flags = [f"-Dprefix={install}"] + (
+                extra_meson_flags.split() if extra_meson_flags else []
+            )
+            # Re-running `meson setup` on an existing builddir reconfigures in
+            # place; --reconfigure makes that safe on a re-run of this tool.
+            if (build / "meson-info").exists():
+                flags = ["--reconfigure"] + flags
+            r = _run(["meson", "setup", str(build), str(src)] + flags, timeout=300)
         elif bt == "python":
             venv_r = _run([sys.executable, "-m", "venv", str(install)], timeout=60)
             if not venv_r["success"]:
@@ -1771,6 +1835,8 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
 
         * **cmake / autotools / make** — ``make -j<jobs>`` followed by
           ``make install``.  Both commands run in ``<workspace>/build/``.
+        * **meson** — ``meson compile -C build -j<jobs>`` followed by
+          ``meson install -C build``.
         * **python** — no-op; installation was already performed by
           ``session_configure`` (``pip install -e``).
 
@@ -1815,6 +1881,18 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 return _err("make install failed", **r2)
             _save_state(run_id, {"step": "installed"})
             return _ok("Build and install succeeded", make=r, install=r2)
+
+        if bt == "meson":
+            r = _run(["meson", "compile", "-C", str(build), f"-j{jobs}"], timeout=600)
+            if not r["success"]:
+                _write_artifact_log(_ws(run_id), 4, "session_build_install", {"build": r}, run_id)
+                return _err("meson compile failed", **r)
+            r2 = _run(["meson", "install", "-C", str(build)], timeout=300)
+            _write_artifact_log(_ws(run_id), 4, "session_build_install", {"build": r, "install": r2}, run_id)
+            if not r2["success"]:
+                return _err("meson install failed", **r2)
+            _save_state(run_id, {"step": "installed"})
+            return _ok("Build and install succeeded", build=r, install=r2)
 
         if bt == "python":
             _save_state(run_id, {"step": "installed"})

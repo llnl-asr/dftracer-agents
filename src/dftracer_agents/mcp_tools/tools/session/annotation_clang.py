@@ -378,7 +378,7 @@ def register_clang_tools(mcp: FastMCP) -> None:
         filepath: str,
         language: str = "c",
         is_entry: bool = False,
-        init_args: str = "NULL, NULL, -1",
+        init_args: str = "NULL, NULL, NULL",
         comp_overrides: str = None,
         exclude_functions: str = None,
         write_immediately: bool = True,
@@ -456,8 +456,13 @@ def register_clang_tools(mcp: FastMCP) -> None:
                         receive ``DFTRACER_C_INIT`` / ``DFTRACER_C_FINI`` in
                         addition to the per-function START/END macros.
             init_args:  Argument string for ``DFTRACER_C_INIT(…)``; defaults to
-                        ``"NULL, NULL, -1"`` (log to default path, trace all
-                        dirs, use PID).  Ignored when ``is_entry=False``.
+                        ``"NULL, NULL, NULL"`` (log to default path, trace all
+                        dirs, auto-detect PID). The third parameter is
+                        ``int* process_id`` in ``dftracer.h`` — never pass an
+                        int literal like ``-1`` here, that's an int-to-pointer
+                        mismatch that lenient compilers merely warn about but
+                        strict Cray clang treats as fatal, corrupting the rest
+                        of the file's parse. Ignored when ``is_entry=False``.
             comp_overrides: Optional JSON object string mapping function names to
                         ``comp`` category strings (e.g. ``'{"main": "cpu",
                         "MPIIO_Xfer": "comm"}'``).  Overrides the automatic
@@ -793,7 +798,7 @@ def register_clang_tools(mcp: FastMCP) -> None:
     def clang_annotate_project(
         run_id: str,
         language: str = "c",
-        init_args: str = "NULL, NULL, -1",
+        init_args: str = "NULL, NULL, NULL",
         exclude_patterns: List[str] = None,
     ) -> str:
         """Annotate every C/C++ source file in the ``annotated/`` workspace in one call.
