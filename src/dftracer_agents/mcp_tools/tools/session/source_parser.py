@@ -566,11 +566,27 @@ def _insert_braces(
     # single if/else into two disconnected compound blocks (a real syntax
     # error). Track the lowest start seen so far and skip any pair whose end
     # reaches at or past it, rather than risk corrupting the file.
+    #
+    # A second, distinct overlap shape (found on flux-fiction's emu-jobtap.c,
+    # a recurrence of this same bug class on new code): a duplicate AST node
+    # — e.g. a macro-internal sub-expression — can report the SAME start line
+    # as an already-accepted range but a SHORTER end (a strict subset), rather
+    # than a later range whose end reaches back into an earlier one. The
+    # `min_start_seen` check above does not catch this shape since it only
+    # compares a new pair's END against previously-accepted STARTs. Track
+    # every accepted range and reject any pair that starts inside one AND
+    # ends before it — a single real statement never legitimately produces
+    # two different (start, end) pairs.
     min_start_seen = None
+    accepted_ranges: list[tuple[int, int]] = []
     for start, end in pairs:
         if min_start_seen is not None and end >= min_start_seen:
             continue  # overlaps an already-scheduled range — skip, don't corrupt
+        if any(start >= acc_start and start <= acc_end and end < acc_end
+               for acc_start, acc_end in accepted_ranges):
+            continue  # strict subset of an already-accepted range — skip, don't corrupt
         min_start_seen = start
+        accepted_ranges.append((start, end))
 
         si = start - 1  # 0-based
         ei = end   - 1

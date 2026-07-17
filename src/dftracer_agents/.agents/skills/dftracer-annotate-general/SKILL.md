@@ -8,6 +8,43 @@ description: Language-agnostic dftracer annotation rules — Rule 0 (what to ski
 These rules apply whenever you manually annotate C, C++, or Python source files.
 Violating any rule will cause build failures or missing trace data.
 
+### Rule D — Declare dftracer as a DIRECT dependency of the app's own build manifest (MANDATORY, all languages)
+
+Annotating an app's source is not the whole integration — the app's own build
+manifest must also declare dftracer as a direct dependency, so a plain build
+of the annotated tree pulls dftracer in automatically instead of relying on a
+side-by-side session install the app's manifest knows nothing about. This is
+what makes the integration a durable, patchable change rather than a one-off
+session artifact — a diff against the app's manifest is exactly the kind of
+patch this project's self-learning/patch workflow expects to produce and
+re-apply later.
+
+Add the dependency in whichever manifest the app's build system reads (see
+the matching `software-<tool>` skill for exact mechanics):
+- **Python (`pyproject.toml`)** → add `dftracer` (and `pydftracer` if not
+  pulled in transitively — verify, see [[tools-pydftracer]]) to
+  `[project].dependencies` or an appropriate `[project.optional-dependencies]`
+  group. See [[software-pip]].
+- **Meson (`meson.build`)** → add a `dependency('dftracer', ...)` call for the
+  relevant target — NOTE: as of this writing dftracer ships no `.pc`
+  pkg-config file (only CMake config files), so plain `dependency('dftracer')`
+  will not resolve; until that's fixed upstream, document the CFLAGS/LDFLAGS
+  injection as the patch instead (see [[software-meson]]) and revisit adding
+  a real `dependency()` call once a `.pc` file exists.
+- **CMake (`CMakeLists.txt`)** → add `find_package(dftracer CONFIG REQUIRED)`
+  (or the project's existing dependency-list convention) plus
+  `target_link_libraries(<target> dftracer::dftracer_core)` or equivalent. See
+  [[software-cmake]].
+- **Autotools (`configure.ac`)** → add a `PKG_CHECK_MODULES`/`AC_CHECK_LIB`
+  probe for dftracer alongside the project's other dependency checks. See
+  [[software-autotools]].
+
+This patch belongs in the ANNOTATED tree (or as a tracked patch file under the
+run's `patches/` directory per this project's run-scoped layout), not just in
+session state — the whole point is that re-checking out the annotated source
+and building it fresh, without any session-specific env setup, should already
+know to pull in dftracer.
+
 ### Rule 0 — Only annotate functions worth tracing (skip trivial ones)
 
 **Annotate a function if it:**

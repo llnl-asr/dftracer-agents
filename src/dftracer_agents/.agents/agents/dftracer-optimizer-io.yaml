@@ -71,6 +71,7 @@ sections:
 - include: self-learning-feed-lessons-back-into-skills
 - include: pipeline-eagerly-dont-wait-for-the-whole-batch
 - include: self-learning-confirmation-gate
+- include: never-manual-when-a-restart-is-needed
 - include: logs-go-to-artifacts
 - include: capture-the-run-record-before-you-finish
 - include: context-economy-locate-don-t-read

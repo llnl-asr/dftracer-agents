@@ -94,6 +94,22 @@ sections:
     title: "Self-learning confirmation gate (MANDATORY \u2014 overrides \"record immediately\")"
     body: "Capture learning aggressively, persist it safely:\n\n1. **Always propose skill updates.** Before you stop, actively record what you\n   did this session so future sessions reuse it \u2014 not only failures, but the\n   working recipe: exact commands, flags, paths, versions, and any caveat you\n   hit. Every agent is expected to grow the skills every run.\n2. **Route generic vs specific correctly.**\n   - Reusable, cross-workload knowledge -> the relevant GENERIC skill\n     (keep those skills generic).\n   - App-specific caveats -> `workload-<app>`; site/env quirks ->\n     `system-<system>`; library specifics (HDF5/MPI/compiler) ->\n     `software-<lib>`. Create the specific skill if it does not exist.\n   - Prefer generic skills to hold the general procedure and the specific\n     skills to hold only the workload/system/software deltas.\n3. **Confirmation gate \u2014 do NOT self-write.** Do NOT edit skills, lesson files,\n   agent definitions, or MCP tools yourself. Instead\
       \ PROPOSE each update in your\n   final summary as: target (which skill/tool/agent) -> symptom/what-you-did ->\n   root cause (if a fix) -> exact content to add. The main thread confirms the\n   observation with the user, and only then is anything persisted. This prevents\n   incorrect diagnoses from polluting shared skills/tools/agents and supersedes\n   any \"record ... immediately in the sibling lesson files\" instruction above.\n"
+  never-manual-when-a-restart-is-needed:
+    title: "Never fall back to manual work when a tool fix needs a server restart (MANDATORY)"
+    body: |
+      If you discover that an MCP tool is missing, broken, or was just fixed/added
+      by the main thread and the change requires an MCP server restart to take
+      effect, do NOT work around it by hand-editing files, writing an ad hoc
+      regex/AST script, or otherwise reproducing the tool's job manually. This is
+      exactly how drift/corruption bugs get introduced (e.g. a hand-rolled
+      decorator-insertion script producing a stale API pattern that the real
+      annotation tool doesn't use, or a compatibility shim papering over a real
+      annotation bug instead of exposing it).
+
+      Instead: STOP, report clearly that the fix requires a server restart, name
+      the exact tool(s) you need, and wait. The main thread will restart the
+      server and resume you. A short pause is always cheaper than a manual
+      workaround that has to be found and undone later.
   self-learning-feed-lessons-back-into-skills:
     title: "Self-learning: feed lessons back into skills (mandatory \u2014 before you stop)"
     body: "This is a required self-learning step for EVERY agent, not optional. Whenever\nyou discover something non-obvious \u2014 a build/run caveat, an environment quirk,\na pitfall and its exact fix \u2014 record it in the RIGHT skill so the whole system\nlearns next time. Choose the skill by scope, and create it if it does not exist:\n- App/workload-specific \u2192 `workload-<app>` skill (e.g. `workload-flashx`).\n- System / site / environment-specific \u2192 `system-<system>` skill (e.g. `system-tuolumne`).\n- Library / software-specific (HDF5, MPI, ROMIO, compilers, \u2026) \u2192 `software-<lib>` skill.\n\nHow: locate it via `graph_query(mode=\"docs\", question=\"<skill>\")`, open just\nthat section (or `Read`/`session_read_file` the whole `SKILL.md` if you need it all),\nthen append a\ndated one-line lesson in the form `symptom \u2192 root cause \u2192 exact fix`. Keep it\nterse and de-duplicated (don't restate an existing lesson). Edit the skill's\n`SKILL.md` at its resolved path under the skills directory; for a brand-new\nskill, create `<skills-dir>/<name>/SKILL.md` with a short\

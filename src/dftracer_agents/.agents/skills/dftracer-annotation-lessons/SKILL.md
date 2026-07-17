@@ -430,3 +430,33 @@ Rules that must never be broken during the loop:
   - NEVER skip the syntax check step — it catches placement errors before the full build.
   - If BUILD ERROR MODE is active (build_errors param is set): process only the
     functions named in the errors first, then continue with unannotated functions.
+
+### DFTRACER_C_INIT third argument is `int*`, never a literal int
+
+**Symptom:** `error: incompatible integer to pointer conversion passing 'int'
+to parameter of type 'int *'` on a constructor like
+`DFTRACER_C_INIT(NULL, NULL, -1);`, often followed by dozens of unrelated
+cascading "function definition is not allowed here" errors for the rest of
+the file — the misparse from this single bad statement corrupts the parser
+state for everything after it, especially under Cray clang's strict C99.
+
+**Root cause:** `DFTRACER_C_INIT(log_file, data_dirs, process_id)` expands to
+`initialize_main(log_file, data_dirs, process_id)`, where `process_id` is
+declared `int* process_id` in `dftracer/dftracer.h`. Passing a literal `-1`
+(an `int`) is a genuine type mismatch — merely a warning on lenient
+compilers, fatal under strict `-std=c99`. This was a systemic default-value
+bug in the annotation tooling, not specific to any one codebase — it just
+happened to be caught here because of Cray clang's strictness.
+
+**Fix:** `clang_annotate_file`/`clang_annotate_project`'s `init_args` default
+was changed from `"NULL, NULL, -1"` to `"NULL, NULL, NULL"` (2026-07-16).
+When hand-fixing an already-annotated file, use `DFTRACER_C_INIT(NULL, NULL,
+NULL)` (or a real `int` variable's address) — never a literal int.
+
+Related: `DFTRACER_C_METADATA(name, key, val)` expands to a `{ ... }`
+compound-statement block (it declares/initializes/finalizes a local
+`struct DFTracerData*`), so it must be called from inside a function body —
+never at file/global scope. If app-parameter metadata annotation is placed
+at global scope (e.g. right after the `#include <dftracer/dftracer.h>`
+line, sibling to the constructor), move those calls inside the
+`__attribute__((constructor))` init function, after `DFTRACER_C_INIT`.
