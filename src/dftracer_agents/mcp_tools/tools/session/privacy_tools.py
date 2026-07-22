@@ -10,8 +10,13 @@ rather than eyeballing prose.
 
 Both default to the persisted trees (``.agents/skills``, ``.agents/agents``,
 ``.agents/workspace``). A live session workspace under ``workspaces/<session>/``
-is gitignored and intentionally NOT scanned: it holds real resolved paths a run
-needs.
+is gitignored and intentionally NOT scanned by default: it holds real resolved
+paths a run needs. **Exception:** anything under a ``final_report/`` directory
+(anywhere in the tree, e.g. ``workspaces/<session>/final_report/``) IS always
+scanned even though it lives inside a gitignored session workspace — it is the
+one live-workspace artifact meant to be copied/pushed elsewhere, so it must be
+privacy-clean like everything else this package persists. See
+``dftracer-privacy-guard`` skill and Pipeline Policy rule 9.
 """
 from __future__ import annotations
 
@@ -80,8 +85,25 @@ def _current_users() -> List[str]:
     return sorted(set(u for u in users if u))
 
 
+def _is_final_report(path: Path) -> bool:
+    """True if *path* lives under a ``final_report/`` directory anywhere in its
+    parents — this is the one artifact inside a gitignored session workspace
+    that must ALWAYS be scanned (see module docstring / Pipeline Policy rule 9),
+    regardless of what ``git check-ignore`` says about the rest of the
+    workspace it happens to sit in.
+    """
+    return "final_report" in path.parts
+
+
 def _is_ignored(path: Path) -> bool:
-    """True if git ignores *path* — gitignored files never ship, so never scan them."""
+    """True if git ignores *path* — gitignored files never ship, so never scan
+    them. EXCEPT anything under ``final_report/``, which is always scanned
+    even though the session workspace containing it is gitignored (see
+    :func:`_is_final_report`).
+    """
+    if _is_final_report(path):
+        return False
+
     import subprocess
 
     try:

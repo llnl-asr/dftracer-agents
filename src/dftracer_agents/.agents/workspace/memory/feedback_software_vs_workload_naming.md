@@ -4,7 +4,7 @@ description: "Skill-naming convention correction — apps being annotated/instru
 metadata: 
   node_type: memory
   type: feedback
-  originSessionId: e05fb2c3-c7e1-4a49-b298-4f1ccf974542
+  
 ---
 
 `workload-<app>` is reserved for scientific/HPC workloads dftracer traces to

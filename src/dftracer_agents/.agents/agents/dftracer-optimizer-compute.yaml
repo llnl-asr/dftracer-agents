@@ -65,6 +65,7 @@ sections:
       before/after. Prefer compiler-flag/threading tuning (lower risk) first.
     - VALIDATE every applied optimization by re-running and comparing: identical
       output/op count with better compute time = a real, safe win.
+- include: shared-source-tree-parallel-dispatch
 - include: optimizer-never-do-less
 - include: optimizer-never-change-the-pattern
 - include: optimizer-metric-scope-axis

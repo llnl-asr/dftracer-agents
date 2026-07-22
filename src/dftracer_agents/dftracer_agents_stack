@@ -48,6 +48,12 @@
 # Without those OTEL_* variables Claude Code exports no telemetry, the collector
 # sees nothing, and the profile stays empty — the profile_* MCP tools still work,
 # they just report `profiling: disabled`.
+#
+# We run on a shared login node: every daemon this script starts self-limits to
+# DFTRACER_STACK_MAX_AGE (default 4h) so a forgotten `stack stop` can't leave a
+# rogue process running indefinitely. `start`/`restart` after the deadline just
+# brings it back — set DFTRACER_STACK_MAX_AGE=0 before `start` to disable this
+# for a session that deliberately needs to outlive 4h.
 
 set -euo pipefail
 
@@ -79,6 +85,17 @@ COLLECTOR_PORT="${COLLECTOR_PORT:-4318}"
 MLFLOW_PORT="${MLFLOW_PORT:-5001}"
 MCP_SERVICE="${MCP_SERVICE:-both}"
 HOST="${DFTRACER_STACK_HOST:-127.0.0.1}"
+
+# We run on a shared login node, not a compute node — a daemon nobody remembers
+# to `stack stop` is a rogue process eating login-node resources indefinitely.
+# Every daemon this script starts is self-limited to this lifetime; `timeout`
+# sends TERM at the deadline and, if the process ignores it, SIGKILL
+# DFTRACER_STACK_MAX_AGE_KILL_GRACE later. Set DFTRACER_STACK_MAX_AGE=0 to
+# disable (unlimited lifetime) for a session that genuinely needs to outlive
+# 4h — e.g. a long optimization pipeline — but that should be a deliberate,
+# explicit opt-out, not the default.
+DFTRACER_STACK_MAX_AGE="${DFTRACER_STACK_MAX_AGE:-4h}"
+DFTRACER_STACK_MAX_AGE_KILL_GRACE="${DFTRACER_STACK_MAX_AGE_KILL_GRACE:-60}"
 
 WORKSPACES="${DFTRACER_WORKSPACES:-$REPO_ROOT/workspaces}"
 MLFLOW_DIR="$WORKSPACES/_mlflow"
@@ -192,15 +209,28 @@ _spawn() {
   local pf; pf="$(pid_file "$name")"
   echo "[stack] starting $name…"
   rm -f "$pf"
+
+  # Self-limit every daemon's lifetime (login-node hygiene — see
+  # DFTRACER_STACK_MAX_AGE above). `timeout` forks the real command as its own
+  # child and stays alive itself to enforce the deadline, so the pid we record
+  # below (still the outermost process, timeout or the command itself) is the
+  # one `setsid`'s process-group kill already reaches — no change needed to
+  # stop_daemon/_kill_tree for this to compose correctly with manual stops.
+  local -a cmd=("$@")
+  if [[ "$DFTRACER_STACK_MAX_AGE" != "0" ]] && command -v timeout >/dev/null 2>&1; then
+    cmd=(timeout --signal=TERM --kill-after="${DFTRACER_STACK_MAX_AGE_KILL_GRACE}s" "$DFTRACER_STACK_MAX_AGE" "${cmd[@]}")
+    echo "[stack]   (auto-stops after $DFTRACER_STACK_MAX_AGE — set DFTRACER_STACK_MAX_AGE=0 to disable)"
+  fi
+
   # stdin from /dev/null, always. The MCP server's startup asks "continue with the
   # previous configured system? [Y/n]" on a terminal; a backgrounded daemon that
   # inherits the tty would silently compete with the user's shell for that input.
   # On EOF it reuses the saved configuration, which is what a daemon start means.
   if command -v setsid >/dev/null 2>&1; then
-    setsid bash -c 'echo $$ >"$1"; shift; exec "$@"' _ "$pf" "$@" \
+    setsid bash -c 'echo $$ >"$1"; shift; exec "$@"' _ "$pf" "${cmd[@]}" \
       </dev/null >>"$(log_file "$name")" 2>&1 &
   else
-    ( exec "$@" </dev/null >>"$(log_file "$name")" 2>&1 ) &
+    ( exec "${cmd[@]}" </dev/null >>"$(log_file "$name")" 2>&1 ) &
     echo $! >"$pf"
   fi
   for _ in $(seq 20); do [[ -s "$pf" ]] && break; sleep 0.1; done

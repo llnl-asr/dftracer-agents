@@ -21,7 +21,7 @@ Scopes and what they transfer to:
 | software | L2 | any workload **linking that software**, any system | [software.md](software.md) |
 | workload | L1 | that application, **any system** | [workload.md](workload.md) |
 
-Recorded: 10 system, 7 software, 13 workload entries.
+Recorded: 11 system, 7 software, 26 workload entries.
 
 ## A second, orthogonal axis: metric_scope
 

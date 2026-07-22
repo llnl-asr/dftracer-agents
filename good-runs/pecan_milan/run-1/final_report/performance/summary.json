@@ -1,0 +1,88 @@
+{
+  "run_id": "pecan_milan/20260720_153336",
+  "started_ns": 1784561411200008162,
+  "wall_s": 172221.711,
+  "exec_s": 0,
+  "session_ids": [],
+  "steps": [
+    {
+      "key": "main",
+      "index": 0,
+      "agent": "",
+      "notes": "",
+      "status": "running",
+      "tries": 1,
+      "retries": 0,
+      "failed_attempts": 0,
+      "successful_attempts": 0,
+      "exec_s": 172221.711,
+      "wall_s": 172221.711,
+      "attempts": [
+        {
+          "number": 1,
+          "status": "running",
+          "duration_s": 172221.711,
+          "error": "",
+          "start_ns": 1784561411200053872,
+          "end_ns": null
+        }
+      ],
+      "tokens_input": 0,
+      "tokens_output": 0,
+      "tokens_cache_read": 0,
+      "tokens_cache_creation": 0,
+      "cost_usd": 0.0,
+      "api_calls": 0,
+      "api_errors": 0,
+      "api_duration_ms": 0.0,
+      "tool_calls": 0,
+      "tool_failures": 0,
+      "tool_duration_ms": 0.0,
+      "mcp_tool_calls": 0,
+      "compactions": 0,
+      "prompts": 0,
+      "tools": {},
+      "models": {},
+      "agents": {},
+      "skills": {},
+      "tokens_total": 0
+    }
+  ],
+  "totals": {
+    "tokens_input": 0,
+    "tokens_output": 0,
+    "tokens_cache_read": 0,
+    "tokens_cache_creation": 0,
+    "cost_usd": 0.0,
+    "api_calls": 0,
+    "api_errors": 0,
+    "api_duration_ms": 0.0,
+    "tool_calls": 0,
+    "tool_failures": 0,
+    "tool_duration_ms": 0.0,
+    "mcp_tool_calls": 0,
+    "compactions": 0,
+    "prompts": 0,
+    "tools": {},
+    "models": {},
+    "agents": {},
+    "skills": {},
+    "tokens_total": 0
+  },
+  "attempts": {
+    "steps": 0,
+    "tries": 0,
+    "retries": 0,
+    "failed_attempts": 0,
+    "successful_attempts": 0,
+    "steps_succeeded": 0,
+    "steps_failed": 0,
+    "steps_running": 0
+  },
+  "metric_totals": {},
+  "cost_reconciliation": {
+    "from_events": 0.0,
+    "from_metrics": 0.0,
+    "delta": 0.0
+  }
+}

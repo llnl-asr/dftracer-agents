@@ -29,6 +29,8 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import os
+import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -565,6 +567,179 @@ def _install_dftracer_cmake(
     }
 
 
+_MODULE_LOAD_RE = re.compile(r"^\s*module\s+load\s+(.+?)\s*(?:#.*)?$", re.MULTILINE)
+
+
+def _discover_app_module_loads(source_dir: Optional[Path]) -> List[str]:
+    """Scan the app's own install/build scripts for ``module load`` lines.
+
+    Apps that already run on a system (e.g. an existing ``venv_*.sh`` or
+    ``install.sh`` checked into the repo) usually encode the EXACT compiler/
+    MPI/library module combination known to work together — that is a much
+    stronger signal than re-deriving a module list from scratch. Returns a
+    deduplicated, order-preserving list of module tokens (e.g.
+    ``["rocm/6.3.1", "cmake/3.23.1", "gcc/10.3.1"]``) pulled from every
+    ``module load ...`` line found in any ``*.sh`` file up to 2 directories
+    deep under *source_dir*. Empty list if *source_dir* is unset/missing or
+    no such lines are found -- caller should fall back to the system's
+    default module list (see ``get_current_system_modules``) in that case.
+    """
+    if not source_dir or not Path(source_dir).is_dir():
+        return []
+    seen: Dict[str, None] = {}
+    try:
+        for script in sorted(Path(source_dir).glob("**/*.sh")):
+            try:
+                depth = len(script.relative_to(source_dir).parts)
+            except ValueError:
+                continue
+            if depth > 3:
+                continue
+            try:
+                text = script.read_text(errors="ignore")
+            except Exception:
+                continue
+            for m in _MODULE_LOAD_RE.finditer(text):
+                for tok in m.group(1).split():
+                    tok = tok.strip()
+                    if tok and not tok.startswith("$") and not tok.startswith("-"):
+                        seen.setdefault(tok, None)
+    except Exception:
+        return []
+    return list(seen.keys())
+
+
+def _ensure_session_env_script(ws: Path, source_dir: Optional[Path] = None) -> Path:
+    """Create (once) and return the session's canonical ``env.sh``.
+
+    Written the FIRST time any step needs it (normally ``session_detect``,
+    the earliest point ``source/`` exists to scan) and then REUSED by every
+    later build/install/run step (dftracer install, app build, smoke test,
+    trace runs) -- so they all `module load` the exact same modules instead
+    of each step re-deriving (and potentially disagreeing on) its own list.
+
+    Module source priority:
+      1. The app's OWN install/build scripts under *source_dir* (a
+         ``module load`` line in a checked-in ``venv_*.sh``/``install.sh``
+         encodes a combination already known to work for this specific app
+         -- a much stronger signal than guessing from scratch).
+      2. The system's default module list (``get_current_system_modules``).
+
+    Idempotent: if ``<ws>/scripts/env.sh`` already exists this is a no-op
+    that just returns its path -- callers wanting to force a refresh (e.g.
+    the app's scripts changed) must remove it first via
+    ``session_remove_path``.
+
+    Lives under ``<ws>/scripts/`` (not the workspace root) -- every script
+    the session produces, including this one and any manual/ad-hoc script
+    run outside the normal step pipeline, belongs in that one directory.
+    """
+    ws = Path(ws)
+    scripts_dir = ws / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    env_script = scripts_dir / "env.sh"
+    if env_script.exists():
+        return env_script
+
+    modules = _discover_app_module_loads(source_dir)
+    module_source = "app install scripts" if modules else "system default (systems.yaml)"
+    if not modules:
+        try:
+            from ..system.system_service import get_current_system_modules
+            modules = get_current_system_modules()
+        except Exception:
+            modules = []
+
+    sys_env: Dict[str, str] = {}
+    try:
+        from ..system.system_service import get_current_system_env
+        sys_env = get_current_system_env()
+    except Exception:
+        pass
+
+    lines = [
+        "#!/bin/bash",
+        "# Auto-generated ONCE by dftracer-agents (session_detect / first",
+        "# install step) -- every build/install/run step in this session",
+        "# sources this SAME file so they share one consistent environment.",
+        f"# Module source: {module_source}",
+        "# To refresh: session_remove_path(run_id, 'env.sh') then re-run detection.",
+    ]
+    if modules:
+        lines.append(f"module load {' '.join(shlex.quote(m) for m in modules)}")
+    else:
+        lines.append("# no modules discovered from app scripts or systems.yaml -- add manually if needed")
+    for k, v in sys_env.items():
+        lines.append(f"export {k}={shlex.quote(str(v))}")
+    env_script.write_text("\n".join(lines) + "\n")
+    env_script.chmod(0o755)
+    return env_script
+
+
+def _run_pip_via_module_script(
+    py: str,
+    pip_args: List[str],
+    pip_env: Dict[str, str],
+    modules: List[str],
+    ws: Optional[Path] = None,
+    timeout: int = 900,
+    env_script: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Run ``<py> -m pip <pip_args>`` inside a real ``module load``'d shell.
+
+    Hand-assembling individual env vars (CC, CXX, LD_LIBRARY_PATH, ...) is
+    NOT equivalent to actually running ``module load`` -- Cray's compiler
+    driver scripts additionally consult PE_ENV/CRAY_* variables that
+    ``module load`` sets internally to pick the correct companion GNU
+    toolchain. Skipping the real module load lets the driver silently fall
+    back to whatever stray GCC it finds on PATH (root-caused 2026-07-20 on a
+    pecan_milan session: Cray Clang picked up an unrelated
+    ``/opt/rh/gcc-toolset-13`` and failed with "stdlib.h file not found"
+    building dftracer's vendored cpp-logger). Writing a real ``module
+    load ...`` line into a login-shell script (``bash -l``, so
+    ``/etc/profile.d/*.sh`` initializes the ``module`` function) and running
+    the pip command AFTER it is the fix -- not more env var guessing.
+
+    When *env_script* is given (the session's canonical ``env.sh`` from
+    ``_ensure_session_env_script``), it is sourced instead of inlining a
+    fresh ``module load`` line -- this is what keeps every step in the
+    session using the SAME modules rather than each one re-deriving its own.
+    *modules* is only used as a fallback when no *env_script* is available.
+
+    The explicit ``pip_env`` overrides (CC/CXX/HDF5_ROOT/DFTRACER_* etc.)
+    are still exported on top of the module-load'd environment, so any
+    caller-computed values win over whatever the modules alone would set.
+    """
+    lines = ["#!/bin/bash", "set -e"]
+    if env_script is not None and Path(env_script).exists():
+        lines.append(f"source {shlex.quote(str(env_script))}")
+    elif modules:
+        lines.append(f"module load {' '.join(shlex.quote(m) for m in modules)}")
+    else:
+        lines.append("# no modules discovered from app install scripts or systems.yaml")
+    lines.append('echo "--- module list after load ---" 1>&2')
+    lines.append("module list 2>&1 1>&2 || true")
+    for k, v in pip_env.items():
+        lines.append(f"export {k}={shlex.quote(str(v))}")
+    lines.append(f"exec {shlex.quote(py)} -m pip {' '.join(shlex.quote(a) for a in pip_args)}")
+    script_body = "\n".join(lines) + "\n"
+
+    if ws is not None:
+        # Every script the session produces lives under scripts/, not tmp/
+        # or the workspace root -- this is the session's persistent record
+        # of exactly how dftracer was built, reusable for a manual rebuild.
+        scripts_dir = Path(ws) / "scripts"
+        try:
+            scripts_dir.mkdir(parents=True, exist_ok=True)
+            script_path = scripts_dir / "install_dftracer.sh"
+            script_path.write_text(script_body)
+            script_path.chmod(0o755)
+            return _run(["bash", "-l", str(script_path)], timeout=timeout)
+        except Exception:
+            pass
+    return _run(["bash", "-lc", script_body], timeout=timeout)
+
+
 def _install_dftracer_pip_direct(
     dftracer_ref: str = "v2.0.3",
     features: Optional[Dict[str, Any]] = None,
@@ -622,6 +797,69 @@ def _install_dftracer_pip_direct(
     features = features or {}
     py = python_exe or sys.executable
 
+    # Never silently fall back to a bare system/module interpreter here: `py`
+    # MUST be a path inside a real venv (pyvenv.cfg present in its
+    # grandparent dir). session_install_dftracer validates this before
+    # calling in, but this function is also callable directly, so re-validate
+    # at the point the actual pip/cmake subprocess is about to run — this is
+    # exactly the class of bug (dftracer's cmake configure picking up system
+    # Anaconda instead of the session venv) that caused the 2026-07-20
+    # pecan_milan install failure.
+    #
+    # IMPORTANT: do NOT `.resolve()` `py` here — `<venv>/bin/python` is BY
+    # DESIGN a symlink out to the base interpreter, so resolving it walks
+    # straight back to the system Python this check exists to reject. Use
+    # `.absolute()` (normalizes `..`/relative segments without following
+    # symlinks) to find the venv root instead.
+    _venv_root = str(Path(py).absolute().parent.parent)
+    if not (Path(_venv_root) / "pyvenv.cfg").exists():
+        raise RuntimeError(
+            f"_install_dftracer_pip_direct: python_exe={py!r} does not resolve "
+            f"inside a real venv (no pyvenv.cfg at {_venv_root}). Refusing to "
+            f"install dftracer outside a session-local venv -- pass an "
+            f"explicit python_exe pointing into one."
+        )
+
+    # Make the target venv look "activated" to the pip subprocess.  `py` here
+    # is only ever invoked as `<py> -m pip install ...`, so pip itself always
+    # installs into the right site-packages -- but dftracer's own cmake
+    # configure step (invoked by the build backend as a SEPARATE process, not
+    # via `python -c`) runs CMake's `find_package(Python3)`, which searches
+    # PATH for a `python3`/`python` binary and has no idea `py` was passed to
+    # pip. Without VIRTUAL_ENV set and the venv's bin/ prepended to PATH, it
+    # silently finds whatever python the loaded system module put on PATH
+    # first (e.g. Tuolumne's anaconda-based `python/3.13.2` module) and
+    # computes CMAKE_INSTALL_PREFIX from THAT interpreter's site-packages --
+    # which is read-only system Anaconda, not the session venv. Root-caused
+    # 2026-07-20 on a pecan_milan session: `pip install` via the venv's own
+    # python still failed with "file cannot create directory
+    # .../anaconda3-2025.3.1/lib/python3.13/site-packages/dftracer/... Maybe
+    # need administrative privileges" even with `--no-cache-dir --upgrade`
+    # and an explicit venv `py`. Do NOT reach for `--no-build-isolation` to
+    # fix this (see the explicit comment further down in this function) --
+    # that's an unrelated isolation knob and does not fix Python discovery.
+    pip_env: Dict[str, str] = {}
+    pip_env["VIRTUAL_ENV"] = _venv_root
+    pip_env["PATH"] = str(Path(py).absolute().parent) + os.pathsep + os.environ.get("PATH", "")
+
+    # Use the session's ONE canonical env.sh (module load list) so this
+    # install step loads the exact same modules every other step in the
+    # session does -- created once (normally by session_detect) and reused,
+    # never re-derived independently here. `_install_modules` is only kept
+    # as a fallback for the (should-not-happen) case where `ws` is None.
+    _install_env_script: Optional[Path] = None
+    _install_modules: List[str] = []
+    if ws is not None:
+        _install_env_script = _ensure_session_env_script(Path(ws), Path(ws) / "source")
+    else:
+        _install_modules = _discover_app_module_loads(None)
+        if not _install_modules:
+            try:
+                from ..system.system_service import get_current_system_modules
+                _install_modules = get_current_system_modules()
+            except Exception:
+                _install_modules = []
+
     # Always clear any stale dftracer install (site-packages + pip's wheel
     # cache for dftracer) before rebuilding.  A stale compiled .so can carry
     # over an old brahma wrapper shape or headers baked in from a prior HDF5/
@@ -638,8 +876,11 @@ def _install_dftracer_pip_direct(
     except Exception:
         pass
 
-    # Start from the pre-built pip_env if detection produced one
-    pip_env: Dict[str, str] = dict(features.get("dftracer_pip_env") or {})
+    # Merge in the pre-built pip_env if detection produced one (VIRTUAL_ENV/PATH
+    # set above take priority over anything detection computed, since those
+    # are specific to the venv we were explicitly told to install into).
+    for _k, _v in (features.get("dftracer_pip_env") or {}).items():
+        pip_env.setdefault(_k, _v)
 
     # System-specific env (e.g. Tuolumne's CCE lib dirs + /usr/lib64 for libdl)
     # is NOT necessarily present in the MCP server process's own environment,
@@ -929,6 +1170,29 @@ def _install_dftracer_pip_direct(
     # as an env var propagates through all cmake ExternalProject sub-invocations
     # (subprocesses inherit it) so gotcha configures successfully under cmake 4.x.
     pip_env.setdefault("CMAKE_POLICY_VERSION_MINIMUM", "3.5")
+
+    # Pin CMake's FindPython3 to the exact interpreter `py` resolves to.
+    # VIRTUAL_ENV/PATH above make discovery correct in the common case, but
+    # CMake's Python3_FIND_VIRTUALENV heuristic isn't guaranteed on every
+    # cmake version -- passing -DPython3_EXECUTABLE/-DPython3_ROOT_DIR is the
+    # authoritative override so CMAKE_INSTALL_PREFIX can never resolve back to
+    # a system Python's (read-only) site-packages. See the VIRTUAL_ENV/PATH
+    # comment near the top of this function for the failure this prevents.
+    _existing_cmake_args = pip_env.get("DFTRACER_CMAKE_ARGS", "")
+    pip_env["DFTRACER_CMAKE_ARGS"] = (
+        f"-DPython3_EXECUTABLE={py} -DPython3_ROOT_DIR={_venv_root} "
+        + _existing_cmake_args
+    ).strip()
+
+    # Tuolumne (Cray PE / lld): linking any binary/shared-lib that references
+    # dlopen (e.g. dftracer_core's test_cpp, dftracer_service) fails with
+    # "ld.lld: error: undefined reference: dlopen (disallowed by
+    # --no-allow-shlib-undefined)" unless -ldl is explicitly passed at link
+    # time -- LD_LIBRARY_PATH alone (already set above) only helps runtime
+    # resolution, not the link-time symbol check. See resources/systems.yaml
+    # Tuolumne notes; root-caused again 2026-07-20 on a pecan_milan session
+    # building dftracer_service specifically.
+    pip_env.setdefault("LDFLAGS", "-ldl")
 
     # Build parallelism
     pip_env["JOBS"] = str(jobs)
@@ -1351,30 +1615,39 @@ bool MPIDFTracer::stop_trace = false;
                 # out of sync with upstream's actual variable names.
                 dep_cmake.write_text(dc)
 
-            r = _run(
-                [py, "-m", "pip", "install", "-v", "--no-cache-dir",
-                 "--upgrade", str(clone_dir)],
-                env=pip_env,
+            r = _run_pip_via_module_script(
+                py,
+                ["install", "-v", "--no-cache-dir", "--upgrade", str(clone_dir)],
+                pip_env,
+                _install_modules,
+                ws=ws,
                 timeout=1800,
+                env_script=_install_env_script,
             )
             _shutil2.rmtree(str(clone_dir), ignore_errors=True)
         else:
             # Clone failed — fall back to direct git+ install (MPI_Errhandler issue
             # will cause build failure if using OPENMPI 4.1.x, but nothing we can do)
-            r = _run(
-                [py, "-m", "pip", "install", "-v", "--no-cache-dir",
-                 "--upgrade",
+            r = _run_pip_via_module_script(
+                py,
+                ["install", "-v", "--no-cache-dir", "--upgrade",
                  f"git+https://github.com/llnl/dftracer.git@{dftracer_ref}"],
-                env=pip_env,
+                pip_env,
+                _install_modules,
+                ws=ws,
                 timeout=900,
+                env_script=_install_env_script,
             )
     else:
-        r = _run(
-            [py, "-m", "pip", "install", "-v", "--no-cache-dir",
-             "--upgrade",
+        r = _run_pip_via_module_script(
+            py,
+            ["install", "-v", "--no-cache-dir", "--upgrade",
              f"git+https://github.com/llnl/dftracer.git@{dftracer_ref}"],
-            env=pip_env,
+            pip_env,
+            _install_modules,
+            ws=ws,
             timeout=900,
+            env_script=_install_env_script,
         )
     if ws is not None:
         _write_artifact_log(ws, 6, "session_install_dftracer", {

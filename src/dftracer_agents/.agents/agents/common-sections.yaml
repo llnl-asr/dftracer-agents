@@ -55,6 +55,32 @@ sections:
     title: 'DL run length: ASK for a time budget, then FIX the epoch count'
     body: "Never guess a run length, and never let variants run for different amounts of work.\n\n1. **Ask the user for the time budget** (e.g. \"10 minutes of training per run\"). Do not assume.\n2. **Calibrate:** run a short probe, measure seconds/epoch on the BASELINE config.\n   `epochs = floor(budget_seconds / seconds_per_epoch)`.\n3. **Fix that epoch count for every variant** (baseline and all optimizations). Comparisons\n   must hold work constant; a variant that runs fewer epochs is \"winning\" by doing less.\n4. Also fix `problem_scale`, dataset size, and `checkpoint_interval` across variants unless the\n   knob under test IS one of them \u2014 and if it is, say so, because it changes total work.\n5. Take at least one replicate of the baseline and of the best variant, and report deltas against\n   that noise band. At a few seconds of training, checkpoint/collective effects are unmeasurable.\n\nWatch for early-exit knobs (e.g. `target_dice`) that can end a run before the fixed epoch\
       \ count\nand silently break the equal-work assumption.\n\n### \"Do-less\" levers are not speedups\nRaising `checkpoint_interval`, cutting epochs, or shrinking the dataset reduce work. Any wall-clock\ngain must be checked against total bytes / data volume before it is credited as a speedup.\n"
+  shared-source-tree-parallel-dispatch:
+    title: "Shared source tree pre-flight check for parallel optimizer dispatch (MANDATORY when running alongside a sibling component subagent)"
+    body: |
+      When you (an I/O/compute/communication/memory component optimizer subagent) are dispatched
+      in PARALLEL with a sibling component subagent on a SEPARATE allocation, against the SAME
+      session's `annotated/source/` tree, that tree is shared and unversioned — a sibling's
+      concurrent edit to a file your job is actively loading (e.g. across ranks of a multi-rank
+      DDP run over NFS/PFS) can desync ranks mid-run and crash the job (real incident: an NCCL
+      "remote process exited" crash from exactly this, twice, in one session — see
+      `feedback-shared-source-tree-race`).
+
+      Before launching ANY run while a sibling parallel dispatch may be active:
+      1. Identify which files are yours to edit and which belong to the sibling (the
+         orchestrator's dispatch prompt should say so — if it doesn't, ask before assuming).
+      2. Grep the SIBLING's owned files for any env-var gate defaults you know about from a prior
+         report or the relevant skill (e.g. a compute optimizer's `PECAN_TORCH_COMPILE` env-gate
+         defaulting to "1"/on) and PIN that var to its safe/off value explicitly in your own run
+         script — do not rely on the default, since the sibling may have changed the file (or its
+         default) since you last checked.
+      3. If you don't know of an existing gate for the sibling's change, and the sibling's edit is
+         still in flight, treat this as a real risk: either wait, coordinate via the orchestrator,
+         or accept that your run may crash and be ready to diagnose via step 4 rather than
+         assuming your own change caused a failure.
+      4. If your job crashes unexpectedly during a parallel dispatch window, check for an
+         unexpected diff in files you did NOT yourself touch before concluding your own change is
+         at fault — the sibling's concurrent edit is a real, previously-observed cause.
   environment-consistency:
     title: Environment consistency (MANDATORY, applies to every step)
     body: |

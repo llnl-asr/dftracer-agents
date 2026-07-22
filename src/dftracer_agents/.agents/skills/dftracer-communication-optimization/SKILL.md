@@ -100,3 +100,39 @@ dedicated validation step (with its own allocation and replicate budget) rather 
 a half-finished rebuild or a dirty annotated source tree in a tight window — report the
 patch and citation as a high-confidence candidate, explicitly unmeasured, rather than
 fabricating a result.
+
+## A "zero communication events" reading can be a threshold artifact, not a real absence
+
+Confirmed on PECAN/PDBspheres (2026-07-20): the analyzer's Layer Breakdown showed zero events
+for `communication-except-io` (`cpu-gpu-transfer`, wrapped via `dft_event_logging` in
+`pecan/trainer.py`'s DDP main process). Direct grep of the compact `.pfw.gz` files found it
+WAS firing — 3264 events, 25.58s aggregate across 16 ranks x 2 epochs — just at ~15,000:1
+fewer events than the HDF5 open-storm it was statistically buried next to (50.5M `cat=hdf5`
+events in the same trace). Same failure family as `bug-diagnoser-zero-observations-checkpoint`
+and the compute-layer-bucketing gap in `dftracer-compute-optimization`. **Before reporting a
+category as having zero/no cost, grep the raw compact traces for its literal `cat` string and
+sum `dur` directly** — a low-frequency category can be real and present while still rounding
+to invisible next to a million-event dominant one.
+
+## GPU collective (RCCL/NCCL) allreduce time is invisible when dftracer is built with HIP
+tracing OFF
+
+Confirmed same session: PyTorch DDP fuses gradient-allreduce into `loss.backward()` via
+bucket-ready autograd hooks, so with `DFTRACER_ENABLE_HIP_TRACING=OFF` (the default per
+`feedback-dftracer-install-rocm-mpi` unless the app directly calls HIP/ROCm), the allreduce
+cost is silently folded into whatever `dft_event_logging` context wraps `loss.backward()`
+(here, `"compute"`/`"model-backward"`) — it cannot be isolated from actual backward-pass
+compute without HIP-level or rocprof/RCCL-level tracing. If communication needs to be
+precisely quantified for a DDP/multi-GPU workload, this is a real limitation of function-mode
+Python tracing alone — flag it explicitly as an open coverage gap rather than assuming zero
+comm cost or attributing all of `model-backward`'s time to compute.
+
+## PECAN-specific finding (2026-07-20): communication is NOT the bottleneck for this app
+
+For a 16-rank (4N x 4GPU) EGNN/PyG DDP training run, `cpu-gpu-transfer` cost only 25.58s
+aggregate (~1.6s/rank, ~2.6% of the 961s I/O bottleneck, <1% of wall time) — allreduce
+overlap with backward is already the DDP default, `pin_memory=True` was already set, and
+message-coalescing the per-sample `.to(device)` calls has a real but tiny (<1%) ceiling.
+Do not spend optimization budget on communication for small-graph GNN workloads like this
+one where I/O (HDF5 metadata storm) dominates by 2 orders of magnitude — always check the
+diagnosed severity/prevalence ranking before investing in a lower-ranked dimension.

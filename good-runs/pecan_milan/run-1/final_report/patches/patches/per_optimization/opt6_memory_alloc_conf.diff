@@ -1,0 +1,13 @@
+# Ledger row #6 — Memory, L2 — HIP allocator fragmentation env var
+# File: run scripts (env var, no source code change)
+# Verdict: KEPT (zero-cost), but +3.1% measured (noise-level, no real win)
+#
+# Targets HIP caching-allocator fragmentation from PyG's variable per-sample
+# graph shapes -- a different mechanism than the already-confirmed-inert
+# pin_memory/NUMA levers (MI300A's unified CPU+GPU HBM makes those
+# structurally inert; this targets allocator behavior, not staging copies).
+
+--- a/scripts/run_*.sh  (env section)
++++ b/scripts/run_*.sh  (after)
+@@
++export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.8

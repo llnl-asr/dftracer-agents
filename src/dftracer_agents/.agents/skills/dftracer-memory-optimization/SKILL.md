@@ -94,3 +94,16 @@ Memory is optimized THIRD in the canonical I/O -> communication -> memory -> com
 after I/O and communication, since memory-bound stalls are often masked by (or masking) those
 larger-magnitude bottlenecks, but before compute tuning (a compute-bound kernel gains nothing
 from memory tuning; verify with roofline first).
+
+## Unified-memory APUs (MI300A) make several classic memory levers structurally inert
+
+Confirmed on PECAN/PDBspheres (2026-07-20, Tuolumne/MI300A): CPU and GPU share one HBM3 pool
+on this architecture, which removes the host<->device staging-copy pressure that dominates
+discrete-GPU memory tuning. `pin_memory=True` and other staging-copy optimizations are
+already default/inert here — do not propose them as a lever on MI300A-class unified-memory
+systems; cite the architecture reasoning (arXiv 2508.12743) and flag N/A early rather than
+walking the full measurement path. Huge pages / `madvise(MADV_HUGEPAGE)` are also a
+guaranteed no-op on this system's glibc (not page-aligned malloc) — confirmed via KB, not
+re-tested. A workload with no measured HBM-bandwidth pressure (data-loading-bound instead,
+per the diagnosed trace profile) should get a documented "not memory-bound" verdict rather
+than forcing memory-layer changes that have no headroom to improve.

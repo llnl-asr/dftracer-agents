@@ -4,7 +4,7 @@ description: "clang_add_braces (source_parser.py _insert_braces) corrupted a mul
 metadata: 
   node_type: memory
   type: bug
-  originSessionId: e05fb2c3-c7e1-4a49-b298-4f1ccf974542
+  
 ---
 
 **Confirmed root cause (2026-07-16):** `_insert_braces()` in

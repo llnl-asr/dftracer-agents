@@ -471,3 +471,26 @@ point** — not just for one session's plan, and not satisfied by "at least one 
    p95 improved 8%"), never a single-sample delta ("run A: 3.2 GB/s vs run B: 3.6 GB/s" is not
    a valid claim on its own). Report the delta against the noise band established by the
    replicate set, exactly as the general run-length guidance above says.
+
+## Verify scale and completion before crediting ANY wall-time delta
+
+Confirmed on PECAN (2026-07-20): an optimizer subagent launched its opt1 variant at HALF the
+baseline's scale (2 nodes/8 ranks via a leftover `run_opt1_2n.sh` script instead of the
+intended 16-rank `run_opt1.sh`) and the run was ALSO cancelled mid-flight
+(`job.exception cancel` in the flux event log) when the shared allocation died — producing
+truncated `.pfw.gz` traces. The comparator tool dutifully reported a number (31.4s/38proc
+baseline vs 7.0s/16proc opt1) that LOOKED like a measurement but was actually confounded by
+both scale and truncation simultaneously — not creditable as a wall-time result.
+
+**Before comparing any optimization variant against baseline, verify:**
+1. **Rank/process count matches** — check the comparator's own process-count field, or
+   `flux job info <jobid> R` / the run script actually invoked (grep the launch log for which
+   `.sh` ran, don't assume from the filename you *meant* to use).
+2. **No `job.exception cancel`** (or any non-zero exit) in the run's flux event log
+   (`flux job info <jobid> eventlog`).
+3. If either check fails, DO NOT report a wall-time delta — fall back to a scale- and
+   truncation-robust work-normalized metric instead (e.g. opens-per-`__getitem__`,
+   ops-per-sample, bytes-per-record) which stays valid even from a partial/wrong-scale run,
+   and explicitly flag that a clean equal-scale completed re-run is still needed to quantify
+   wall-time impact. Report the mechanism as validated and the wall-time speedup as
+   NOT YET MEASURED — never silently launder a confounded number into a clean-looking delta.

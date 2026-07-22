@@ -4,7 +4,7 @@ description: "Never hand-write a workaround (regex script, compatibility shim) w
 metadata: 
   node_type: memory
   type: feedback
-  originSessionId: e05fb2c3-c7e1-4a49-b298-4f1ccf974542
+  
 ---
 
 When an agent needs an MCP tool that's missing, broken, or was just added/fixed

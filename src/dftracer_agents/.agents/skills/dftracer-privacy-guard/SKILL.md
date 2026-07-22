@@ -83,9 +83,21 @@ Never hand-edit around the tools.
    deterministic regex passes over `src/dftracer_agents/privacy.py`. Eyeballing
    prose misses things; the tools do not. If the tool is wrong, fix the tool —
    that is the self-learning contract (CLAUDE.md rule 4).
-2. **Scan the persisted trees only.** `.agents/skills`, `.agents/agents`,
-   `.agents/workspace` (which includes `memory/`). Never scan or redact a live
-   session workspace — it needs its real paths to run.
+2. **Scan the persisted trees, PLUS every session's `final_report/` directory.**
+   `.agents/skills`, `.agents/agents`, `.agents/workspace` (which includes
+   `memory/`) are the standing git-tracked trees. Never scan or redact the REST
+   of a live session workspace — it needs its real paths to run. But
+   `workspaces/<session>/final_report/` is the one exception: it is a
+   self-contained deliverable the user may copy or push elsewhere (per
+   Pipeline Policy rule 15), so it must be as clean as the git-tracked trees
+   even though it lives inside a gitignored workspace. **Always run
+   `privacy_scan()`/`privacy_redact()` on `final_report/` as part of
+   `session_final_report`, every session, unconditionally** — not just when a
+   push/copy is mentioned. Redact real paths (job ids, hostnames, `$USER`
+   segments) to the same placeholders used elsewhere; `config.ini` is the ONE
+   file allowed to carry the session's real resolved values (per Pipeline
+   Policy rule 15), everything else in `final_report/` must be placeholder-only
+   so the package is portable off this machine.
 3. **Redaction is not history rewriting.** These tools clean the working tree.
    Content already committed remains in git history; if that matters, say so
    explicitly rather than implying the repo is clean.

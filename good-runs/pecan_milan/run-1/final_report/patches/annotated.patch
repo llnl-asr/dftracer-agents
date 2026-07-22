@@ -1,0 +1,898 @@
+Binary files $WORKSPACE_ROOT/baseline/source/milan/__pycache__/dataset.cpython-311.pyc and $WORKSPACE_ROOT/annotated/source/milan/__pycache__/dataset.cpython-311.pyc differ
+Binary files $WORKSPACE_ROOT/baseline/source/milan/__pycache__/trainer.cpython-311.pyc and $WORKSPACE_ROOT/annotated/source/milan/__pycache__/trainer.cpython-311.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WORKSPACE_ROOT/baseline/source/model/model_trainer.py $WORKSPACE_ROOT/annotated/source/model/model_trainer.py
+--- $WORKSPACE_ROOT/baseline/source/model/model_trainer.py	2026-07-20 08:33:36.454169000 -0700
++++ $WORKSPACE_ROOT/annotated/source/model/model_trainer.py	2026-07-22 06:06:04.645329000 -0700
+@@ -153,6 +153,18 @@
+         #    if run_mode > 10:
+         #        self.model_att = torch.nn.DataParallel(self.model_att)
+ 
++        # torch.compile kernel-fusion (COMPUTE L1 optimization): EGNN's hidden_nf=20
++        # makes every nn.Linear GEMM launch-bound rather than FLOP-bound, so fusing
++        # small kernels into fewer launches is expected to help more than mixed
++        # precision here. dynamic=True lets Dynamo accept the varying edge_index
++        # shape produced by egnn.py's distance-cutoff filter without recompiling on
++        # every distinct edge count (still may graph-break; measured separately).
++        # Citation: You et al., "depyf: Open the Opaque Box of PyTorch Compiler for
++        # Machine Learning Researchers", arXiv:2403.13839, 2024.
++        _DFTRACER_TORCH_COMPILE = os.getenv("PECAN_TORCH_COMPILE", "1") == "1"
++        if _DFTRACER_TORCH_COMPILE and nn_type == 3 and torch.cuda.is_available():
++            self.model = torch.compile(self.model, dynamic=True)
++
+         if run_mode < 20:
+             #self.model.to(self.device)
+             if dist.is_initialized():
+Binary files $WORKSPACE_ROOT/baseline/source/model/__pycache__/attention.cpython-311.pyc and $WORKSPACE_ROOT/annotated/source/model/__pycache__/attention.cpython-311.pyc differ
+Binary files $WORKSPACE_ROOT/baseline/source/model/__pycache__/egnn.cpython-311.pyc and $WORKSPACE_ROOT/annotated/source/model/__pycache__/egnn.cpython-311.pyc differ
+Binary files $WORKSPACE_ROOT/baseline/source/model/__pycache__/ggcnn.cpython-311.pyc and $WORKSPACE_ROOT/annotated/source/model/__pycache__/ggcnn.cpython-311.pyc differ
+Binary files $WORKSPACE_ROOT/baseline/source/model/__pycache__/model_trainer.cpython-311.pyc and $WORKSPACE_ROOT/annotated/source/model/__pycache__/model_trainer.cpython-311.pyc differ
+Binary files $WORKSPACE_ROOT/baseline/source/model/__pycache__/pcn.cpython-311.pyc and $WORKSPACE_ROOT/annotated/source/model/__pycache__/pcn.cpython-311.pyc differ
+Binary files $WORKSPACE_ROOT/baseline/source/model/__pycache__/sgcnn.cpython-311.pyc and $WORKSPACE_ROOT/annotated/source/model/__pycache__/sgcnn.cpython-311.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WORKSPACE_ROOT/baseline/source/pecan/dataset.py $WORKSPACE_ROOT/annotated/source/pecan/dataset.py
+--- $WORKSPACE_ROOT/baseline/source/pecan/dataset.py	2026-07-20 08:33:36.464098000 -0700
++++ $WORKSPACE_ROOT/annotated/source/pecan/dataset.py	2026-07-22 06:28:12.640200000 -0700
+@@ -100,7 +100,10 @@
+ 
+                             # crystal structure
+                             if h5_com in h5[pdbid].keys() and self.use_crystal == True:
+-                                self.data_list.append([str(fdir), str(fn), str(pdbid), int(0), float(affinity), float(0)])
++                                crystal_data = h5[pdbid][h5_com]
++                                (c_hbond, c_hpbond, c_habond, c_sbond, c_pbond) = self.__read_bond_attrs__(crystal_data)
++                                self.data_list.append([str(fdir), str(fn), str(pdbid), int(0), float(affinity), float(0), 0.0,
++                                                        c_hbond, c_hpbond, c_habond, c_sbond, c_pbond])
+ 
+                             # docking poses
+                             if h5_dcom in h5[pdbid].keys():
+@@ -111,28 +114,75 @@
+                                 for poseid in poseids_int:
+                                     if int(poseid) > self.max_poses:
+                                         continue
+-                                    rmsd = h5[pdbid][h5_dcom][str(poseid)].attrs[h5_rmsd]
+-                                    score = h5[pdbid][h5_dcom][str(poseid)].attrs[h5_score]
++                                    pose_data = h5[pdbid][h5_dcom][str(poseid)]
++                                    rmsd = pose_data.attrs[h5_rmsd]
++                                    score = pose_data.attrs[h5_score]
+                                     if score < 0:
+                                         score = -score
+                                     if rmsd < -1:
+                                         continue
+                                     if label_type == 2 and rmsd > rmsd_thres[0] and rmsd < rmsd_thres[1]:
+                                         continue
+-                                    self.data_list.append([str(fdir), str(fn), str(pdbid), int(poseid), float(affinity), float(rmsd), float(score)])
+-
+-                fn_prefix = ''.join(self.h5_filepaths[0].split(".")[:-1])
+-                self.__savecsv__(fn_prefix + "_all.csv")
++                                    (p_hbond, p_hpbond, p_habond, p_sbond, p_pbond) = self.__read_bond_attrs__(pose_data)
++                                    self.data_list.append([str(fdir), str(fn), str(pdbid), int(poseid), float(affinity), float(rmsd), float(score),
++                                                            p_hbond, p_hpbond, p_habond, p_sbond, p_pbond])
++
++                # Session-local write target: PFS dataset dirs are read-only in
++                # this session, so the auto-derived index csv is written into the
++                # writable checkpoint dir instead of alongside the source h5 files.
++                fn_basename = os.path.basename(self.h5_filepaths[0]).rsplit(".", 1)[0]
++                out_dir = os.environ.get("PECAN_INDEX_CSV_DIR", os.path.dirname(self.h5_filepaths[0]))
++                try:
++                    self.__savecsv__(os.path.join(out_dir, fn_basename + "_all.csv"))
++                except PermissionError:
++                    import tempfile
++                    fallback_dir = os.environ.get("PECAN_INDEX_CSV_DIR", tempfile.gettempdir())
++                    self.__savecsv__(os.path.join(fallback_dir, fn_basename + "_all.csv"))
++
++    def __read_bond_attrs__(self, h5_group):
++        # Hoisted read of the 5 scalar bond-count attributes so __getitem__
++        # no longer touches h5_data.attrs on every sample/epoch (I/O opt #1).
++        attrs = h5_group.attrs
++        hbond = float(attrs[h5_hydrogen]) if h5_hydrogen in attrs.keys() else 0.0
++        hpbond = float(attrs[h5_hydrophobic]) if h5_hydrophobic in attrs.keys() else 0.0
++        habond = float(attrs[h5_halogen]) if h5_halogen in attrs.keys() else 0.0
++        sbond = float(attrs[h5_salt]) if h5_salt in attrs.keys() else 0.0
++        pbond = float(attrs[h5_pi]) if h5_pi in attrs.keys() else 0.0
++        return (hbond, hpbond, habond, sbond, pbond)
+ 
+     def __savecsv__(self, csv_filepath):
+-        df = pd.DataFrame(self.data_list, columns=["fdir", "fn", "pdbid", "poseid", "affinity", "rmsd", "score"])
++        df = pd.DataFrame(self.data_list, columns=["fdir", "fn", "pdbid", "poseid", "affinity", "rmsd", "score",
++                                                     "hbond", "hpbond", "habond", "sbond", "pbond"])
+         df.to_csv(csv_filepath, index=False)
+ 
+     def __len__(self):
+         return len(self.data_list)
+ 
++    def _get_h5(self, fpath):
++        # Per-worker open-once file-handle cache. Many samples (pdbids/poses)
++        # live in the same shard file, and every DataLoader worker is a separate
++        # process, so caching the open h5py.File handle per worker eliminates the
++        # H5Fopen/H5Oopen-per-__getitem__ churn without changing the access
++        # pattern (each worker still reads exactly the same datasets).
++        cache = getattr(self, "_h5_cache", None)
++        if cache is None:
++            cache = self._h5_cache = {}
++        h5 = cache.get(fpath)
++        if h5 is None:
++            h5 = h5py.File(fpath, "r", driver=self.h5_driver)
++            cache[fpath] = h5
++        return h5
++
++    def __getstate__(self):
++        # Never pickle open HDF5 handles across the spawn boundary; each worker
++        # rebuilds its own cache lazily on first __getitem__.
++        state = self.__dict__.copy()
++        state.pop("_h5_cache", None)
++        state.pop("_decode_cache", None)
++        return state
++
+     def __getitem__(self, ind):
+-        fdir, fn, pdbid, poseid, affinity, rmsd, score = self.data_list[ind]
++        fdir, fn, pdbid, poseid, affinity, rmsd, score, num_hbonds, num_hpbonds, num_habonds, num_sbonds, num_pbonds = self.data_list[ind]
+ 
+         #print("getitem(): ", ind, fdir, fn, pdbid, poseid)
+ 
+@@ -150,21 +200,51 @@
+             rmsd = rmsd_label
+ 
+         fpath = os.path.join(fdir, fn)
+-        with dft_event_logging("communication-io", name="data-load-h5") as load:
+-            with h5py.File(fpath, "r", driver=self.h5_driver) as h5:
+-                if self.mlhdf_ver == 1:
+-                    h5_data = h5[str(pdbid)]["pybel"]["processed"]["crystal"] if poseid == 0 else h5[str(pdbid)]["pybel"]["processed"]["docking"][str(poseid)]
+-                    coord = h5_data["data"][:][:,:3]
+-                    feat = h5_data["data"][:][:,3:]
+-                else:
+-                    h5_data = h5[str(pdbid)][h5_com] if poseid == 0 else h5[str(pdbid)][h5_dcom][str(poseid)]
+-                    coord = h5_data[h5_coord][:]
+-                    feat = h5_data[h5_feat][:]
+-                    num_hbonds = h5_data.attrs[h5_hydrogen]
+-                    num_hpbonds = h5_data.attrs[h5_hydrophobic]
+-                    num_habonds = h5_data.attrs[h5_halogen]
+-                    num_sbonds = h5_data.attrs[h5_salt]
+-                    num_pbonds = h5_data.attrs[h5_pi]
++
++        # Per-worker decoded-sample (coord, feat) cache, keyed by (pdbid, poseid).
++        # I/O opt #2: on epoch 2+, skips the h5py dataset read entirely for a
++        # repeated sample. GUARDED OFF for modality==1 (point cloud), because
++        # that path applies a fresh random affine augmentation to coord on every
++        # __getitem__ call (see below) -- caching the decoded array would freeze
++        # the augmentation across epochs and silently change training semantics.
++        # modality==3 (graph representation, the active config here) applies no
++        # per-sample augmentation to coord/feat, so caching is safe there.
++        # Env-var gate (I/O opt isolation, 2026-07-22): PECAN_DECODE_CACHE=0
++        # disables this cache specifically so proposal #1 (attr-hoist, always-on,
++        # already validated for correctness) can be isolated from proposal #2
++        # (this decoded-sample cache) in a single-variable measurement. Defaults
++        # to "1" (current combined-on behavior) so it is a no-op unless set.
++        decode_cache_enabled = os.environ.get("PECAN_DECODE_CACHE", "1") != "0"
++        use_decode_cache = (self.modality != 1) and decode_cache_enabled
++        decode_cache = None
++        cache_key = (str(pdbid), int(poseid))
++        if use_decode_cache:
++            decode_cache = getattr(self, "_decode_cache", None)
++            if decode_cache is None:
++                decode_cache = self._decode_cache = {}
++            cached = decode_cache.get(cache_key)
++        else:
++            cached = None
++
++        if cached is not None:
++            coord, feat = cached
++        else:
++            with dft_event_logging("communication-io", name="data-load-h5") as load:
++                if True:
++                    h5 = self._get_h5(fpath)
++                    if self.mlhdf_ver == 1:
++                        h5_data = h5[str(pdbid)]["pybel"]["processed"]["crystal"] if poseid == 0 else h5[str(pdbid)]["pybel"]["processed"]["docking"][str(poseid)]
++                        coord = h5_data["data"][:][:,:3]
++                        feat = h5_data["data"][:][:,3:]
++                    else:
++                        h5_data = h5[str(pdbid)][h5_com] if poseid == 0 else h5[str(pdbid)][h5_dcom][str(poseid)]
++                        coord = h5_data[h5_coord][:]
++                        feat = h5_data[h5_feat][:]
++                        # num_hbonds/hpbonds/habonds/sbonds/pbonds are hoisted into
++                        # data_list at __init__ time (I/O opt #1) -- no longer read
++                        # from h5_data.attrs here on every sample/epoch.
++            if use_decode_cache:
++                decode_cache[cache_key] = (coord, feat)
+ 
+         #end = time.perf_counter()
+         #g_time_io += (end - start)
+Binary files $WORKSPACE_ROOT/baseline/source/pecan/__pycache__/dataset.cpython-311.pyc and $WORKSPACE_ROOT/annotated/source/pecan/__pycache__/dataset.cpython-311.pyc differ
+Binary files $WORKSPACE_ROOT/baseline/source/pecan/__pycache__/trainer.cpython-311.pyc and $WORKSPACE_ROOT/annotated/source/pecan/__pycache__/trainer.cpython-311.pyc differ
+Binary files $WORKSPACE_ROOT/baseline/source/pecan/__pycache__/trainer.cpython-313.pyc and $WORKSPACE_ROOT/annotated/source/pecan/__pycache__/trainer.cpython-313.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WORKSPACE_ROOT/baseline/source/pecan/trainer.py $WORKSPACE_ROOT/annotated/source/pecan/trainer.py
+--- $WORKSPACE_ROOT/baseline/source/pecan/trainer.py	2026-07-20 08:33:36.468138000 -0700
++++ $WORKSPACE_ROOT/annotated/source/pecan/trainer.py	2026-07-22 11:34:49.860114000 -0700
+@@ -23,10 +23,78 @@
+ from torch_geometric.data import Batch
+ from torch_geometric.nn import DataParallel as GDP
+ 
++# PECAN_PREFETCH_FACTOR: calibrated DataLoader prefetch depth (default 2 = torch default,
++# no-op unless overridden). Measured 2026-07-22 (baseline5): per-rank compute ~0.148s/batch
++# vs data-load ~0.134s/batch (comparable magnitude) yet exact sweep-line overlap analysis
++# showed 0% temporal overlap between compute and communication-io spans across all 48 ranks
++# -- classic Mohan et al. VLDB2021 "data stall" pattern. Raising prefetch_factor gives the
++# background DataLoader workers more queue depth to stay ahead of compute.
++PECAN_PREFETCH_FACTOR = int(os.environ.get("PECAN_PREFETCH_FACTOR", "2"))
++
++# PECAN_NUM_WORKERS: override for config["train"/"test"]["num_workers"] (default "0" = no
++# override, use the config value unchanged). Paired with the multiprocessing_context="spawn"
++# fix below on DataListLoader (nn_type==3/EGNN path): raising num_workers 2->6 under the
++# DEFAULT fork() context deadlocked hard (>300s, zero progress) because HIP/ROCm's device
++# context is already initialized (ModelTrainer.__init__ builds+places the model on-device
++# BEFORE PecanTrainer.train() ever constructs a DataLoader) -- forking a process with an
++# active HIP context is unsafe. spawn re-imports cleanly in the child instead of forking the
++# parent's (HIP-initialized) address space. Confirmed 2026-07-22 (session pecan_milan).
++PECAN_NUM_WORKERS = int(os.environ.get("PECAN_NUM_WORKERS", "0"))
++
++
++def _resolve_num_workers(cfg_value):
++    """Apply the PECAN_NUM_WORKERS env override on top of the yaml config value."""
++    return PECAN_NUM_WORKERS if PECAN_NUM_WORKERS > 0 else cfg_value
++
++
++# DataLoader workers (multiprocessing_context="spawn") never call dftracer's
++# finalize() -- only main_app.py's main process does, once, at the very end.
++# Each spawned worker gets its own dftracer C-core state (lazily initialized
++# on first dft_event_logging(...) call inside Dataset_PDB.__getitem__), but
++# persistent_workers=True keeps the process alive until interpreter exit, at
++# which point Python multiprocessing tears it down without running any
++# app-level cleanup. Result: the worker's dftracer log is a gzip stream that
++# was opened but never explicitly flushed/closed -- for a worker that
++# accumulates few events before an internal buffer-size auto-flush would
++# trigger (e.g. a val DataLoader worker with a small split), this produces a
++# literal 0-byte .pfw.gz file; for a busier worker (e.g. train) enough
++# periodic auto-flushes may happen by chance to leave partial-but-nonzero
++# data, which is *also* suspect (possibly missing its tail events). Fix:
++# every DataLoader worker registers its own atexit finalize via
++# worker_init_fn. MUST be a plain top-level function (not a closure/nested
++# function) -- multiprocessing_context="spawn" pickles worker_init_fn to
++# hand it to the child process, and a closure returned by a factory function
++# is not picklable (AttributeError: Can't pickle local object
++# '<factory>.<locals>.<inner>' -- hit and fixed 2026-07-22, session
++# pecan_milan). Any existing (e.g. dyad) per-worker init is looked up
++# dynamically via get_worker_info().dataset instead of being closed over.
++def _dftracer_worker_init(worker_id):
++    info = torch.utils.data.get_worker_info()
++    inner = getattr(info.dataset, "worker_init", None) if info is not None else None
++    if inner is not None:
++        inner(worker_id)
++    if os.getenv("DFTRACER_ENABLE") == "1":
++        try:
++            import atexit
++            logger = init_dftracer()
++            atexit.register(finalize_dftracer, logger)
++        except Exception:
++            pass
++
+ # my packages
+ from model.model_trainer import ModelTrainer
+ from pecan.dataset import Dataset_PDB
+ from dftracer_logger import *
++
++# Optional PyTorch profiler integration (gated by env var, off by default).
++# When enabled, logs CPU/CUDA/HIP kernel-level events to the dftracer trace
++# under category "PP" (PyTorch Profiler), combined with the existing
++# dft_event_logging I/O/compute/comm annotations for a unified timeline.
++# https://dftracer.readthedocs.io/projects/python/en/latest/pytorch.html
++_DFTRACER_TORCH_PROFILE = os.getenv("DFTRACER_TORCH_PROFILE") == "1"
++if _DFTRACER_TORCH_PROFILE:
++    from torch.profiler import profile as _torch_profile, schedule as _torch_schedule, Pro<flux-jobid> as _Pro<flux-jobid>
++    from dftracer.python.torch import trace_handler as _dftracer_trace_handler
+ #from dftracer.logger import dftracer, dft_fn as dft_event_logging
+ 
+ 
+@@ -44,6 +112,17 @@
+         start_time = time.perf_counter()
+         losses = []
+         self.model.train()
++
++        _prof = None
++        if _DFTRACER_TORCH_PROFILE and self.rank == 0:
++            _prof = _torch_profile(
++                activities=[_Pro<flux-jobid>.CPU, _Pro<flux-jobid>.CUDA],
++                schedule=_torch_schedule(wait=2, warmup=2, active=6, repeat=1),
++                on_trace_ready=_dftracer_trace_handler,
++                record_shapes=True,
++            )
++            _prof.__enter__()
++
+         for ind, batch in enumerate(dataloader):
+             #batch = [x for x in batch if x is not None]
+             #if len(batch) < 1:
+@@ -80,16 +159,31 @@
+                     input = [x["data"].to(self.device) for x in batch]
+                     temp_pdbid = [x["pdbid"] for x in batch]
+                     temp_poseid = [x["poseid"] for x in batch]
+-                    output_aff = torch.FloatTensor([x["affinity"].to(self.device) for x in batch])
+-                    output_rmsd = torch.FloatTensor([x["rmsd"].to(self.device) for x in batch])
++                    # NOTE: torch.stack (not torch.FloatTensor(...)) keeps these
++                    # tensors device-resident. torch.FloatTensor([t.to(device)
++                    # for t in batch]) silently materializes a NEW CPU tensor
++                    # from a Python list of GPU scalars, discarding the
++                    # .to(self.device) work done inside the list comprehension.
++                    # Fixed 2026-07-22 (loss-block host-device sync rewrite).
++                    # .view(()) flattens a single-element per-sample tensor
++                    # to a 0-dim scalar BEFORE stacking, matching the exact
++                    # shape torch.FloatTensor(...) used to produce (it treats
++                    # each element as a python scalar via __float__).
++                    # torch.stack alone (without the .view(())) preserves the
++                    # per-sample tensor's original shape, e.g. (1,) -> stacked
++                    # (B,1) instead of (B,) -- a real shape bug caught by the
++                    # correctness/validation run 2026-07-22 (BCELoss target-size
++                    # mismatch), not just a style choice.
++                    output_aff = torch.stack([x["affinity"].to(self.device).view(()) for x in batch])
++                    output_rmsd = torch.stack([x["rmsd"].to(self.device).view(()) for x in batch])
+                     if label_type == 3:
+-                        output_score = torch.FloatTensor([x["score"].to(self.device) for x in batch])
++                        output_score = torch.stack([x["score"].to(self.device).view(()) for x in batch])
+                     if out_dim > 1:
+-                        output_hbond = torch.FloatTensor([x["hbond"].to(self.device) for x in batch])
+-                        output_hpbond = torch.FloatTensor([x["hpbond"].to(self.device) for x in batch])
+-                        output_habond = torch.FloatTensor([x["habond"].to(self.device) for x in batch])
+-                        output_sbond = torch.FloatTensor([x["sbond"].to(self.device) for x in batch])
+-                        output_pbond = torch.FloatTensor([x["pbond"].to(self.device) for x in batch])
++                        output_hbond = torch.stack([x["hbond"].to(self.device).view(()) for x in batch])
++                        output_hpbond = torch.stack([x["hpbond"].to(self.device).view(()) for x in batch])
++                        output_habond = torch.stack([x["habond"].to(self.device).view(()) for x in batch])
++                        output_sbond = torch.stack([x["sbond"].to(self.device).view(()) for x in batch])
++                        output_pbond = torch.stack([x["pbond"].to(self.device).view(()) for x in batch])
+ 
+                 if not torch.cuda.is_available() or dist.is_initialized():
+                     input = Batch.from_data_list(input)
+@@ -103,36 +197,45 @@
+                 pred, _, _ = self.model(input)
+                 #logging.error("after model")
+             
++            # Loss-block host-device sync rewrite (2026-07-22): every operand
++            # below is now already GPU-resident (pred from self.model(input),
++            # output_* via torch.stack(...to(self.device)) above), so the
++            # .cpu().float() calls that used to force a blocking device sync
++            # PER LOSS TERM are removed. nn.MSELoss/nn.BCELoss run fine on
++            # GPU tensors directly; .float() is kept only where a dtype cast
++            # (not a device transfer) is actually needed.
+             if label_type == 1:
+-                loss_aff = self.loss_mse(pred[:,0].cpu().float(), output_aff.cpu().float())
++                loss_aff = self.loss_mse(pred[:,0].float(), output_aff.float())
+                 loss = loss_aff
+             elif label_type == 2:
+                 if modality == 1:
+-                    loss_rmsd = self.loss_bce(self.sigmoid(pred[:,0:1].cpu().float()), output_rmsd.cpu().float())
++                    loss_rmsd = self.loss_bce(self.sigmoid(pred[:,0:1].float()), output_rmsd.float())
+                 else:
+-                    loss_rmsd = self.loss_bce(self.sigmoid(pred[:,0].cpu().float()), output_rmsd.cpu().float())
++                    loss_rmsd = self.loss_bce(self.sigmoid(pred[:,0].float()), output_rmsd.float())
+                 loss = loss_rmsd
+             elif label_type == 3:
+                 #print("label: ", output_score.cpu().float())
+-                loss_score = self.loss_mse(pred[:,0].cpu().float(), output_score.cpu().float())
++                loss_score = self.loss_mse(pred[:,0].float(), output_score.float())
+                 loss = loss_score
+ 
+             # for hs
+             #loss = self.loss_bce(self.sigmoid(pred[:,0].cpu().float()), output.cpu().float())
+ 
+             if out_dim > 1:
+-                loss_hbond = self.loss_mse(pred[:,1].cpu().float(), output_hbond.cpu().float())
+-                loss_hpbond = self.loss_mse(pred[:,2].cpu().float(), output_hpbond.cpu().float())
+-                loss_habond = self.loss_mse(pred[:,3].cpu().float(), output_habond.cpu().float())
+-                loss_sbond = self.loss_mse(pred[:,4].cpu().float(), output_sbond.cpu().float())
+-                loss_pbond = self.loss_mse(pred[:,5].cpu().float(), output_pbond.cpu().float())
++                loss_hbond = self.loss_mse(pred[:,1].float(), output_hbond.float())
++                loss_hpbond = self.loss_mse(pred[:,2].float(), output_hpbond.float())
++                loss_habond = self.loss_mse(pred[:,3].float(), output_habond.float())
++                loss_sbond = self.loss_mse(pred[:,4].float(), output_sbond.float())
++                loss_pbond = self.loss_mse(pred[:,5].float(), output_pbond.float())
+                 loss += (loss_hbond + loss_hpbond + loss_habond + loss_sbond + loss_pbond) * loss_weight
+ 
+-            # for debugging
++            # for debugging (cold/rare path -- only triggers on anomalous
++            # loss; still updated for consistency, single .item() sync each
++            # instead of .cpu().data.item()).
+             if loss > 1000:
+                 print("large loss [%d] !!! [%d/%d]-[%d/%d] loss: %f, loss_hbond: %f, loss_hpbond: %f, loss_sbond: %f, loss_pbond: %f" % \
+-                      (self.rank, epoch+1, self.configs["train"]["epochs"], ind, len(dataloader), loss.cpu().data.item(), 
+-                       loss_hbond.cpu().data.item(), loss_hpbond.cpu().data.item(), loss_sbond.cpu().data.item(), loss_pbond.cpu().data.item()))
++                      (self.rank, epoch+1, self.configs["train"]["epochs"], ind, len(dataloader), loss.item(), 
++                       loss_hbond.item(), loss_hpbond.item(), loss_sbond.item(), loss_pbond.item()))
+                 print("labels: ", output_aff, output_hbond, output_hpbond, output_habond, output_sbond, output_pbond)
+                 print("pdbids: ", temp_pdbid)
+                 print("poseids: ", temp_poseid)
+@@ -145,7 +248,9 @@
+                 self.optimizer.step()
+                 #logging.error("after optimizer")
+ 
+-            loss_val = loss.cpu().data.item()
++            # Single .item() sync point kept for the Python-side print/log
++            # of loss_val -- everything else in the loop stays device-resident.
++            loss_val = loss.item()
+             losses.append(loss_val)
+             if self.rank == 0:
+                 print("[%d/%d]-[%d/%d] loss: %f, lr: %f" \
+@@ -156,8 +261,14 @@
+             if (step+1) % int(self.configs["checkpoint"]["save_step"]) == 0:
+                 self.save_model(epoch, step, loss_val, 10000, "latest")
+ 
++            if _prof is not None:
++                _prof.step()
++
+             step += 1
+ 
++        if _prof is not None:
++            _prof.__exit__(None, None, None)
++
+         # save checkpoint
+         loss_avg = sum(losses) / len(losses)
+         end_time = time.perf_counter()
+@@ -202,14 +313,17 @@
+                     pdbid = [x["pdbid"] for x in batch]
+                     poseid = [x["poseid"] for x in batch]
+                     input = [x["data"].to(self.device) for x in batch]
+-                    output_affinity = torch.FloatTensor([x["affinity"].to(self.device) for x in batch])
+-                    output_rmsd = torch.FloatTensor([x["rmsd"].to(self.device) for x in batch])
++                    # torch.stack keeps these device-resident (see
++                    # train_one_epoch fix, 2026-07-22); eval isn't in the hot
++                    # loop but kept consistent for correctness/readability.
++                    output_affinity = torch.stack([x["affinity"].to(self.device).view(()) for x in batch])
++                    output_rmsd = torch.stack([x["rmsd"].to(self.device).view(()) for x in batch])
+                     if out_dim > 1:
+-                        output_hbond = torch.FloatTensor([x["hbond"].to(self.device) for x in batch])
+-                        output_hpbond = torch.FloatTensor([x["hpbond"].to(self.device) for x in batch])
+-                        output_habond = torch.FloatTensor([x["habond"].to(self.device) for x in batch])
+-                        output_sbond = torch.FloatTensor([x["sbond"].to(self.device) for x in batch])
+-                        output_pbond = torch.FloatTensor([x["pbond"].to(self.device) for x in batch])
++                        output_hbond = torch.stack([x["hbond"].to(self.device).view(()) for x in batch])
++                        output_hpbond = torch.stack([x["hpbond"].to(self.device).view(()) for x in batch])
++                        output_habond = torch.stack([x["habond"].to(self.device).view(()) for x in batch])
++                        output_sbond = torch.stack([x["sbond"].to(self.device).view(()) for x in batch])
++                        output_pbond = torch.stack([x["pbond"].to(self.device).view(()) for x in batch])
+ 
+                 if not torch.cuda.is_available() or dist.is_initialized():
+                     input = Batch.from_data_list(input)
+@@ -292,7 +406,7 @@
+         affine_xyz = self.configs["dataset"]["affine_xyz"]
+         h5_driver = self.configs["dataset"]["h5_driver"]
+         batch_size = self.configs["train"]["batch_size"]
+-        num_workers = self.configs["train"]["num_workers"]
++        num_workers = _resolve_num_workers(self.configs["train"]["num_workers"])
+         num_epochs = self.configs["train"]["epochs"]
+ 
+         # load dataset
+@@ -314,17 +428,21 @@
+             train_dsampler = DistributedSampler(train_dataset, 
+                 num_replicas=self.world, rank=self.rank, shuffle=True)
+             train_shuffle = False
+-        worker_init_fn = train_dataset.worker_init if use_dyad else None
++        worker_init_fn = _dftracer_worker_init
+         if modality == 1:
+             train_dataloader = DataLoader(dataset=train_dataset, shuffle=train_shuffle, 
+                                           batch_size=batch_size, num_workers=num_workers, 
+                                           sampler=train_dsampler, pin_memory=True, drop_last=True,
+-                                          worker_init_fn=worker_init_fn, multiprocessing_context="spawn")
++                                          worker_init_fn=worker_init_fn, multiprocessing_context="spawn",
++                                          prefetch_factor=(PECAN_PREFETCH_FACTOR if num_workers > 0 else None))
+         else:
+             train_dataloader = DataListLoader(dataset=train_dataset, shuffle=train_shuffle, 
+                                               batch_size=batch_size, num_workers=num_workers, 
+                                               sampler=train_dsampler, pin_memory=True, drop_last=True, 
+-                                              worker_init_fn=worker_init_fn)#, multiprocessing_context="spawn")
++                                              worker_init_fn=worker_init_fn,
++                                              persistent_workers=(num_workers > 0),
++                                              multiprocessing_context=("spawn" if num_workers > 0 else None),
++                                              prefetch_factor=(PECAN_PREFETCH_FACTOR if num_workers > 0 else None))
+ 
+         print("len(train_dataloader):", len(train_dataloader))
+             
+@@ -344,17 +462,21 @@
+             if dist.is_initialized():
+                 val_dsampler = DistributedSampler(val_dataset, 
+                     num_replicas=self.world, rank=self.rank, shuffle=False)
+-            worker_init_fn = val_dataset.worker_init if use_dyad else None                    
++            worker_init_fn = _dftracer_worker_init
+             if modality == 1:
+                 val_dataloader = DataLoader(dataset=val_dataset, shuffle=False, 
+                                             batch_size=batch_size, num_workers=num_workers, 
+                                             sampler=val_dsampler, pin_memory=True, drop_last=True, 
+-                                            worker_init_fn=worker_init_fn, multiprocessing_context="spawn")
++                                            worker_init_fn=worker_init_fn, multiprocessing_context="spawn",
++                                            prefetch_factor=(PECAN_PREFETCH_FACTOR if num_workers > 0 else None))
+             else:
+                 val_dataloader = DataListLoader(dataset=val_dataset, shuffle=False, 
+                                                 batch_size=batch_size, num_workers=num_workers, 
+                                                 sampler=val_dsampler, pin_memory=True, drop_last=True, 
+-                                                worker_init_fn=worker_init_fn)#, multiprocessing_context="spawn")
++                                                worker_init_fn=worker_init_fn,
++                                                persistent_workers=(num_workers > 0),
++                                                multiprocessing_context=("spawn" if num_workers > 0 else None),
++                                                prefetch_factor=(PECAN_PREFETCH_FACTOR if num_workers > 0 else None))
+ 
+         # load model
+         start_epoch, step, _, _ = self.load_model()
+@@ -385,7 +507,7 @@
+         affine_xyz = self.configs["dataset"]["affine_xyz"]
+         h5_driver = self.configs["dataset"]["h5_driver"]
+         batch_size = self.configs["test"]["batch_size"]
+-        num_workers = self.configs["test"]["num_workers"]
++        num_workers = _resolve_num_workers(self.configs["test"]["num_workers"])
+         pred_suffix = self.configs["test"]["pred_suffix"]
+         ckpt_dir = self.configs["checkpoint"]["dir"]
+         ckpt_prefix = self.configs["checkpoint"]["prefix"]
+Binary files $WORKSPACE_ROOT/baseline/source/__pycache__/dftracer_logger.cpython-311.pyc and $WORKSPACE_ROOT/annotated/source/__pycache__/dftracer_logger.cpython-311.pyc differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-380270.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-380270.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-396109.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-396109.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-132671.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-132671.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-132672.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-132672.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-132673.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-132673.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-132674.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-132674.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-134144.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-134144.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-134145.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-134145.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-134146.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-134146.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-134147.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-134147.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-888628.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-888628.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-888629.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-888629.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-904377.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-904377.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-904379.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-904379.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-149341.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-149341.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-165037.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-165037.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915725.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915725.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915738.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915738.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915740.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915740.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915747.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915747.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915755.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915755.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915756.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915756.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915757.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915757.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915802.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915802.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915805.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915805.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915808.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915808.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915811.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915811.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915821.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915821.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915824.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915824.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915825.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915825.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915830.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915830.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-915833.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-915833.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523378.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523378.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523379.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523379.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523382.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523382.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523390.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523390.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523399.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523399.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523400.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523400.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523421.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523421.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523439.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523439.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523463.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523463.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523465.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523465.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523468.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523468.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523470.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523470.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523472.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523472.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523473.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523473.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523481.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523481.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-3523484.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-3523484.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2670138.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2670138.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920317.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920317.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920322.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920322.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920332.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920332.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920334.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920334.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920342.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920342.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920343.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920343.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920344.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920344.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920346.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920346.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920403.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920403.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920406.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920406.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920407.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920407.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920410.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920410.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920413.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920413.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920418.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920418.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920421.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920421.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1920424.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1920424.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945464.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945464.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945468.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945468.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945471.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945471.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945472.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945472.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945473.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945473.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945482.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945482.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945507.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945507.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945518.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945518.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945549.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945549.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945550.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945550.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945555.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945555.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945556.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945556.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945557.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945557.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945564.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945564.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945567.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945567.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_data_worker-1945570.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_data_worker-1945570.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-1251624.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-1251624.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-121977.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-121977.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-199352.core and $WORKSPACE_ROOT/annotated/source/<node>-python-199352.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-199353.core and $WORKSPACE_ROOT/annotated/source/<node>-python-199353.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-199354.core and $WORKSPACE_ROOT/annotated/source/<node>-python-199354.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-199355.core and $WORKSPACE_ROOT/annotated/source/<node>-python-199355.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-201161.core and $WORKSPACE_ROOT/annotated/source/<node>-python-201161.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-201162.core and $WORKSPACE_ROOT/annotated/source/<node>-python-201162.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-201163.core and $WORKSPACE_ROOT/annotated/source/<node>-python-201163.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-201164.core and $WORKSPACE_ROOT/annotated/source/<node>-python-201164.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-888110.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-888110.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-894359.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-894359.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-899421.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-899421.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-904483.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-904483.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-909535.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-909535.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-923247.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-923247.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-949244.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-949244.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-955240.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-955240.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-961329.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-961329.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-967429.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-967429.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-973495.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-973495.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-979559.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-979559.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-985550.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-985550.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-992112.core and $WORKSPACE_ROOT/annotated/source/<node>-python-992112.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-992113.core and $WORKSPACE_ROOT/annotated/source/<node>-python-992113.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-992114.core and $WORKSPACE_ROOT/annotated/source/<node>-python-992114.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-992115.core and $WORKSPACE_ROOT/annotated/source/<node>-python-992115.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-993913.core and $WORKSPACE_ROOT/annotated/source/<node>-python-993913.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-993914.core and $WORKSPACE_ROOT/annotated/source/<node>-python-993914.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-993915.core and $WORKSPACE_ROOT/annotated/source/<node>-python-993915.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-993916.core and $WORKSPACE_ROOT/annotated/source/<node>-python-993916.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2045903.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2045903.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2045905.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2045905.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2056077.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2056077.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2056083.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2056083.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2067968.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2067968.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2073320.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2073320.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2073322.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2073322.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2098004.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2098004.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2098005.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2098005.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2103175.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2103175.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2103176.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2103176.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2137788.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2137788.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2137789.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2137789.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2137790.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2137790.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2137791.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2137791.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2139593.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2139593.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2139594.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2139594.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2139595.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2139595.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2139596.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2139596.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2311886.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2311886.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2322371.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2322371.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2335232.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2335232.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2341202.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2341202.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2367306.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2367306.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-pt_nccl_watchdg-2373372.core and $WORKSPACE_ROOT/annotated/source/<node>-pt_nccl_watchdg-2373372.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2411823.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2411823.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2411824.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2411824.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2411825.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2411825.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2411826.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2411826.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2413625.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2413625.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2413626.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2413626.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2413627.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2413627.core differ
+Binary files $WORKSPACE_ROOT/baseline/source/<node>-python-2413628.core and $WORKSPACE_ROOT/annotated/source/<node>-python-2413628.core differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WORKSPACE_ROOT/baseline/source/yaml/pecan/config_pecan_pdbspheres_v2_session.yaml $WORKSPACE_ROOT/annotated/source/yaml/pecan/config_pecan_pdbspheres_v2_session.yaml
+--- $WORKSPACE_ROOT/baseline/source/yaml/pecan/config_pecan_pdbspheres_v2_session.yaml	1969-12-31 16:00:00.000000000 -0800
++++ $WORKSPACE_ROOT/annotated/source/yaml/pecan/config_pecan_pdbspheres_v2_session.yaml	2026-07-20 12:13:28.797799000 -0700
+@@ -0,0 +1,232 @@
++dataset:
++  mlhdf_ver: 2
++  train_csvs: null
++  train_fns:
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000000.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000001.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000002.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000003.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000004.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000005.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000006.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000007.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000008.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000009.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000010.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000011.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000012.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000013.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000014.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000015.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000016.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000017.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000018.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000019.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000020.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000021.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000022.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000023.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000024.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000025.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000026.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000027.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000028.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000029.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000030.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000031.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000032.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000033.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000034.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000035.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000036.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000037.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000038.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000039.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000040.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000041.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000042.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000043.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000044.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000045.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000046.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000047.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000048.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000049.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000050.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000051.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000052.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000053.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000054.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000055.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000056.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000057.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000058.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000059.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000060.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000061.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000062.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000063.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000064.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000065.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000066.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000067.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000068.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000069.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000070.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000071.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000072.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000073.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000074.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000075.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000076.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000077.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000078.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000079.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000080.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000081.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000082.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000083.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000084.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000085.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000086.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000087.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000088.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000089.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000090.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000091.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000092.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000093.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000094.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000095.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000096.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000097.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000098.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000099.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000100.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000101.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000102.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000103.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000104.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000105.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000106.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000107.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000108.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000109.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000110.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000111.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000112.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000113.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000114.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000115.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000116.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000117.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000118.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000119.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000120.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000121.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000122.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000123.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000124.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000125.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000126.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000127.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000128.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000129.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000130.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000131.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000132.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000133.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000134.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000135.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000136.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000137.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000138.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000139.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000140.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000141.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000142.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000143.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000144.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000145.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000146.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000147.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000148.hdf5
++  - $WORKSPACE_ROOT/dataset/PDBspheres_v2_split8/pdbspheres_all_0000149.hdf5
++  val_csvs: null
++  val_fns: null
++  test_csvs:
++  - $WORKSPACE_ROOT/dataset/PDBBind/pdbbind_casf2016_new.csv
++  test_fns: null
++  label_type: 2
++  rmsd_thres:
++  - 2.5
++  - 6
++  max_atoms: 2000
++  max_poses: 10
++  use_crystal: true
++  use_random: false
++  affine_xyz: true
++  h5_driver: null
++checkpoint:
++  dir: $WORKSPACE_ROOT/baseline/checkpoint
++  prefix: pecan_pdbspheres_session
++  suffix: latest
++  save_step: 1000
++  freeze: 0
++train:
++  batch_size: 8
++  num_workers: 2
++  epochs: 1
++  lr: 0.001
++  lr_milestones:
++  - 2
++  - 4
++  - 6
++  - 10
++  - 15
++  - 20
++  lr_gamma: 0.9
++test:
++  batch_size: 16
++  num_workers: 0
++  pred_suffix: null
++model:
++  nn_type: 3
++  out_dim: 6
++  loss_weight: 0.01
++  attention_mode: 0
++  PCN:
++    num_filters: 2048
++    attention: 1
++  SGCNN:
++    covalent_gather_width: 16
++    non_covalent_gather_width: 12
++    covalent_k: 2
++    non_covalent_k: 2
++    covalent_neighbor_threshold: 1.5
++    non_covalent_neighbor_threshold: 4.5
++  EGNN:
++    in_edge_nf: 1
++    distance_cutoff: 5
++    n_layers: 6
++    residual: true
++    attention: true
++    normalize: false
++    tanh: false
++  SE3:
++    edge_dim: 16
++    fiber_mid:
++      0: 16
++      1: 16
++      2: 16
++    out_multiplicity: 16
++    num_convs: 3
++    heads: 1
++    dropout: 0.0
++    reduce_type: edge
++    reduce_from: ligand
++    pool_method: add
++    x_ij: add
++    pair_bias: true
++    uniform_attention: true
++    distance_cutoff: 5

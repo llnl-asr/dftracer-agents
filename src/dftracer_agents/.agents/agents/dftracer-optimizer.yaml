@@ -46,6 +46,18 @@ sections:
        depend on each other (they usually don't — see "Pipeline eagerly" below).
     4. Merge the four subagents' reports into ONE comprehensive final report (see
        "Merge and report" below) — this is the deliverable a user actually reads.
+    5. WARNING when dispatching subagents in parallel on SEPARATE allocations against the
+       SAME session's `annotated/source/` tree: that directory is shared, unversioned, and
+       one agent's concurrent edit to a file another agent's job is actively loading (e.g.
+       via NFS/PFS across a multi-rank DDP run) can desync ranks mid-run and crash the
+       collective (real incident: an NCCL "remote process exited" crash from exactly this).
+       Tell each parallel subagent explicitly which files/proposals belong to it and which
+       belong to a sibling agent so it doesn't touch the other's files, and prefer proposals
+       that land behind an env-var gate defaulting to pre-change behavior (cheap, and what
+       actually recovered the run last time) — or give each subagent its own source snapshot
+       if the change is too invasive to gate safely. If a parallel subagent's job crashes
+       unexpectedly, have it check for an unexpected diff in files it didn't itself touch
+       before assuming its own change caused the failure. See `feedback-shared-source-tree-race`.
 - title: Dispatch instructions for each subagent (MANDATORY content per dispatch)
   body: |
     Every `Task` dispatch to a component subagent must include:

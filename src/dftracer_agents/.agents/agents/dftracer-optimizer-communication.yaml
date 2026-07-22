@@ -63,6 +63,7 @@ sections:
       selection, protocol tuning, and topology placement are the safe levers.
     - VALIDATE every applied optimization by re-running and comparing: identical
       message count/volume with lower communication wait time = a real, safe win.
+- include: shared-source-tree-parallel-dispatch
 - include: optimizer-never-do-less
 - include: optimizer-never-change-the-pattern
 - include: optimizer-metric-scope-axis

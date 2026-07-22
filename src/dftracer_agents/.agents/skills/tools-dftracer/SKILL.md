@@ -78,7 +78,7 @@ raises `ModuleNotFoundError: No module named 'dftracer.python'`, and
 `pip show pydftracer` reports "Package(s) not found".
 
 **Root cause (observed on the framework's own shared venv,
-`/usr/workspace/haridev/dftracer-agents/.venv`, `dftracer==2.0.3.dev54`):** a
+`$PROJECT_ROOT/.venv`, `dftracer==2.0.3.dev54`):** a
 `.dev` version number strongly suggests an editable/local (`pip install -e`)
 or otherwise non-standard install that didn't fully resolve its own dependency
 graph — a plain metadata `Requires:` entry does not guarantee pip actually

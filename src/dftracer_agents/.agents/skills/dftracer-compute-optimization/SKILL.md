@@ -110,3 +110,134 @@ own documented numerical tolerance) before/after.
 Compute is optimized LAST in the canonical I/O -> communication -> memory -> compute order
 (see `_category_sort_key` in `strategies.py`) — a compute-bound kernel tuned before the I/O or
 communication bottleneck is fixed is optimizing the wrong stage of the pipeline first.
+
+## Analyzer preset "Layer Breakdown" can hide a fully-traced compute cost
+
+Confirmed on PECAN/PDBspheres (2026-07-20): `pecan/trainer.py` correctly wraps
+`model-forward`/`model-backward` in `dft_event_logging("compute", ...)`, and the events ARE
+in the raw trace (6528 `cat=compute` events, 776s aggregate across 16 ranks x 2 epochs — the
+single LARGEST per-rank category, bigger than the entire preprocess bucket). But the
+`posix`/`dlio`/`generic` dfanalyzer presets have **no `compute` layer bucket at all**, so the
+Layer Breakdown table shows zero for it regardless — this looks exactly like "compute isn't
+traced" but is actually a preset-bucketing gap, not a coverage gap. **Before concluding GPU
+compute is untraced or free, `zcat`/grep the compact `.pfw.gz` files directly for
+`"cat":"compute"` event counts and sum `dur`** rather than trusting the Layer Breakdown alone.
+
+## PECAN-specific findings (2026-07-20 session, MI300A/gfx942, EGNN model)
+
+GPU fwd+bwd (776s aggregate, mean 138ms/backward + 99ms/forward) was the single largest
+per-rank cost once measured directly (bigger than the 412s preprocess bucket, which runs
+overlapped in DataLoader workers). `radius_graph`/`knn_graph` swaps are NOT APPLICABLE — they
+change the actual edge set, which changes model computation/correctness (forbidden "pattern
+swap"). NUMA/core-affinity is a confirmed no-op on this exact MI300A system for a third
+workload class (see `system-tuolumne`) — do not re-propose it without a fundamentally different
+mechanism.
+
+**REVISED 2026-07-21 (baseline5 pass, after reading the actual model code, not just
+profiling):** the initial 2026-07-20 ranking above put AMP bf16 first (~12%) — this was an
+UNGROUNDED ESTIMATE made before reading `model/egnn.py`. The real code shows `hidden_nf=20`,
+so every `nn.Linear` GEMM in the 4-layer EGNN is ≤20-wide — LAUNCH/MEMORY-BOUND, not
+FLOP-bound. bf16 cuts FLOPs, not kernel-launch count, so its real ceiling here is ~2%, not
+12%. **General lesson: always read the model's actual hidden-dimension/layer-width before
+ranking AMP vs kernel-fusion for a GNN or small-MLP model** — for tiny-hidden models,
+`torch.compile`/kernel fusion (fewer launches) beats mixed precision (fewer FLOPs per launch).
+Revised ranking for this app: `torch.compile(dynamic=True)` fusion (~6-8%, risk: PyG's
+data-dependent edge count from the distance-cutoff filter can trigger recompiles/graph-breaks
+— measure graph-break count before crediting) > removing the per-step host-device sync
+serializer in the loss block (~3-4%, but see below — more invasive than "drop `.cpu()`") >
+AMP bf16 (revised ~2%, demoted) > precompute/cache invariant graph adjacency (~1-3%) > MIOpen
+autotune — CONFIRMED NOT APPLICABLE, EGNN has no convolution kernels, only
+Linear+scatter_add+BatchNorm1d+activation, nothing for a conv auto-tuner to tune >
+`pairwise_distances` → `torch.cdist` swap — CONFIRMED NOT APPLICABLE (not just low-ceiling):
+the app computes per-EDGE distances (`PairwiseDistance`, O(E), already gathered by
+`edge_index`), while `cdist` computes a full O(N²) pairwise matrix — swapping would change the
+actual computed values, a forbidden correctness-breaking pattern-swap, not a valid kernel
+substitution.
+
+**General lesson on the host-device sync serializer:** scan training loops for per-step
+`.cpu()`/`.item()` calls on GPU tensors — a blocking device sync per step is a common,
+easily-missed serializer. BUT check how pervasive it actually is before calling it "low risk":
+in PECAN's `trainer.py` the pattern is NOT a single isolated `.cpu()` call — the loss block has
+up to 7+ sync points (main loss + up to 5 bond-losses + a debug branch + the logged
+`loss_val`), and some "device" tensors were never actually on-device to begin with:
+`torch.FloatTensor([x.to(self.device) for x in batch])` materializes a NEW CPU tensor from a
+list of GPU scalars, silently discarding the `.to(self.device)` work inside the list
+comprehension. A fix here is a full loss-block rewrite (keep everything device-resident, one
+`.item()` only for the logged value), not a 2-line diff — treat "remove blocking .cpu() sync"
+proposals as needing a full call-site audit, not a one-off point fix, before estimating risk as
+"low".
+
+**MEASURED 2026-07-22 (baseline5 scale, 4N×4GPU DDP, live validation run):**
+`torch.compile(model, dynamic=True)` was applied to the EGNN model (gated by env var
+`PECAN_TORCH_COMPILE=1`, wrapped before `DDP(...)` in `model/model_trainer.py`) and run for a
+single replicate. Epoch-1 (compile+warmup): 82.05s → 143.97s (**+75.5%, one-time cost**).
+Epoch-2 (steady state): 31.54s → 5.77s (**-81.7%**). Graph-break count: 6 total events / 5
+distinct compile frames, ALL confined to warmup (from PyG's `scatter` computing
+`dim_size=int(index.max())` — a `Tensor.item()` graph break — and `aten.nonzero.default`, both
+downstream of the distance-cutoff filter, not the filter itself) — **zero recompiles** across
+the remaining ~200 steps, so `dynamic=True` successfully avoided the anticipated
+per-step-recompile pathology. Loss trajectories look qualitatively consistent (opt1 epoch-1/2
+avg loss 0.89/0.58 vs baseline 1.01/0.59) but were not validated via a controlled same-batch/
+same-seed comparison.
+
+**CAVEAT — treat the -81.7% number as directional, not final:** (a) single replicate only, the
+usual ≥5-replicate rule was not met (pdebug time-boxed); (b) the *baseline itself* improves
+82.05s→31.54s (-61.5%) from epoch 1→2 purely from OS/page-cache warmup on the HDF5 shards, so
+part of the apparent compile-only win is confounded with that same warmup effect — the
+compile-attributable fraction is smaller than the raw -81.7% suggests. Before crediting this
+as a final PECAN compute optimization, run ≥5 replicates and isolate the warmup confound (e.g.
+compare epoch-2-vs-epoch-2, or use a longer run where both curves have converged).
+
+**FOLLOW-UP 2026-07-22 (3-epoch de-confound validation, same allocation, opt2_compile3ep):**
+Extended the compiled run to 3 epochs to check whether the epoch-2 steady-state number was
+itself still cooling from the epoch-1 warmup transient. Result: epoch-2 = 6.03s, epoch-3 =
+6.36s — essentially flat (+5.5%, within single-run noise). Graph-break count stayed at 5
+distinct compile frames with zero recompiles through epoch 3, confirming `dynamic=True`
+remains stable well past the warmup window. This is a real, positive signal that the
+compiled side's ~6s number is genuine steady state, not still-warming — but it is NOT a full
+de-confound of the -81.7% headline: no 3-epoch BASELINE (`PECAN_TORCH_COMPILE=0`) run was
+completed in this time-boxed pdebug window, so there is still no direct epoch-3-vs-epoch-3
+comparison, and both sides remain single-replicate. **Before citing -81.7% (or any specific
+percentage) as a final number, run (a) a 3-epoch baseline for a true epoch-3-vs-epoch-3
+comparison, and (b) ≥5 replicates each side.**
+
+**RESOLVED 2026-07-22 (3-epoch baseline de-confound, `opt3_baseline3ep` vs `opt2_compile3ep`,
+same 4N×16-rank DDP scale) — REVERSES the -81.7% headline.** The missing matched 3-epoch
+UNCOMPILED baseline was run: epoch1=11.36s, epoch2=5.85s, epoch3=5.77s — essentially identical
+to (marginally FASTER than) the compiled run's epoch2=6.03s/epoch3=6.36s. **The earlier -81.7%
+number was entirely the epoch1→epoch2 HDF5 page-cache warmup confound present in baseline5's
+own 2-epoch numbers, not a real `torch.compile` effect.** `torch.compile(dynamic=True)` on this
+EGNN model (`hidden_nf=20`) provides NO measurable steady-state speedup, and its one-time
+compile+warmup cost is a pure net loss: +1200% on epoch 1 (147.9s compiled vs 11.36s
+uncompiled) with no offsetting benefit anywhere. **Do not recommend `torch.compile` for PECAN
+based on current evidence** — this reverses the earlier "revised ranking" that promoted it
+above AMP bf16. Both sides are still single-replicate; if revisited, run ≥5 replicates each
+before trusting a delta either way. General lesson: a launch-bound-model hypothesis
+(`hidden_nf=20` → fusion should help) is not a substitute for a matched, de-confounded
+measurement — the code-reading-based reasoning that promoted `torch.compile` in the first
+place was directionally sensible but the actual measured effect turned out to be zero once the
+warmup confound was removed.
+
+The loss-block host-device sync rewrite (proposal above) was correctly SKIPPED under time
+pressure rather than rushed — still open for a future session with a dedicated time budget.
+
+**DONE 2026-07-22 (loss-block host-device sync rewrite, baseline5 scale, 4N×16-rank DDP,
+single replicate):** Applied the previously-deferred fix in `pecan/trainer.py`'s
+`train_one_epoch`/`eval_one_epoch`: (1) replaced `torch.FloatTensor([x.to(device) for x in
+batch])` with `torch.stack([x.to(device).view(()) for x in batch])` for
+`output_aff`/`output_rmsd`/`output_score`/bond-loss targets — the `.view(())` is required, not
+cosmetic: `torch.FloatTensor` silently flattens `(1,)`-shaped per-sample tensors to 0-dim
+scalars during construction, while plain `torch.stack` preserves `(1,)`, producing a `(B,1)`
+tensor instead of `(B,)` and crashing `BCELoss` with a target/input size mismatch — caught by
+the live validation run (first attempt crashed), not the standalone correctness check alone.
+(2) Removed the `.cpu().float()` calls in the loss block's 7 loss terms now that both operands
+are correctly GPU-resident; kept exactly one `.item()` for the logged `loss_val`. **Result:
+epoch-2 (steady-state) time dropped from `io_opt4_finalize`'s 29.72s to 28.69s (-3.5%) and from
+`baseline5`'s 31.54s (-9.0%)**, single replicate only — directionally consistent with the
+~3-4% ceiling estimate above. Correctness verified via standalone old-vs-new script on
+fixed-seed synthetic batches (bit-identical loss value: 1.0525270700454712 both sides, all 6
+tensor fields shape+value matched) and via a full 2-epoch DDP run completing cleanly with the
+dftracer worker-finalize trace-completeness fix still intact (0 empty trace files, 48/48).
+Before citing -3.5%/-9.0% as final, run ≥5 replicates each side — same standing caveat as the
+`torch.compile` numbers above. This closes out the last open proposal from the original
+4-dimension optimizer pass.

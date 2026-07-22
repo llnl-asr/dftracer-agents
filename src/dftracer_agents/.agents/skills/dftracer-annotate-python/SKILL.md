@@ -56,6 +56,85 @@ _dft_log.finalize()
 - For MPI apps: initialize AFTER `MPI.Init()`/`MPI.COMM_WORLD` setup, finalize
   BEFORE `MPI.Finalize()`.
 
+### Python Rule 2b — `torch.utils.data.DataLoader`/multiprocessing workers need their OWN init/finalize (MANDATORY whenever `num_workers > 0`)
+
+**Rule 2's init/finalize pair is per-PROCESS, not per-app.** Any DL training script
+that uses a `DataLoader` (or `DataListLoader`, or raw `multiprocessing.Process`) with
+`num_workers > 0` spawns SEPARATE OS processes that run their own copy of the
+annotated dataset code (e.g. `__getitem__`) — each of those worker processes is a
+DIFFERENT process from the one that called `initialize_log()`/`finalize()` in Rule 2,
+and therefore has ITS OWN independent dftracer C-core state that nothing finalizes
+unless you explicitly say so. Symptom if this rule is skipped: worker-process trace
+files are literal 0-byte files (dead/empty, no event ever flushed) or silently
+missing their tail events — confirmed on a real PECAN session (2026-07-22): 32 of 80
+trace files were exactly 0 bytes, identically across every run of the same config,
+until this fix was applied. This is NOT a crash, NOT an exception, and easy to miss —
+the training run itself completes normally and prints a normal loss curve while
+silently losing (or truncating) a large fraction of its own I/O/compute trace data.
+
+**Fix — wire a `worker_init_fn` that finalizes each worker on exit:**
+
+```python
+def _dftracer_worker_init(worker_id):
+    if os.getenv("DFTRACER_ENABLE") == "1":
+        try:
+            import atexit
+            logger = dftracer.initialize_log(logfile=None, data_dir=None, process_id=None)
+            atexit.register(lambda: logger.finalize())
+        except Exception:
+            pass
+
+train_dataloader = DataLoader(dataset=train_dataset, num_workers=num_workers,
+                               worker_init_fn=_dftracer_worker_init, ...)
+```
+
+Apply this to EVERY `DataLoader`/`DataListLoader` construction in the app that has
+`num_workers > 0` (train, val, test, feature-extraction — all of them, not just the
+one that happens to run in the smoke test). This holds regardless of
+`persistent_workers` and regardless of `multiprocessing_context` (`fork` or
+`spawn`) — under `fork` a worker at least inherits the parent's ALREADY-initialized
+logger state (so this symptom is less likely, but still not guaranteed-safe since
+the parent's `finalize()` only runs in the parent), but under `spawn` the child
+re-imports everything fresh and NEVER sees the parent's init/finalize calls at all —
+`spawn` is the exact configuration where this WILL bite if `worker_init_fn` doesn't
+also finalize.
+
+**MANDATORY pickling constraint (a second real bug, hit while fixing the first):**
+if `multiprocessing_context="spawn"` (or the app's default multiprocessing start
+method is spawn), `worker_init_fn` gets PICKLED to hand to the child process. A
+closure returned by a factory function (`def _make_x(inner): def _worker(wid): ...;
+return _worker`) is NOT picklable and crashes every rank with `AttributeError: Can't
+pickle local object '...'` the instant the DataLoader starts. **`worker_init_fn`
+must be a plain top-level function, never a closure/nested function.** If you need
+to chain an existing per-worker init the app already has (e.g. a custom staging/
+prefetch `worker_init`), look it up dynamically INSIDE the function body via
+`torch.utils.data.get_worker_info().dataset` + `getattr(...)`, not by capturing it
+in an enclosing scope:
+
+```python
+def _dftracer_worker_init(worker_id):
+    info = torch.utils.data.get_worker_info()
+    inner = getattr(info.dataset, "worker_init", None) if info is not None else None
+    if inner is not None:
+        inner(worker_id)
+    if os.getenv("DFTRACER_ENABLE") == "1":
+        try:
+            import atexit
+            logger = dftracer.initialize_log(logfile=None, data_dir=None, process_id=None)
+            atexit.register(lambda: logger.finalize())
+        except Exception:
+            pass
+```
+
+**When annotating (or reviewing an existing annotation of) any Python DL training
+script:** grep the app for every `DataLoader(`/`DataListLoader(`/
+`multiprocessing.Process(`/`Pool(` construction. If ANY of them run with more than
+one worker/process AND the app is `DFTRACER_ENABLE`-gated, this rule applies — do
+not treat Rule 2's single init/finalize pair in the entry-point file as sufficient
+just because the trace "looks like it's working" (some worker files may still get
+real, if incomplete, data by chance — the absence of a crash is not evidence of
+complete data).
+
 ### Python Rule 3 — `@property`/`@cached_property`/`@x.setter` NEVER get a stacked decorator (MANDATORY)
 
 ```python
@@ -158,7 +237,7 @@ def advance_job(self, job, sim_time): ...
 dftracer.get_instance().log_event(
     name="advance_job",
     cat="<category>",
-    start_time=sim_start_time,   # the emulator's own simulated clock, in ns — not time.time()
+    start_time=sim_start_time,   # the emulator's own simulated clock; unit depends on DFTRACER_TIME_METRIC (see note below) — not time.time()
     duration=sim_duration,
     int_args={"job_id": (0, job.id)},          # MUST be a (tag_type, value) tuple, not a bare value
     string_args={"mhost": (0, node_name)},     # see node-grouping note below — the node identifier itself, no hashing needed
@@ -190,6 +269,22 @@ easy to misdiagnose as a tag-naming or tuple-format bug (it looked exactly
 like a broken `mhost` tag on a real session) when it's actually just a
 missing env var. Check this FIRST whenever `args`/tag data is missing from a
 trace but event names/counts/timing are otherwise correct.
+
+**`start_time`/`duration` unit for manual `log_event` calls depends on
+`DFTRACER_TIME_METRIC` (final correction, 2026-07-17) — check which dftracer
+branch/version is installed before assuming a unit.** The `feature/time_scale`
+branch (`git+https://github.com/LLNL/dftracer.git@feature/time_scale`, not yet
+merged to `develop` as of this writing) adds `DFTRACER_TIME_METRIC` — an env
+var with values `NS`/`US`/`MS`/`SEC` (default `US`) that tells dftracer how to
+interpret raw `start_time`/`duration` integers — defined in
+`dftracer/core/common/constants.h`/`enumeration.h`. Set it explicitly (e.g.
+`os.environ.setdefault("DFTRACER_TIME_METRIC", "NS")`) BEFORE
+`initialize_log()`, and convert your simulated-clock values to match: `* 1e9`
+for `NS`, `* 1e6` for `US`, etc. Name variables with the matching suffix
+(`_ns`, `_us`, ...) so the unit is obvious at the call site. On the plain
+`develop` branch (no `DFTRACER_TIME_METRIC` support), the implicit/default
+unit was empirically confirmed to be microseconds — verify against the
+installed branch rather than assuming either unit blindly.
 
 **Prefer the `python_annotate_manual_event` MCP tool over hand-writing this.**
 It always emits the correct `dftracer.get_instance().log_event(...)` singleton
@@ -248,3 +343,4 @@ distinction automatically, it must be a manual judgment call per function.
 - [ ] ALL non-trivial functions decorated with `@_dft.log` (`@_dft.log_init` for `__init__`) — skip only pure getters/one-liners
 - [ ] NO function decorated with `@property`/`@cached_property`/`@x.setter`/`@x.deleter`/`@x.getter` has a stacked `@_dft.log` — contextual `with DFTracerFn(...)` region instead
 - [ ] No file anywhere in the tree still references `dftracer.logger` or `DFTracer.initialize_log`/`DFTracer.finalize_log` (stale API — grep for it if in doubt)
+- [ ] Every `DataLoader`/`DataListLoader`/`multiprocessing.Process`/`Pool` construction with more than one worker has a `worker_init_fn` (or equivalent) that calls `initialize_log()` + registers an `atexit` `finalize()` INSIDE the worker process (Rule 2b) — a plain top-level function, never a closure, if `multiprocessing_context="spawn"` is used anywhere
