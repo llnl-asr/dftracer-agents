@@ -1,0 +1,66 @@
+# Ledger row #5 — Compute, L1 — loss-block host-device sync rewrite
+# File: pecan/trainer.py, PecanTrainer.train_one_epoch (+ eval_one_epoch, for consistency)
+# Verdict: KEPT — mechanism-confirmed real win. Wall time -3.5% vs
+# io_opt4_finalize, -9.0% vs baseline5. comparator MCP tool: cpu-gpu-transfer
+# mean duration -36.1%, flagged ** (statistically significant) -- the one
+# strongly-significant result in this whole report.
+#
+# Two bugs fixed together:
+# (1) output_aff/output_rmsd/output_score/bond-output tensors were built via
+#     torch.FloatTensor([x["field"].to(self.device) for x in batch]) --
+#     wrapping a Python list of per-sample GPU scalars in torch.FloatTensor(...)
+#     silently materializes a NEW CPU tensor, discarding the .to(self.device)
+#     work inside the list comprehension. Fixed with torch.stack(...).view(())
+#     instead (see the .view(()) shape-bug note below).
+# (2) every loss_mse/loss_bce call then did .cpu().float() on BOTH operands
+#     (redundant once both sides are correctly GPU-resident) -- 7+ blocking
+#     device syncs per training step. Removed once (1) was fixed.
+
+--- a/pecan/trainer.py  (train_one_epoch, tensor construction)
++++ b/pecan/trainer.py  (after)
+@@
+-                    output_aff = torch.FloatTensor([x["affinity"].to(self.device) for x in batch])
+-                    output_rmsd = torch.FloatTensor([x["rmsd"].to(self.device) for x in batch])
++                    # .view(()) matters, not cosmetic: torch.FloatTensor(list)
++                    # silently flattened each (1,)-shaped per-sample tensor to
++                    # a 0-dim scalar before building the batch tensor; plain
++                    # torch.stack does NOT -- it preserves (1,), producing
++                    # (B,1) instead of (B,). Missing this crashed BCELoss
++                    # with a target/input size mismatch on the first
++                    # validation-run attempt (caught, fixed, re-verified).
++                    output_aff = torch.stack([x["affinity"].to(self.device).view(()) for x in batch])
++                    output_rmsd = torch.stack([x["rmsd"].to(self.device).view(()) for x in batch])
+                     if label_type == 3:
+-                        output_score = torch.FloatTensor([x["score"].to(self.device) for x in batch])
++                        output_score = torch.stack([x["score"].to(self.device).view(()) for x in batch])
+                     if out_dim > 1:
+-                        output_hbond = torch.FloatTensor([x["hbond"].to(self.device) for x in batch])
+-                        # ... (4 more bond fields, same pattern)
++                        output_hbond = torch.stack([x["hbond"].to(self.device).view(()) for x in batch])
++                        # ... (4 more bond fields, same pattern)
+
+--- a/pecan/trainer.py  (train_one_epoch, loss computation)
++++ b/pecan/trainer.py  (after)
+@@
+             if label_type == 1:
+-                loss_aff = self.loss_mse(pred[:,0].cpu().float(), output_aff.cpu().float())
++                loss_aff = self.loss_mse(pred[:,0].float(), output_aff.float())
+             elif label_type == 2:
+                 if modality == 1:
+-                    loss_rmsd = self.loss_bce(self.sigmoid(pred[:,0:1].cpu().float()), output_rmsd.cpu().float())
++                    loss_rmsd = self.loss_bce(self.sigmoid(pred[:,0:1].float()), output_rmsd.float())
+                 else:
+-                    loss_rmsd = self.loss_bce(self.sigmoid(pred[:,0].cpu().float()), output_rmsd.cpu().float())
++                    loss_rmsd = self.loss_bce(self.sigmoid(pred[:,0].float()), output_rmsd.float())
+             ... # (same .cpu().float() -> .float() pattern for loss_score and all 5 bond losses)
+
+             if loss > 1000:
+-                print(..., loss.cpu().data.item(), loss_hbond.cpu().data.item(), ...)
++                print(..., loss.item(), loss_hbond.item(), ...)  # cold/rare debug path
+
+-            loss_val = loss.cpu().data.item()
++            loss_val = loss.item()   # the ONE sync point kept, for the printed/logged value
+
+# Identical torch.FloatTensor -> torch.stack(...).view(()) fix applied to
+# eval_one_epoch's output_affinity/output_rmsd/bond tensors, for consistency
+# (not in the hot training loop, lower priority but same correctness class).

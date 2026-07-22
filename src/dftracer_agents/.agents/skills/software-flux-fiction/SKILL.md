@@ -73,7 +73,7 @@ for node_id in node_ids:
     dftracer.get_instance().log_event(
         name="job_start",
         cat="simulation",
-        start_time=sim_start_time_ns,   # SAME for every per-node event
+        start_time=sim_start_time_ns,   # SAME for every per-node event (NANOSECONDS, DFTRACER_TIME_METRIC=NS)
         duration=gap_ns,                # SAME for every per-node event
         int_args={"job_id": (0, int(jobid))},
         string_args={"mhost": (0, node_id)},   # only this differs per event

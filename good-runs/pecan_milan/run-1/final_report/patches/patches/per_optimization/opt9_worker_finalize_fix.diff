@@ -1,0 +1,54 @@
+# Ledger row #9 — Tooling / data-integrity, not a speed optimization
+# File: pecan/trainer.py, PecanTrainer.train() (train_dataloader + val_dataloader
+# worker_init_fn wiring)
+# Verdict: KEPT — fixes silently incomplete trace data (32/80 empty .pfw.gz
+# files -> 0/48). No wall-time cost (29.72s -> 29.72s, statistically flat).
+#
+# Root cause: DataLoader workers (multiprocessing_context="spawn",
+# persistent_workers=True) never called dftracer's finalize() -- only the
+# single main process did, once, at the very end of the whole script. Each
+# worker's dftracer C-core state is lazily started on first
+# dft_event_logging(...) call inside Dataset_PDB.__getitem__, but nothing
+# ever flushed/closed it when the worker was torn down at interpreter exit.
+#
+# Bug hit and fixed en route: the first implementation was a closure-returning
+# factory (_make_dftracer_worker_init(inner_fn) -> def _worker_init(wid): ...)
+# so an existing per-worker init (e.g. DYAD staging) could be chained. This
+# CRASHED every rank with `AttributeError: Can't pickle local object
+# '_make_dftracer_worker_init.<locals>._worker_init'` -- multiprocessing_
+# context="spawn" pickles worker_init_fn to send it to the child process, and
+# a closure returned by a factory is not picklable (fork does NOT pickle it,
+# so this class of bug is invisible under the default fork context). Fixed by
+# making it a plain top-level function; any existing per-worker init is
+# looked up dynamically via get_worker_info().dataset instead of being
+# captured in an enclosing scope.
+
+--- a/pecan/trainer.py  (module level, new top-level function)
++++ b/pecan/trainer.py  (after)
+@@
++def _dftracer_worker_init(worker_id):
++    info = torch.utils.data.get_worker_info()
++    inner = getattr(info.dataset, "worker_init", None) if info is not None else None
++    if inner is not None:
++        inner(worker_id)
++    if os.getenv("DFTRACER_ENABLE") == "1":
++        try:
++            import atexit
++            logger = init_dftracer()
++            atexit.register(finalize_dftracer, logger)
++        except Exception:
++            pass
+
+--- a/pecan/trainer.py  (train_dataloader / val_dataloader construction)
++++ b/pecan/trainer.py  (after)
+@@
+-        worker_init_fn = train_dataset.worker_init if use_dyad else None
++        worker_init_fn = _dftracer_worker_init
+@@
+-            worker_init_fn = val_dataset.worker_init if use_dyad else None
++            worker_init_fn = _dftracer_worker_init
+
+# Validated: trace file empty-count 32/80 -> 0/48 (io_opt4_finalize vs
+# baseline5/io_opt3), matched wall-time (29.72s both before and after, within
+# noise) -- confirms this is a pure data-integrity fix, not a performance
+# change.

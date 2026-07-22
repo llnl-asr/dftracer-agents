@@ -57,6 +57,25 @@ from fastmcp import FastMCP
 from ...mcp_service_factory import MCPService, MCPServiceFactory
 from ..optimizations.diagnose import _session_diagnose_bottlenecks_impl
 
+# Eagerly trigger `dftracer.analyzer.fact_engine`'s import chain here, at
+# module load time (the MCP server's main thread, on startup) — NOT lazily
+# inside a tool call.  `dftracer.analyzer.cluster` imports `dask_jobqueue`,
+# whose `runner.py` calls `signal.signal(SIGINT, ...)` at MODULE IMPORT TIME
+# (an upstream side-effect, not ours to fix). `signal.signal` only works on
+# the main thread; MCP tool calls run on a worker thread, so the FIRST
+# `Diagnoser.diagnose_checkpoint()` call in the process crashed with
+# "ValueError: signal only works in main thread of the main interpreter"
+# purely because nothing had imported this chain yet. Python caches modules
+# after the first import, so doing it here — at server startup, main thread —
+# means every later (worker-thread) call just reuses the cached module and
+# never re-runs the signal-registering code.  Best-effort: if dfdiagnoser/
+# dask_jobqueue aren't installed, this is a no-op and diagnose() falls back
+# to the pandas path as before.
+try:
+    import dftracer.analyzer.fact_engine  # noqa: F401
+except Exception:
+    pass
+
 # Score integer → human label (1-indexed, matching dfdiagnoser.scoring.SCORE_NAMES)
 _SCORE_LABELS = {1: "trivial", 2: "low", 3: "medium", 4: "high", 5: "critical"}
 
@@ -118,14 +137,22 @@ def _diagnose_via_api(
     output_format: str,
     metric_boundaries: Dict[str, float],
 ) -> Optional[Dict[str, Any]]:
-    """Attempt Python-API diagnosis; return None to signal the direct-pandas
-    fallback should be used instead.
+    """Run offline diagnosis via ``Diagnoser.diagnose_checkpoint`` (DFDiagnoser
+    >= the release that added it, see https://github.com/llnl/dfdiagnoser).
 
-    As of DFDiagnoser's current release, only ``diagnose_file``,
-    ``diagnose_facts``, ``diagnose_mofka``, and ``diagnose_zmq`` exist; there
-    is no ``diagnose_checkpoint`` method. Treat that as an expected
-    "API unavailable" case, not a hard failure, so the direct checkpoint
-    reader (which uses pandas) always runs.
+    Returns None to signal the direct-pandas fallback should be used instead
+    (package not installed, or the installed release predates
+    ``diagnose_checkpoint``). ``diagnose_checkpoint`` derives real
+    ``DiagnosisFinding`` objects (motif/severity/confidence/recommendation)
+    straight from the analyzer's flat views via dynamic ``<layer>_ops_slope``
+    layer discovery — this works for ANY analyzer preset (posix/dlio/generic),
+    unlike the pandas fallback's naive per-column percentile scoring.
+
+    On success, findings are written as ``<output_dir>/findings.json`` (each
+    entry is ``DiagnosisFinding.to_wire_dict()``) so the caller can parse them
+    directly instead of going through ``_load_scored_views``/
+    ``_extract_bottlenecks`` (which expect the pandas fallback's
+    ``*_scored.*`` file format).
     """
     try:
         from dfdiagnoser.diagnoser import Diagnoser  # type: ignore
@@ -135,9 +162,29 @@ def _diagnose_via_api(
     diagnoser = Diagnoser()
     if not hasattr(diagnoser, "diagnose_checkpoint"):
         return None
-    # If a future DFDiagnoser release adds diagnose_checkpoint, this path
-    # will automatically light up.  For now it always returns None.
-    return None
+
+    try:
+        result = diagnoser.diagnose_checkpoint(checkpoint_dir, metric_boundaries)
+    except Exception as exc:
+        return {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": f"Diagnoser.diagnose_checkpoint failed: {exc}",
+            "success": False,
+        }
+
+    os.makedirs(output_dir, exist_ok=True)
+    findings_wire = [f.to_wire_dict() for f in result.findings]
+    with open(os.path.join(output_dir, "findings.json"), "w") as fh:
+        json.dump(findings_wire, fh, indent=2, default=str)
+
+    return {
+        "returncode": 0,
+        "stdout": f"Diagnosed {len(findings_wire)} finding(s) via DFDiagnoser API (diagnose_checkpoint)",
+        "stderr": "",
+        "success": True,
+        "findings": findings_wire,
+    }
 
 
 def _diagnose_via_cli(
@@ -308,6 +355,44 @@ def _extract_bottlenecks(
     return severity_counts, bottlenecks
 
 
+def _extract_bottlenecks_from_findings(
+    findings: List[Dict[str, Any]],
+) -> Tuple[Dict[str, int], List[Dict[str, Any]]]:
+    """Convert DFDiagnoser ``DiagnosisFinding.to_wire_dict()`` entries into the
+    same ``(severity_counts, bottlenecks)`` shape ``_extract_bottlenecks``
+    returns for the pandas fallback, so callers don't need to branch on which
+    path produced the result.
+
+    Each finding already carries a human-readable ``severity`` label
+    (trivial/low/medium/high/critical) and a continuous ``severity_score``
+    (0.0-1.0); high/critical findings are surfaced in ``bottlenecks``.
+    """
+    severity_counts: Dict[str, int] = {
+        "critical": 0, "high": 0, "medium": 0, "low": 0, "trivial": 0
+    }
+    bottlenecks: List[Dict[str, Any]] = []
+
+    for finding in findings:
+        label = str(finding.get("severity", "unknown")).lower()
+        if label in severity_counts:
+            severity_counts[label] += 1
+        if label in ("high", "critical"):
+            bottlenecks.append({
+                "view": finding.get("view_type") or finding.get("layer"),
+                "scope": finding.get("scope"),
+                "metric": finding.get("finding_type"),
+                "score": finding.get("severity_score"),
+                "severity": label,
+                "description": finding.get("summary"),
+                "value": finding.get("key_metrics"),
+                "motif": finding.get("motif"),
+                "recommendation_bundle": finding.get("recommendation_bundle"),
+            })
+
+    bottlenecks.sort(key=lambda x: x["score"] or 0, reverse=True)
+    return severity_counts, bottlenecks
+
+
 def _load_raw_stats(checkpoint_dir: str) -> Optional[Dict[str, Any]]:
     """Load the raw statistics JSON from the checkpoint directory."""
     for path in glob.glob(os.path.join(checkpoint_dir, "_raw_stats_*.json")):
@@ -433,27 +518,49 @@ class DFDiagnoserService(MCPService):
 
             boundaries = json.loads(metric_boundaries) if metric_boundaries else {}
 
-            # ── Run diagnosis (API → pandas fallback → CLI) ───────────────
-            run_result = _diagnose_via_api(checkpoint_dir, out_dir, output_format, boundaries)
-            if run_result is None:
-                # API unavailable — try direct pandas scoring (primary fallback)
+            # ── Run diagnosis (API → pandas fallback; CLI never supports
+            # checkpoint input so it is not a real fallback for this path and
+            # would otherwise silently swallow a genuine API exception) ────
+            api_result = _diagnose_via_api(checkpoint_dir, out_dir, output_format, boundaries)
+            used_api_findings = bool(
+                api_result and api_result.get("success") and "findings" in api_result
+            )
+            if api_result is None:
+                # API unavailable (package not installed / method missing) —
+                # try direct pandas scoring (primary fallback).
                 run_result = _diagnose_via_pandas(checkpoint_dir, out_dir, output_format)
-            if not run_result["success"]:
-                # pandas failed — try CLI as last resort (expected to fail for checkpoint)
-                run_result = _diagnose_via_cli(checkpoint_dir, out_dir, output_format, timeout)
+            elif not api_result["success"]:
+                # API was attempted and raised — surface its real error
+                # instead of masking it behind the CLI's generic
+                # "does not support input=checkpoint" message.
+                run_result = api_result
+            else:
+                run_result = api_result
 
             # ── Parse scored outputs ──────────────────────────────────────
-            scored_views = _load_scored_views(out_dir)
-            severity_counts, bottlenecks = _extract_bottlenecks(scored_views)
+            if used_api_findings:
+                # DFDiagnoser's diagnose_checkpoint() findings are motif-based
+                # (real trend/severity analysis), not the pandas fallback's
+                # naive per-column percentile scoring — parse them directly
+                # instead of going through the *_scored.* file format.
+                severity_counts, bottlenecks = _extract_bottlenecks_from_findings(
+                    run_result["findings"]
+                )
+                scored_views = run_result["findings"]  # for len() below
+            else:
+                scored_views = _load_scored_views(out_dir)
+                severity_counts, bottlenecks = _extract_bottlenecks(scored_views)
             raw_stats = _load_raw_stats(checkpoint_dir)
 
             total_issues = sum(severity_counts.values())
             critical_high = severity_counts["critical"] + severity_counts["high"]
             msg = (
-                f"Diagnosis complete: {total_issues} metric observations across "
-                f"{len(scored_views)} view(s). "
-                f"{critical_high} high/critical issue(s) found."
+                f"Diagnosis complete: {total_issues} finding(s)"
+                if used_api_findings
+                else f"Diagnosis complete: {total_issues} metric observations across "
+                f"{len(scored_views)} view(s)."
             )
+            msg += f" {critical_high} high/critical issue(s) found."
 
             if not run_result["success"] and not scored_views:
                 return json.dumps({

@@ -124,6 +124,7 @@ from .install import (
     _ensure_session_venv, _install_dftracer_pip_direct,
     _dftracer_utils_split, _dftracer_utils_comparator,
     _dftracer_info_uncompressed_bytes, _install_dftracer_utils, _find_dftracer_dirs,
+    _ensure_session_env_script,
 )
 from .config_search import search_papers_for_config
 
@@ -595,6 +596,18 @@ def _init_structure(ws: Path, dataset_path: Optional[str] = None) -> Dict[str, A
 
     artifacts = ws / "artifacts"
     artifacts.mkdir(exist_ok=True)
+
+    # Session-WIDE setup scripts (env.sh, dftracer install script, any other
+    # one-off/manual script run during the session) live here -- distinct
+    # from the per-RUN `baseline/scripts/` and `annotated/scripts/` dirs
+    # above, which hold compile.sh/run.sh for a specific traced run. Every
+    # script produced anywhere in the session, including ad-hoc manual runs
+    # outside the normal step pipeline, belongs under this one directory;
+    # every log (including from those same manual runs) belongs under
+    # `artifacts/` -- never scattered elsewhere or left only in a Bash tool's
+    # transcript.
+    scripts = ws / "scripts"
+    scripts.mkdir(exist_ok=True)
 
     tmp = ws / "tmp"
     tmp.mkdir(exist_ok=True)
@@ -1468,6 +1481,18 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         _save_state(run_id, {"detection": info, "step": "detected",
                              **({"detect_overrides": overrides} if overrides else {})})
         _write_artifact_log(_ws(run_id), 2, "session_detect", info, run_id)
+
+        # Create the session's ONE canonical env.sh here -- the earliest
+        # point source/ exists to scan for the app's own module-load
+        # scripts. Every later build/install/run step (dftracer install,
+        # app build, smoke test, trace runs) sources this SAME file instead
+        # of each re-deriving its own module list, so they can never
+        # disagree with each other.
+        try:
+            _ensure_session_env_script(_ws(run_id), src)
+        except Exception:
+            pass
+
         return _ok("Detection complete", **info)
 
     @mcp.tool()
@@ -2330,6 +2355,7 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         run_id: str,
         dftracer_ref: str = "develop",
         jobs: int = 4,
+        venv_path: str = "",
     ) -> str:
         """Install dftracer via pip for all project types, then locate dirs in site-packages.
 
@@ -2363,6 +2389,16 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             dftracer_ref: Git tag or branch of dftracer to install.
                 Defaults to ``"develop"``.
             jobs: Unused (kept for API compatibility).  Defaults to ``4``.
+            venv_path: Directory to create/reuse as the install venv, relative
+                to the session workspace root or absolute. A venv is ALWAYS
+                required — dftracer is never installed into the MCP server's
+                own interpreter or any interpreter outside the session
+                workspace. Defaults to ``ws/install`` for Python (ML/AI)
+                projects (shared with the app, so ``import dftracer`` resolves
+                without path surgery) or ``ws/venv`` for C/C++ projects. Pass
+                this explicitly when a later step (e.g. ``dftracer-build-app``)
+                already created the app's venv at a non-default path — dftracer
+                MUST land in that same venv, never a second parallel one.
 
         Returns:
             JSON string with keys:
@@ -2459,35 +2495,74 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         if features.get("hwloc"):
             features_enabled.append("hwloc")
 
-        # For Python (ML/AI) projects, dftracer and the app MUST share the same
-        # venv (ws/install/) so `import dftracer` resolves at runtime without
-        # any path surgery.  Never create a parallel ws/venv/ for Python apps —
-        # it causes import errors when the app venv is active but dftracer lives
-        # in a different site-packages.
+        # A venv is ALWAYS required — dftracer is never installed into the MCP
+        # server's own interpreter or any interpreter outside the session
+        # workspace. `venv_path` makes that explicit in the tool's signature
+        # so callers can't accidentally omit it; when unset, resolve the
+        # historical default per project type:
         #
-        # For C/C++ projects, create an isolated session venv (ws/venv/) that is
-        # separate from the MCP server's own Python environment.
-        app_venv_python = ws / "install" / "bin" / "python"
-        if bt == "python":
-            if not app_venv_python.exists():
-                # App venv not yet created — create it now so dftracer and the
-                # app land in the same environment from the start.
-                try:
-                    import subprocess as _sp
-                    _sp.run(
-                        [sys.executable, "-m", "venv", str(ws / "install")],
-                        check=True, timeout=60,
-                    )
-                except Exception as exc:
-                    return _err(f"Failed to create app venv at ws/install/: {exc}")
-            venv_python_str = str(app_venv_python)
+        # For Python (ML/AI) projects, dftracer and the app MUST share the same
+        # venv (ws/install/ by default) so `import dftracer` resolves at
+        # runtime without any path surgery. Never create a parallel ws/venv/
+        # for Python apps — it causes import errors when the app venv is
+        # active but dftracer lives in a different site-packages.
+        #
+        # For C/C++ projects, create an isolated session venv (ws/venv/ by
+        # default) that is separate from the MCP server's own Python
+        # environment.
+        if venv_path:
+            _venv_dir = Path(venv_path)
+            if not _venv_dir.is_absolute():
+                _venv_dir = ws / _venv_dir
+        elif bt == "python":
+            _venv_dir = ws / "install"
         else:
+            _venv_dir = ws / "venv"
+
+        app_venv_python = _venv_dir / "bin" / "python"
+        if not app_venv_python.exists():
             try:
-                venv_python = _ensure_session_venv(ws)
-            except RuntimeError as exc:
-                return _err(f"session venv creation failed: {exc}")
-            venv_python_str = str(venv_python)
-        _save_state(run_id, {"session_venv_python": venv_python_str})
+                import subprocess as _sp
+                _sp.run(
+                    [sys.executable, "-m", "venv", str(_venv_dir)],
+                    check=True, timeout=60,
+                )
+            except Exception as exc:
+                return _err(f"Failed to create install venv at {_venv_dir}: {exc}")
+        venv_python_str = str(app_venv_python)
+
+        # Validate: `venv_python_str` MUST be the interpreter PATH inside
+        # `_venv_dir` (a real venv, with its own pyvenv.cfg) — never silently
+        # fall through to a bare system/module python. This is the guard for
+        # the 2026-07-20 pecan_milan incident where dftracer's cmake configure
+        # step picked up the system Anaconda python instead of the session
+        # venv (see the VIRTUAL_ENV/PATH fix in _install_dftracer_pip_direct);
+        # catching a bad interpreter HERE, before any pip/cmake subprocess
+        # runs, turns that failure mode into an immediate, clear error.
+        #
+        # IMPORTANT: do NOT `.resolve()` the python path before checking
+        # containment — `<venv>/bin/python` is BY DESIGN a symlink out to the
+        # base interpreter (that's how venvs work), so resolving it always
+        # points outside the venv dir. Check containment on the unresolved
+        # `bin/python` path instead; only resolve `_venv_dir` itself (to
+        # normalize `..`/relative segments), not the interpreter symlink.
+        _resolved_venv_dir = _venv_dir.resolve()
+        _pyvenv_cfg = _resolved_venv_dir / "pyvenv.cfg"
+        if not _pyvenv_cfg.exists():
+            return _err(
+                f"Install venv validation failed: {_pyvenv_cfg} does not exist — "
+                f"{_venv_dir} is not a real venv. Refusing to install dftracer "
+                f"outside a session-local venv."
+            )
+        try:
+            Path(venv_python_str).absolute().relative_to(_resolved_venv_dir)
+        except ValueError:
+            return _err(
+                f"Install venv validation failed: {venv_python_str} is NOT a "
+                f"path inside the install venv {_resolved_venv_dir}. Refusing "
+                f"to install dftracer into a system/module interpreter."
+            )
+        _save_state(run_id, {"session_venv_python": venv_python_str, "session_venv_dir": str(_venv_dir)})
 
         result = _install_dftracer_pip_direct(
             dftracer_ref=dftracer_ref,

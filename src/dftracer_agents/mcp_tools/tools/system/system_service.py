@@ -207,6 +207,25 @@ def get_current_system_env(hostname: Optional[str] = None) -> Dict[str, str]:
     return resolved
 
 
+def get_current_system_modules(hostname: Optional[str] = None) -> List[str]:
+    """Return the ordered ``module load`` list for the current system.
+
+    Subprocess-launching tools that need a *real* Cray PE environment (not a
+    hand-assembled subset of env vars) should run their command inside a
+    login shell that does ``module load <these, in order>`` first --
+    hand-picking individual env vars (CC, LD_LIBRARY_PATH, ...) misses
+    PE_ENV/CRAY_* variables the compiler driver scripts rely on internally
+    to select their companion GNU toolchain, which silently breaks C++
+    builds (e.g. Cray Clang falling back to a stray system GCC toolset).
+    """
+    base = _base_hostname(hostname)
+    data = _load_yaml_simple(_SYSTEMS_YAML)
+    cfg = (data.get("systems") or {}).get(base)
+    if not cfg:
+        return []
+    return list(cfg.get("modules") or [])
+
+
 def _fmt_system(name: str, cfg: Dict[str, Any]) -> str:
     """Format a system config dict into a human-readable string."""
     lines = [

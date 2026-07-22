@@ -1,0 +1,29 @@
+# Ledger row #4 — Compute, L1 — torch.compile(model, dynamic=True) kernel fusion
+# File: model/model_trainer.py, ModelTrainer.__init__
+# Verdict: APPLIED THEN REVERTED. Initial single-replicate measurement looked
+# like a -81.7% win (6.03s vs baseline5's 31.54s epoch-2). A matched 3-epoch
+# UNCOMPILED baseline proved this was ENTIRELY an epoch1->epoch2 HDF5
+# page-cache warmup confound in baseline5's own numbers -- the uncompiled
+# 3-epoch run measured epoch2=5.85s/epoch3=5.77s, essentially identical to
+# the compiled run's epoch2=6.03s/epoch3=6.36s. No real speedup; the one-time
+# compile+warmup cost is a pure net loss (+1200% on epoch 1: 147.9s vs
+# 11.36s uncompiled). PECAN_TORCH_COMPILE defaults to "1" in the code below,
+# but every run script in this session's final configuration explicitly sets
+# PECAN_TORCH_COMPILE=0 to disable it -- the code path remains in the source
+# tree (harmless, gated) for anyone who wants to re-test at a different scale
+# or after PyG's dynamic-shape compile support matures, but it is NOT part of
+# the recommended final_all_opt configuration.
+
+--- a/model/model_trainer.py  (ModelTrainer.__init__, after moving model to device)
++++ b/model/model_trainer.py  (after)
+@@
++        # torch.compile kernel-fusion (COMPUTE L1 optimization, REVERTED --
++        # see ledger row #4 / REPORT.md for the full de-confound story).
++        # Gated by PECAN_TORCH_COMPILE, default "1" but every run script in
++        # the final configuration sets it to "0".
++        _DFTRACER_TORCH_COMPILE = os.getenv("PECAN_TORCH_COMPILE", "1") == "1"
++        if _DFTRACER_TORCH_COMPILE and nn_type == 3 and torch.cuda.is_available():
++            self.model = torch.compile(self.model, dynamic=True)
++
+         if run_mode < 20:
+             ...

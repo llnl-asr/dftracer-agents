@@ -622,6 +622,39 @@ fi
   for this combo. `/p/lustre5`'s default Data-on-MDT PFL already covers small
   metadata-heavy files.
 
+## dftracer HIP tracing under MPI: 4 of 5 buffer-tracing kinds are broken, PAGE_MIGRATION works (2026-07-20, refined)
+
+`DFTRACER_ENABLE_HIP_TRACING=ON` (build flag; headers ARE present on `rocm-6.3.1` — an
+earlier note claiming they're absent was stale) works correctly in a single-process (no
+MPI) application, producing all 5 HIP-layer categories dftracer registers via
+`rocprofiler-sdk`'s buffer-tracing services (`src/dftracer/core/function/hip/intercept.cpp`):
+`HIP_RUNTIME_API`, `KERNEL_DISPATCH`, `MEMORY_COPY`, `SCRATCH_MEMORY`, `PAGE_MIGRATION` — each
+`cat` value comes from a dynamic `rocprofiler_query_buffer_tracing_kind_name()` lookup per
+kind, not a hardcoded string, confirming all 5 are genuinely part of the same HIP
+instrumentation layer.
+
+**Refined finding**: under real MPI/DDP PECAN runs, it is NOT that HIP tracing is entirely
+dead — **`PAGE_MIGRATION` DOES fire (240 real events in a 16-rank run)**, while the other
+FOUR kinds (`HIP_RUNTIME_API`/`KERNEL_DISPATCH`/`MEMORY_COPY`/`SCRATCH_MEMORY`) produce ZERO
+events. `PAGE_MIGRATION` events originate from the KFD (kernel driver) unified-memory
+page-fault/migration path — a different registration mechanism than the other four, which
+depend on intercepting the user-space HIP-runtime API. This is consistent with (but doesn't
+fully prove) the registration-timing-race theory: MPI initialization (confirmed via 3
+isolated repros — single-process works, bare MPI/no-DDP breaks it, full DDP breaks it the
+same way) most likely races only the HIP-runtime-API hook's rocprofiler-sdk registration
+window (plausibly via Cray MPICH's GTL touching the HIP runtime during `MPI_Init`), while
+the kernel-driver-level page-migration instrumentation registers through an apparently
+unaffected path. Not something an application session can fix (would need a dftracer core
+patch to register the HIP-runtime-API hook before `MPI_Init`, or an MPICH GTL init-order
+change) — but this is a much more precise "which of the 5 HIP buffer-tracing kinds actually
+work under MPI" starting point for a future investigation than "HIP is entirely broken."
+
+**Workaround for GPU-kernel-level visibility on any MPI/DDP PyTorch workload on Tuolumne:
+use the PyTorch Profiler integration instead** (`DFTRACER_TORCH_PROFILE`-style env-gated
+`torch.profiler.profile(..., on_trace_ready=dftracer.python.torch.trace_handler)` around the
+training step, logs to `cat="PP"`) — this does not depend on rocprofiler-sdk registration
+timing and works cleanly under DDP (131,767 real events in the same `baseline5` run).
+
 ## Permissions
 
 This skill uses:
@@ -745,14 +778,19 @@ Rules this cost us:
 - Before proposing affinity work, check whether `pin_memory` is already enabled and whether the
   launcher already binds sensibly (`hwloc-bind --get`, `flux run --verbose`).
 
-### Launcher-level CPU affinity has no measurable effect — confirmed twice
+### Launcher-level CPU affinity has no measurable effect — confirmed three times
 
-`flux cpu-affinity` (launcher-level pinning) showed no measurable effect across two different
-workloads on Tuolumne MI300A: the ScaFFold PyTorch DDP run above, and a vpic-kokkos Kokkos-OpenMP
-run (2026-07-14). Do not propose launcher-level affinity tuning as an optimization lever on this
-system — if thread placement matters, tune it INSIDE the process instead (`OMP_PLACES`/
-`OMP_PROC_BIND` for OpenMP, or the equivalent runtime-level affinity API for the framework in
-use), not via the job launcher.
+`flux cpu-affinity` (launcher-level pinning) showed no measurable effect across THREE different
+workloads on Tuolumne MI300A: the ScaFFold PyTorch DDP run above, a vpic-kokkos Kokkos-OpenMP
+run (2026-07-14), and h5bench MPI-IO cpu-affinity (−0.5%, negligible). A fourth workload,
+PECAN (PyTorch+PyTorch-Geometric DDP, 2026-07-20), inferred the same conclusion from prior KB
+without re-testing. Do not propose launcher-level affinity tuning as an optimization lever on
+this system for ANY workload class tested so far (PyTorch DDP, Kokkos-OpenMP, MPI-IO) — if
+thread placement matters, tune it INSIDE the process instead (`OMP_PLACES`/`OMP_PROC_BIND` for
+OpenMP, or the equivalent runtime-level affinity API for the framework in use), not via the job
+launcher. Do not re-test launcher-level affinity without a fundamentally different mechanism
+(e.g. explicit NUMA-domain buffer allocation, not launcher pinning) — the lever itself, not the
+workload, is what's inert.
 
 ### MI300A unified CPU+GPU HBM makes pinned-memory/cross-NUMA levers structurally inert
 

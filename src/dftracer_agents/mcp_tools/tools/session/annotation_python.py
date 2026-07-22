@@ -641,12 +641,12 @@ def register_python_tools(mcp: FastMCP) -> None:
             category:          The ``cat=`` argument for ``log_event``.
                                 Defaults to the file's module stem.
             start_time_expr:   A Python expression (as a string) evaluating to
-                                the event's start time in NANOSECONDS, using
+                                the event's start time in MICROSECONDS, using
                                 whatever variables are in scope at the
                                 insertion point (e.g.
                                 ``"int(job.submit_time * 1e9)"``). REQUIRED.
             duration_expr:     A Python expression (as a string) evaluating to
-                                the event's duration in NANOSECONDS. REQUIRED.
+                                the event's duration in MICROSECONDS. REQUIRED.
             int_args_expr:     A Python dict-literal expression (as a string)
                                 for ``log_event``'s ``int_args=``. Each value
                                 MUST be a ``(tag_type, value)`` 2-tuple, e.g.

@@ -1,0 +1,69 @@
+# Ledger row #1 — I/O, L1 — per-worker decoded-sample cache
+# File: pecan/dataset.py, Dataset_PDB.__getitem__
+# Verdict: KEPT — the real measured win (-8.5% wall time, isolated via
+# PECAN_DECODE_CACHE=0 A/B, 2 replicates, CV 0.65%)
+#
+# Mechanism: caches the fully-decoded (coord, feat) arrays per (pdbid,poseid)
+# after first read, so epoch 2+ skips the h5py dataset read entirely for a
+# repeated sample. Guarded OFF for modality==1 (point cloud), which applies a
+# fresh random affine augmentation to coord on every __getitem__ call — caching
+# would freeze the augmentation across epochs. modality==3 (graph
+# representation, the active config in this session) has no per-sample
+# augmentation, so caching there is correctness-safe.
+
+--- a/pecan/dataset.py  (Dataset_PDB.__getitem__, before this optimization)
++++ b/pecan/dataset.py  (after)
+@@
+         fpath = os.path.join(fdir, fn)
+-        with dft_event_logging("communication-io", name="data-load-h5") as load:
+-            with h5py.File(fpath, "r", driver=self.h5_driver) as h5:
+-                if self.mlhdf_ver == 1:
+-                    h5_data = h5[str(pdbid)]["pybel"]["processed"]["crystal"] if poseid == 0 else h5[str(pdbid)]["pybel"]["processed"]["docking"][str(poseid)]
+-                    coord = h5_data["data"][:][:,:3]
+-                    feat = h5_data["data"][:][:,3:]
+-                else:
+-                    h5_data = h5[str(pdbid)][h5_com] if poseid == 0 else h5[str(pdbid)][h5_dcom][str(poseid)]
+-                    coord = h5_data[h5_coord][:]
+-                    feat = h5_data[h5_feat][:]
++
++        # Per-worker decoded-sample (coord, feat) cache, keyed by (pdbid, poseid).
++        # Env-var gate (I/O opt isolation, 2026-07-22): PECAN_DECODE_CACHE=0
++        # disables this cache specifically so it can be isolated from the
++        # attr-hoist optimization (opt2) in a single-variable A/B. Defaults to
++        # "1" (combined-on) so it is a no-op unless set.
++        decode_cache_enabled = os.environ.get("PECAN_DECODE_CACHE", "1") != "0"
++        use_decode_cache = (self.modality != 1) and decode_cache_enabled
++        decode_cache = None
++        cache_key = (str(pdbid), int(poseid))
++        if use_decode_cache:
++            decode_cache = getattr(self, "_decode_cache", None)
++            if decode_cache is None:
++                decode_cache = self._decode_cache = {}
++            cached = decode_cache.get(cache_key)
++        else:
++            cached = None
++
++        if cached is not None:
++            coord, feat = cached
++        else:
++            with dft_event_logging("communication-io", name="data-load-h5") as load:
++                h5 = self._get_h5(fpath)
++                if self.mlhdf_ver == 1:
++                    h5_data = h5[str(pdbid)]["pybel"]["processed"]["crystal"] if poseid == 0 else h5[str(pdbid)]["pybel"]["processed"]["docking"][str(poseid)]
++                    coord = h5_data["data"][:][:,:3]
++                    feat = h5_data["data"][:][:,3:]
++                else:
++                    h5_data = h5[str(pdbid)][h5_com] if poseid == 0 else h5[str(pdbid)][h5_dcom][str(poseid)]
++                    coord = h5_data[h5_coord][:]
++                    feat = h5_data[h5_feat][:]
++            if use_decode_cache:
++                decode_cache[cache_key] = (coord, feat)
+
+# Also touches __getstate__ to drop _decode_cache before pickling across the
+# DataLoader fork/spawn boundary (each worker rebuilds it lazily):
+@@
+     def __getstate__(self):
+         state = self.__dict__.copy()
+         state.pop("_h5_cache", None)
++        state.pop("_decode_cache", None)
+         return state

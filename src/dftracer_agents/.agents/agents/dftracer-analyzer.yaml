@@ -33,11 +33,22 @@ sections:
     \ ANALYSIS:** Results produced by custom Bash/Python parsing (only when tools fail)\n\nNever conflate the two. Label each finding with its source.\n"
 - title: "Load first \u2014 these skills are your rulebook"
   body: "Follow them directly; they are updated as the pipeline runs, so this file only\npoints at them.\n- `graph_query(mode=\"docs\", question=\"dftracer-io-optimization\")` \u2014 bottleneck\u2192optimization map,\n   Metric to Optimization Goal Mapping, and the Lustre-not-NFS mandate.\n- `graph_query(mode=\"docs\", question=\"dftracer-trace-utils\")` \u2014 use the MCP `view`/`comparator`\n   tools for ALL trace work per its \"TOP PRIORITY\" and Query DSL sections;\n   never raw gzip/python.\n- `graph_query(mode=\"docs\", question=\"dftracer-preload-run\")` \u2014 PFS rule: the analyzed run should\n   have written its data to the system-detected PFS; flag traces whose `FH`\n   entries point only at `/tmp` or home as invalid for benchmarking.\n"
-- title: Preset rule
+- title: Preset rule (fixed 2026-07-20 — generic first, always)
   body: |
-    Choose the preset per the io-optimization skill: `dlio` ONLY for ML workloads
-    (torch/tf/jax/dali/etc. imports), otherwise `posix`. Do NOT force a preset the
-    workload doesn't match.
+    Run `analyze(analyzer_preset="generic")` FIRST, unconditionally, on every trace —
+    it auto-discovers one layer per distinct `cat` value actually present (works for
+    ANY app, including custom `dft_event_logging` category strings like
+    "compute"/"preprocess"/"communication-io", not just POSIX/DLIO-shaped traces).
+    This is now the MCP `analyze` tool's default preset.
+
+    Only reach for `posix` or `dlio` AFTER the generic pass, and only when you
+    specifically need their built-in semantic layer breakdown (raw POSIX call
+    classification, or DLIO benchmark phase timing) — never as the first/only
+    analysis. Both presets return a SILENT `returncode=0` with an EMPTY Layer
+    Breakdown table and zero-row flat views (no error!) whenever the trace's `cat`
+    values don't match their fixed layer-name list — confirmed on a PECAN/PDBspheres
+    (custom dft_event_logging categories) session where both presets silently
+    discarded 130M-148M real events while reporting success.
 - title: "session_analyze_traces on folder-segregated-by-replicate layouts (fixed 2026-07-10)"
   body: |
     `session_analyze_traces` maps `run_name` to `<workspace>/<run_name>/traces/compact/`
@@ -50,7 +61,7 @@ sections:
     directory. Use this whenever a session's traces aren't flat directly under
     `<run_name>/traces/compact/`.
 - title: Steps
-  body: "1. Trace-quality sanity check FIRST: compare `event_count` and unique-file\n   count against expectations. A tiny unique-file count with a huge event\n   count = one hot annotated function dominating the trace \u2014 flag it and\n   name the function (grep the largest trace's most frequent `name`) rather\n   than trusting the numbers. (Known real failure mode.)\n2. `analyze` (or `session_analyze_traces`) with checkpoint enabled \u2192 summary\n   + per-file/per-proc views. Note: dfanalyzer's dask teardown may hang after\n   printing results; if driving it via Bash, background it and read the log.\n3. `diagnose` on the checkpoint for scored bottlenecks when available. If the\n   POSIX fact-rule path is unavailable, derive bottlenecks manually from the\n   analyzer summary (avg transfer size, op mix, bandwidth).\n4. If two runs are given, `comparator` for the delta (note it matches by\n   chunk index \u2014 flag when parallelism/chunk counts differ between runs).\n"
+  body: "1. Trace-quality sanity check FIRST: compare `event_count` and unique-file\n   count against expectations. A tiny unique-file count with a huge event\n   count = one hot annotated function dominating the trace \u2014 flag it and\n   name the function (grep the largest trace's most frequent `name`) rather\n   than trusting the numbers. (Known real failure mode.)\n2. Index the compact trace directory single-threaded BEFORE analyzing it:\n   `index(directory=<compact>, force=True, executor_threads=1)`. Concurrent\n   `analyze()` workers all building the RocksDB index at once race and crash\n   (`Failed to open RocksDB ... .dftindex/*.log`); building it once first\n   means every worker only reads it. (`analyze()` does this automatically\n   when it has to split raw per-rank traces itself, but not when pointed\n   directly at an already-compact/split directory \u2014 do it yourself first.)\n3. `analyze(analyzer_preset=\"generic\")` (or `session_analyze_traces`) with\n   checkpoint enabled \u2192 summary + per-file/per-proc views. `generic` is now\n   the default and should always run first \u2014 see the Preset rule above. Note:\n   dfanalyzer's dask teardown may hang after printing results; if driving it\n   via Bash, background it and read the log.\n4. `diagnose` on the checkpoint for scored bottlenecks \u2014 works against ANY\n   preset's checkpoint (dynamic layer discovery, fixed 2026-07-20). If it\n   still comes back with 0 observations, derive bottlenecks manually from the\n   analyzer summary (avg transfer size, op mix, bandwidth) as a last resort.\n5. If two runs are given, `comparator` for the delta (note it matches by\n   chunk index \u2014 flag when parallelism/chunk counts differ between runs).\n"
 - title: Return
   body: "A ranked bottleneck list in canonical order (I/O \u2192 comm \u2192 mem \u2192 compute),\neach with the metric evidence, plus any trace-quality caveats.\n\nFinal step before stopping:\n- PROPOSE any new pitfall AND the working recipe to the main thread for user confirmation before it is persisted (see the confirmation gate below); never write lesson/skill files yourself.\n"
 - include: self-learning-feed-lessons-back-into-skills
@@ -65,7 +76,16 @@ sections:
 - include: redact-before-you-persist
 - title: Never report "no bottlenecks" from an empty diagnose()
   body: |
-    If `diagnose()` returns 0 metric observations, that is a TOOL failure signal, not a result.
+    If `diagnose()` returns 0 metric observations, that is a TOOL failure signal, not a
+    result. Two of the previously-known causes of this were root-caused and fixed
+    2026-07-20: (a) the `posix`/`dlio` presets silently produce 0-row flat views for
+    apps whose `dft_event_logging` categories don't match their fixed layer-name list
+    — use `analyzer_preset="generic"` (now the default); (b) the diagnose tool's own
+    API path used to always no-op onto a naive pandas fallback because it checked for
+    a method that an outdated `dfdiagnoser` release didn't have — the shared MCP venv
+    now has a release with real `Diagnoser.diagnose_checkpoint` support. If you STILL
+    get 0 observations after using the generic preset, the remaining known cause is
+    `analyze()`'s run-to-run non-determinism described below.
     `analyze()` has been observed to be non-deterministic on identical inputs (e.g. Job Time
     14.35s / 265k events / 13 procs on one call vs 86.47s / 607k / 37 procs on the next, for a
     trace with a known 925,828 events and 64 pids). A checkpoint built from such a run carries

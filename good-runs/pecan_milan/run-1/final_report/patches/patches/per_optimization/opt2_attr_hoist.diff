@@ -1,0 +1,59 @@
+# Ledger row #2 — I/O, L1 — HDF5 scalar-attribute hoist
+# File: pecan/dataset.py, Dataset_PDB.__init__ (h5-driven path) + __getitem__
+# Verdict: KEPT, but NOT credited as an independent performance win —
+# measured +3.3% mean vs baseline (within noise, 3 replicates, CV 1.8%),
+# but 0 correctness regressions, so left in place as groundwork for opt1.
+#
+# Mechanism: moves the 5 scalar bond-count attribute reads
+# (num_hbonds/hpbonds/habonds/sbonds/pbonds) from __getitem__ (executed once
+# per sample PER EPOCH) to __init__ (executed once per sample TOTAL, at
+# dataset construction). __getitem__ then reads these values from data_list
+# instead of touching h5_data.attrs on every call.
+
+--- a/pecan/dataset.py  (Dataset_PDB.__init__, h5-driven path)
++++ b/pecan/dataset.py  (after)
+@@
+                             # crystal structure
+                             if h5_com in h5[pdbid].keys() and self.use_crystal == True:
+-                                self.data_list.append([str(fdir), str(fn), str(pdbid), int(0), float(affinity), float(0)])
++                                crystal_data = h5[pdbid][h5_com]
++                                (c_hbond, c_hpbond, c_habond, c_sbond, c_pbond) = self.__read_bond_attrs__(crystal_data)
++                                self.data_list.append([str(fdir), str(fn), str(pdbid), int(0), float(affinity), float(0), 0.0,
++                                                        c_hbond, c_hpbond, c_habond, c_sbond, c_pbond])
+@@
+                                 for poseid in poseids_int:
+                                     ...
+-                                    rmsd = h5[pdbid][h5_dcom][str(poseid)].attrs[h5_rmsd]
+-                                    score = h5[pdbid][h5_dcom][str(poseid)].attrs[h5_score]
++                                    pose_data = h5[pdbid][h5_dcom][str(poseid)]
++                                    rmsd = pose_data.attrs[h5_rmsd]
++                                    score = pose_data.attrs[h5_score]
+                                     ...
+-                                    self.data_list.append([str(fdir), str(fn), str(pdbid), int(poseid), float(affinity), float(rmsd), float(score)])
++                                    (p_hbond, p_hpbond, p_habond, p_sbond, p_pbond) = self.__read_bond_attrs__(pose_data)
++                                    self.data_list.append([str(fdir), str(fn), str(pdbid), int(poseid), float(affinity), float(rmsd), float(score),
++                                                            p_hbond, p_hpbond, p_habond, p_sbond, p_pbond])
+
++    def __read_bond_attrs__(self, h5_group):
++        attrs = h5_group.attrs
++        hbond = float(attrs[h5_hydrogen]) if h5_hydrogen in attrs.keys() else 0.0
++        hpbond = float(attrs[h5_hydrophobic]) if h5_hydrophobic in attrs.keys() else 0.0
++        habond = float(attrs[h5_halogen]) if h5_halogen in attrs.keys() else 0.0
++        sbond = float(attrs[h5_salt]) if h5_salt in attrs.keys() else 0.0
++        pbond = float(attrs[h5_pi]) if h5_pi in attrs.keys() else 0.0
++        return (hbond, hpbond, habond, sbond, pbond)
+
+--- a/pecan/dataset.py  (Dataset_PDB.__getitem__ unpack line)
++++ b/pecan/dataset.py  (after)
+@@
+     def __getitem__(self, ind):
+-        fdir, fn, pdbid, poseid, affinity, rmsd, score = self.data_list[ind]
++        fdir, fn, pdbid, poseid, affinity, rmsd, score, num_hbonds, num_hpbonds, num_habonds, num_sbonds, num_pbonds = self.data_list[ind]
+         # num_hbonds/.../num_pbonds no longer read from h5_data.attrs later in
+         # this function -- they now come straight from data_list.
+
+# NOTE: the csv_filepaths init branch (the OTHER way data_list can be
+# populated, when train_csvs is set instead of train_fns) was audited and
+# confirmed OUT OF SCOPE for this optimization: this session's run config has
+# train_csvs=null, so that code path is dead for this workload and was left
+# untouched rather than inconsistently patched.

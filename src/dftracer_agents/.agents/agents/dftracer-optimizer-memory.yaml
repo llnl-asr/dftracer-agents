@@ -65,6 +65,7 @@ sections:
       safe ONLY with a correctness check (byte-identical output) before/after.
     - VALIDATE every applied optimization by re-running and comparing: identical
       data volume/lifetime with lower memory-bound stall time = a real, safe win.
+- include: shared-source-tree-parallel-dispatch
 - include: optimizer-never-do-less
 - include: optimizer-never-change-the-pattern
 - include: optimizer-metric-scope-axis

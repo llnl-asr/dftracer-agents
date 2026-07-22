@@ -1,0 +1,26 @@
+# Ledger row #3 — I/O, L2 — DataLoader prefetch_factor tuning
+# File: pecan/trainer.py, PecanTrainer.train() (train_dataloader + val_dataloader)
+# Verdict: KEPT — contributes to the io_opt4_finalize -5.8% figure (not
+# isolated separately from the trace-completeness fix applied in the same run)
+
+--- a/pecan/trainer.py  (module level)
++++ b/pecan/trainer.py  (after)
+@@
++# PECAN_PREFETCH_FACTOR: calibrated DataLoader prefetch depth (default 2 =
++# torch default, no-op unless overridden). Measured 2026-07-22 (baseline5):
++# per-rank compute ~0.148s/batch vs data-load ~0.134s/batch (comparable
++# magnitude) -- raising prefetch_factor gives background DataLoader workers
++# more queue depth to stay ahead of compute.
++PECAN_PREFETCH_FACTOR = int(os.environ.get("PECAN_PREFETCH_FACTOR", "2"))
+
+--- a/pecan/trainer.py  (train_dataloader / val_dataloader construction, x2 each for modality==1 and else branch)
++++ b/pecan/trainer.py  (after)
+@@
+         train_dataloader = DataListLoader(dataset=train_dataset, ...,
+-                                          worker_init_fn=worker_init_fn)
++                                          worker_init_fn=worker_init_fn,
++                                          persistent_workers=(num_workers > 0),
++                                          multiprocessing_context=("spawn" if num_workers > 0 else None),
++                                          prefetch_factor=(PECAN_PREFETCH_FACTOR if num_workers > 0 else None))
+   # (identical prefetch_factor= addition on the modality==1 DataLoader branch
+   # and on both val_dataloader construction branches)

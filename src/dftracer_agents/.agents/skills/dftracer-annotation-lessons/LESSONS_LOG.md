@@ -1300,3 +1300,67 @@ fix: |
   MCP tools. Only a hand-written/manual annotation pass could still get this
   wrong.
 tags: [python, annotation, property, decorator-ordering, tool-fix]
+
+---
+date: 2026-07-22
+app: PECAN (PyTorch DataLoader, num_workers>0, persistent_workers=True, multiprocessing_context="spawn")
+context: 32 of 80 dftracer trace files were exactly 0 bytes, identically across multiple runs — DataLoader worker process traces missing/incomplete
+error: |
+  No crash, no exception — trace collection silently produced 32 literal
+  0-byte .pfw.gz files out of 80 total (16 main-process "-app" files + 32
+  worker files with real data + 32 EMPTY worker files, consistent across
+  independent runs of the same config). Populated worker files were also
+  suspect: no guarantee their tail events were flushed either.
+root_cause: |
+  dftracer's Python API (initialize_log()/finalize()) was only called ONCE,
+  in the app's single main process (main_app.py, at start/end of the whole
+  script). PyTorch DataLoader workers, spawned via
+  multiprocessing_context="spawn" with persistent_workers=True, each get
+  their own dftracer C-core state (lazily started on first
+  dft_event_logging(...) call inside the dataset's __getitem__), but no
+  code ever called finalize() inside a worker process. When Python's
+  multiprocessing tears a persistent worker down at interpreter exit, no
+  app-level cleanup runs, so a worker's gzip trace stream — opened but
+  never explicitly flushed/closed — can end up literally 0 bytes on disk
+  (low event volume, no internal buffer-size auto-flush ever triggered) or
+  silently missing its tail events (higher volume, some periodic auto-flush
+  luck, but no guaranteed-complete final flush).
+fix: |
+  Added a `worker_init_fn` that calls dftracer's initialize_log() and
+  registers atexit.register(finalize, logger) INSIDE every DataLoader
+  worker process, so each worker flushes and closes its own trace on exit,
+  the same way the main process already does. Any existing per-worker init
+  the app needs (e.g. a DYAD staging worker_init) should be looked up
+  dynamically via torch.utils.data.get_worker_info().dataset inside the
+  function body, NOT captured via a closure — see the tags for why.
+  Validated: empty-file count went from 32/80 to 0/48 (the placeholder-only
+  files stopped being created at all) with no wall-time regression.
+tags: [python, annotation, pytorch, dataloader, multiprocessing, spawn, worker_init_fn, finalize, atexit, missing-trace-data, 0-byte-trace, persistent_workers]
+
+---
+date: 2026-07-22
+app: PECAN (torch.utils.data.DataLoader, multiprocessing_context="spawn")
+context: implementing the worker-level dftracer finalize() fix above — first attempt crashed every rank
+error: |
+  AttributeError: Can't pickle local object
+  '_make_dftracer_worker_init.<locals>._worker_init' — raised the instant
+  the DataLoader tried to hand worker_init_fn to a spawned child process.
+root_cause: |
+  The first implementation was a closure-returning factory function
+  (`def _make_x(inner_fn): def _worker(wid): ...; return _worker`) so an
+  existing per-worker init callable could be captured for chaining.
+  multiprocessing_context="spawn" PICKLES worker_init_fn to send it to the
+  child process (fork does NOT — it just inherits the parent's memory, so
+  this class of bug is invisible under the default fork context and only
+  surfaces once an app switches to spawn, e.g. for a HIP/CUDA-safety fix).
+  A closure returned by a factory is not picklable in Python.
+fix: |
+  Rewrote as a plain TOP-LEVEL function (no factory, no closure). Any
+  runtime-dependent chaining (e.g. "call the dataset's own worker_init if
+  it has one") is resolved INSIDE the function body via
+  torch.utils.data.get_worker_info().dataset + getattr(...), not captured
+  from an enclosing scope. General rule: any callable that must cross a
+  multiprocessing "spawn" boundary (worker_init_fn, a target passed to
+  Process(target=...), etc.) must be a plain top-level function or a bound
+  method on a picklable object — never a closure/nested function.
+tags: [python, multiprocessing, spawn, pickle, closure, worker_init_fn, pytorch, dataloader]

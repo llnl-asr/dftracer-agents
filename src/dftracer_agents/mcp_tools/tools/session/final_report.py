@@ -457,6 +457,7 @@ def _session_final_report_impl(
 
     # ---- scripts --------------------------------------------------------
     scripts_dir = final / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
     _write_config_ini(final, state)
     _write_lib_load_config(scripts_dir)
     collected = _collect_scripts(ws, scripts_dir, runs)
@@ -852,9 +853,24 @@ def register_final_report_tools(mcp: FastMCP) -> None:
         summary — this stamps REPORT.md with a pass/fail marker instead of
         leaving reproducibility as an unverified claim.
 
+        **``report_md`` detail bar (MANDATORY, not best-effort):** a short prose
+        summary is not sufficient even for a session with many steps. Every
+        baseline run gets its own row/section (not folded into one line), and
+        every optimization considered — applied, applied-then-reverted, and
+        not-applicable-with-reason — gets a row in an Optimization Ledger
+        table (dimension | level | change | applied? | measured delta |
+        replicates/significance | verdict). A rejected optimization (e.g. one
+        that was tried and measured to make things worse) is exactly as
+        reportable as a winning one — omitting it hides real work and risks
+        someone re-trying it blind later. See the ``dftracer-report`` agent's
+        "Report Structure" section for the full 10-section template this
+        should follow.
+
         Args:
             run_id: Session identifier returned by ``session_create``.
-            report_md: Markdown body for ``REPORT.md`` (what was done, results).
+            report_md: Markdown body for ``REPORT.md`` (what was done, results —
+                see the detail-bar note above; follow the full structured
+                template, not a condensed summary).
             conversation_md: Markdown body for ``CONVERSATION.md`` (narrative).
             readme_md: Markdown body for ``README.md`` (manual reproduction).
             alloc_hint: Default Flux allocation id baked into ``run_all.sh``.
