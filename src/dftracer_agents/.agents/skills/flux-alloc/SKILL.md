@@ -91,6 +91,30 @@ flux jobs
 flux queue idle
 ```
 
+## Always use `--exclusive` when running multiple comparison jobs inside one allocation
+
+Without `--exclusive`, `flux run`/`flux submit -N n -n n -c 1` lets Flux PACK multiple
+independent jobs onto the same nodes if resources technically fit (e.g. two 2-node/8-GPU Ray
+jobs both landing on the same 2 physical nodes, contending for the same 8 GPUs). This silently
+corrupts any A/B optimization comparison — both jobs run slower and neither number means
+anything. Confirmed 2026-07-25 (ray_molformer session): a duplicated/relaunched job instance
+co-scheduled onto the exact same 2 nodes as a concurrently-running comparison variant. Always
+pass `--exclusive` (or `-x` for `flux alloc`) for any job whose timing you intend to compare
+against another, and verify via `flux jobs -a` that no two comparison runs share a node before
+trusting either one's numbers.
+
+## Baseline/optimization-variant timing comparisons MUST be interleaved, never cross-window
+
+Confirmed independently on this system at least 3 times now (scaffold KB: 140.96s vs 293.46s
+same config 30 min apart; ray_molformer: identical unmodified code measured 65s in one window
+and 40s ~90 minutes later — a 35%+ apparent difference from system-load drift alone, with zero
+code change). **Never trust a timing comparison between a baseline measured at one point in
+time and a variant measured later** — system load (other users' jobs, shared filesystem
+contention, thermal/frequency scaling) drifts enough on an HPC cluster to fabricate or hide a
+real optimization effect. Always run one unmodified-baseline replicate INTERLEAVED (submitted
+in the same time window, ideally back-to-back) with every variant you're comparing it against,
+and treat any single-window "before/after" number as provisional until confirmed this way.
+
 ## Inspecting a job with `flux job info`
 
 `flux job info <JOBID> <KEY>` dumps a specific piece of a job's stored data (the
@@ -534,3 +558,28 @@ mcp__dftracer__event_count(directory=compact_dir, allocation_id=session_jobid)
 
 If `allocation_id` is omitted, the tool still works (auto-detect, then local fallback) —
 but explicit is preferred so multi-allocation ambiguity never silently picks the wrong one.
+
+## PyTorch Lightning / torch.distributed DDP on a non-`--exclusive` single-task `flux run` can fork-bomb the node
+
+**Generic gotcha, not app-specific** (first hit on MoLFormer, see `software-molformer` for the
+full writeup): Flux's built-in PMI shim sets `PMI_RANK=0`/`PMI_SIZE=1`/`PALS_*`/`LDCS_RANKINFO`
+in the environment for ANY `flux run`, even a plain single-task, non-MPI one. Any
+multi-GPU-per-node framework whose subprocess-based launcher (PyTorch Lightning's `ddp`
+strategy, raw `torch.distributed` subprocess launch, etc.) uses those PMI vars to decide "am I
+an already-spawned child" can get stuck: every spawned child inherits the SAME `PMI_RANK=0`
+unchanged, so none of them recognize themselves as a child, and each one re-triggers spawning
+its siblings — recursively, without bound. This tends to stay latent (silent, zero output) until
+combined with a real error condition — e.g. requesting more GPUs than the job's resource slice
+actually grants (which itself happens when `--exclusive` is dropped from the `flux run`/
+`flux submit`, since a fair-share task-count-based slice may only see 1 GPU instead of all N on
+the node).
+
+**Fix:** always launch node-local multi-GPU DDP/distributed training with `--exclusive` (needs
+the whole node's GPUs), AND unset the Flux/Cray PMI vars before invoking the training process:
+`unset PMI_RANK PMI_SIZE PMI_FD PALS_APID PALS_APINFO PALS_NODEID PALS_RANKID PALS_SPOOL_DIR LDCS_RANKINFO`.
+
+**Detection:** if a job shows zero stdout/output for many minutes with no error, check the
+node's process count before assuming it's just slow:
+`flux proxy <alloc> flux run -N1 -n1 --requires=hosts:<node> ps aux | grep -c <script_name>`.
+A rapidly-growing count means cancel immediately
+(`flux proxy <alloc> flux cancel <jobid>`) rather than waiting it out.

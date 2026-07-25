@@ -83,3 +83,80 @@ Batch-size scaling is the lever that actually amortizes Python-level per-step ov
 unified-memory APU. `PYTORCH_HIP_ALLOC_CONF=expandable_segments:True` is confirmed NOT
 SUPPORTED on this ROCm platform (explicit PyTorch runtime warning, silently a no-op) — the
 +206% result is attributable entirely to the batch-size change, not this flag.
+
+## Non-`--exclusive` single-task `flux run` + PyTorch Lightning DDP can fork-bomb the node
+
+**Symptom:** launching the 4-GPU DDP training command via `flux run -N1 -n1 bash wrapper.sh`
+(no `--exclusive`) produces zero stdout/trace output for tens of minutes, then hundreds of
+identical `bash wrapper.sh` processes pile up on the node (verified via `ps aux` on the node —
+process count kept growing, no error ever surfaced to the job's stdout/stderr).
+
+**Root cause, two compounding issues:**
+1. Flux's built-in PMI shim sets `PMI_RANK=0` / `PMI_SIZE=1` / `PALS_APID` / `PALS_NODEID` /
+   `PALS_RANKID` / `PALS_SPOOL_DIR` / `LDCS_RANKINFO` in the environment for **any** `flux run`,
+   even a plain single-task, non-MPI one. Every child process PyTorch Lightning's DDP
+   subprocess launcher spawns inherits this SAME `PMI_RANK=0` unchanged (Flux does not rewrite
+   it per child), so no child can ever tell "I am an already-spawned child" — each one
+   re-evaluates "am I the parent that needs to spawn my siblings?" as true, causing infinite
+   recursive self-relaunch.
+2. This only actually fires when combined with a real error condition: launching
+   `flux run -N1 -n1` WITHOUT `--exclusive` only grants the job a fair-share slice of the
+   node's resources — here, 1 of the node's 4 GPUs — while the training command asks for
+   `--gpus 4`. PyTorch Lightning's `MisconfigurationException` ("You requested gpu: [0,1,2,3]
+   But your machine only has: [0]") is the trigger that sends the corrupted-env relaunch logic
+   into its infinite loop instead of surfacing the exception once and exiting.
+
+**Fix (apply both, defense-in-depth):**
+- Always launch this app's DDP training with `--exclusive` on the `flux run`/`flux submit` —
+  it needs the WHOLE node's 4 GPUs, not a fair-share slice. This alone fixes the actual GPU
+  mismatch and is what the originally-working run scripts always did
+  (`flux run -N 1 -n 1 --exclusive ...`) — dropping `--exclusive` (e.g. when a tool call
+  doesn't add it, as `session_run_with_dftracer` does not by default) is the regression trigger.
+- Before invoking `python`, unset the Flux/Cray PMI pollution:
+  `unset PMI_RANK PMI_SIZE PMI_FD PALS_APID PALS_APINFO PALS_NODEID PALS_RANKID PALS_SPOOL_DIR LDCS_RANKINFO`
+  so PyTorch Lightning's cluster-environment auto-detection falls back to its own
+  `LightningEnvironment` (LOCAL_RANK-based, correctly self-terminating) instead of whatever
+  MPI-like environment it infers from the PMI vars.
+
+**If this ever recurs:** cancel the job immediately (`flux proxy <alloc> flux cancel <jobid>`)
+and verify process cleanup on the node
+(`flux proxy <alloc> flux run -N1 -n1 --requires=hosts:<node> ps aux | grep -c <script_name>`)
+before relaunching — do not let a suspected fork bomb keep running while you investigate.
+
+## Ray variant (`molformer_ray_descriptors.py`, Ray Train/Tune): multi-node bring-up bugs
+
+The Ray-based variant of this app (distinct from the PyTorch-Lightning variant documented
+above) hits several distinct, non-obvious multi-node bring-up bugs on Tuolumne. See also
+`software-ray` for the general (not MoLFormer-specific) `ray start --head` jemalloc bug.
+
+1. **`ray.init()` with no args silently builds an isolated single-node cluster** if
+   `RAY_ADDRESS` isn't exported, even when a real multi-node cluster was already bootstrapped
+   via `ray start --head` / `ray start --address=`. Symptom: the driver process stays alive at
+   near-0% CPU indefinitely with `ScalingConfig(num_workers=N)` requesting more
+   GPUs/workers than the accidentally-isolated 1-node cluster has, and Tune's
+   `insufficient_resources_manager` warns "cluster only has ... GPUs available" every 60s
+   forever. Fix: `export RAY_ADDRESS="<head_ip>:<port>"` before launching the training script.
+2. `molformer_ray_descriptors.py` falls back to `DATASET_CSV_PATH = script_dir/../dataset/
+   baseline/pubchem_filtered.csv` when the `DATASET_CSV_PATH` env var isn't set — this relative
+   path does not exist under `annotated/src/../dataset` (the real dataset lives at
+   `<WS>/dataset/baseline/`). Always export `DATASET_CSV_PATH` explicitly.
+3. When bootstrapping head+worker manually with `ray start --head` (not the head's default
+   auto-detected GPU count), do NOT pass `--num-gpus=0` to the head unless the head is
+   genuinely a non-GPU control-plane node — on Tuolumne the "head" is a real MI300A GPU node
+   like every other allocated node, and `ScalingConfig(num_workers=args.nodes*4)` expects
+   4 GPUs contributed by EACH physical node, not just the workers.
+4. A worker script that `sleep`s a fixed duration before `ray stop` (to keep its GPUs alive
+   while the head trains) is a race: if actual training takes longer than the sleep, the
+   worker drops out from under the head mid-run. Use a completion-marker file the head
+   `touch`es on exit, polled by the worker, instead of a fixed sleep.
+5. **Unresolved as of 2026-07-25:** even after fixes 1-4, the run reliably reaches "Connected
+   to Ray cluster" + dataset path resolution, then stalls indefinitely (near-0% CPU, no
+   traceback, no Tune scheduling warning, no `ray::` worker actor ever appears) before any
+   dftracer I/O trace data is produced. `py-spy` was not available in the session venv to get
+   a stack trace of the stalled process — installing it (`pip install py-spy`, needs to be
+   pre-cached since compute nodes have no internet) and running `py-spy dump --pid <pid>` on
+   the stalled driver is the recommended next diagnostic step. Leading suspects: (a)
+   `AutoTokenizer`/`AutoConfig.from_pretrained(..., trust_remote_code=True)` still attempting a
+   network round-trip to huggingface.co despite `HF_HUB_OFFLINE=1`/`TRANSFORMERS_OFFLINE=1`;
+   (b) a Ray placement-group/actor-scheduling deadlock tied to the MI300A `accelerator_type`
+   resource label; (c) a silently OOM-killed worker actor.

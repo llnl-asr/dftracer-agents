@@ -178,12 +178,29 @@ meaningful fraction of job time AND whether the bottleneck is few-huge-ops
 or many-tiny-ops before reaching for a striping/ROMIO fix — see
 `workload-vpic-kokkos` for the full worked example.
 
+### Split POSIX metadata ops by resolved path before proposing a metadata-layer fix
+
+For Python/framework workloads (Ray, PyTorch, any interpreter-heavy stack), POSIX metadata
+op counts are routinely dominated by the interpreter/venv import path (`stat`/`open` on
+every `site-packages` module as processes start), not application data access — and that
+traffic is invisible to Lustre striping, Data-on-MDT, or ROMIO metadata tuning, since it's a
+dynamic-loading problem (Frings et al., *Scalable Massively Parallel I/O to Task-Local
+Files*, ICS 2013 — the Spindle motivating problem) not a filesystem-layout one. Confirmed on
+a 2-node Ray Train run: 117,920 of the run's `__lxstat64` calls were venv import-path
+traffic; the actual application dataset file accounted for 9 POSIX ops / 0.006s for the
+entire run. Before recommending any metadata-layer lever, resolve the trace's `FH` metadata
+records to real paths and check what fraction of the metadata-op count is actually
+`site-packages`/module-import traffic vs. application data files — report them as separate
+findings, since the fix for one (Spindle-class dynamic-loading acceleration) does nothing
+for the other.
+
 ## Related Skills
 
 Software-specific strategies are also available in dedicated skills:
 - **[[software-mpi]]** — MPI-IO/ROMIO details, Flux env propagation, Cray MPICH
 - **[[software-hdf5]]** — HDF5 version compatibility, chunk/cache tuning, build from source
 - **[[software-posix]]** — POSIX readahead, Lustre striping, OS/VM tuning, ops_slope bottlenecks
+- **[[software-ray]]** — Ray/Ray Data caveats, including `ray.data.read_csv` object-store materialization (no per-epoch re-read)
 - **[[workload-vpic-kokkos]]** — worked example of an op-count-bound, structurally negligible I/O profile
 
 Workload-specific results:

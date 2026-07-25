@@ -13,7 +13,32 @@ which is the actual bottleneck at this scale on a shared parallel filesystem.
 - **No sudo** — unprivileged user environment only.
 - MPI uses `cray-mpich/9.0.1` via OFI fabric (`craype-network-ofi`, `libfabric/match_SHS`).
 - Compiler: CCE 20.0.0 (`cce/20.0.0`) under `PrgEnv-cray/8.7.0`.
+- **GPU clock/perf level is not tunable as a non-root user on compute nodes.**
+  `/sys/class/drm/card*/device/power_dpm_force_performance_level` reads `auto` and is
+  NOT-WRITABLE; `rocm-smi` is not on `PATH` even after `module load rocm/<version>`. Confirmed
+  2026-07-25. Check quickly with:
+  `for f in /sys/class/drm/card*/device/power_dpm_force_performance_level; do cat $f; test -w $f && echo WRITABLE || echo NOT-WRITABLE; done`
+  — do not propose GPU-frequency/perf-level tuning as an optimization lever on this system.
 - Python: `python/3.13.2`
+
+## RCCL/NCCL multi-node GPU-collective training defaults to the wrong (1GbE) NIC
+
+Confirmed 2026-07-25 (ray_molformer session): `ibv_devices` returns zero devices (no IB
+verbs transport), and `/opt/rocm-*/lib` ships no `librccl-net*`/`aws-ofi-rccl` plugin (no
+libfabric/CXI path for RCCL, even though `fi_info` shows a healthy `cxi` provider — that
+path is only reachable through the missing plugin). RCCL therefore falls back to its TCP
+**socket** transport, and its default interface-prefix scan (`ib*`, `eth*`, `en*`, `em*`,
+`bond*`) matches `enp129s0` (the **1000 Mb/s** management NIC) before it would ever reach
+`hsi0` (the **200000 Mb/s** Slingshot-11 fabric NIC). Any multi-node RCCL/torch-DDP job that
+doesn't explicitly pin the interface is likely running inter-node collectives at ~1/200th of
+available bandwidth, silently.
+
+**Fix**: always export `NCCL_SOCKET_IFNAME=hsi0` before launching multi-node NCCL/RCCL
+collective training on Tuolumne. Confirm the actual selection once with
+`NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=INIT,NET` in the launch env — this logs the chosen
+transport and NIC. `NCCL_NET_GDR_LEVEL` and other libfabric/CXI-path tuning are inert without
+the `aws-ofi-rccl` plugin installed (https://github.com/ROCm/aws-ofi-rccl) — check for that
+plugin before assuming any CXI-path RCCL env var will do anything.
 
 ## Module Load Sequence
 

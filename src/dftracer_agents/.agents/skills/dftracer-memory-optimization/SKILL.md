@@ -44,6 +44,19 @@ Every row in the resulting `opt_proposal_table` MUST carry `app_impact_pct` (% o
 Per category: run the literature search before marking "not applicable." Never silently omit
 a category.
 
+**Cheap first check before the literature search**: dismiss the capacity-related categories
+(1-2, 6-7, 9, and gradient checkpointing) from `dftracer_service` node-counter evidence rather
+than assumption. The node-counter trace emits a 1Hz `"name":"memory"` counter series with the
+full `/proc/meminfo` field set:
+`zcat <WS>/traces/service_*.pfw.gz | grep '"name":"memory"' | grep -o '"MemAvailable":[0-9]*'`
+gives min/max peak node memory use directly; also check `SwapTotal`, `Dirty`, `Writeback`,
+`HugePages_Total` in the same series. If peak use is a small fraction of total and swap/dirty/
+writeback are all 0, most of the checklist's capacity categories are dismissible in one command
+— do this before spending time on a literature search for categories that evidence already
+rules out. (Confirmed on ray_molformer/MI300A: 22.5 GiB peak of ~490 GiB = 4.6%, zero swap,
+zero spill — memory was not the bottleneck and gradient checkpointing would have been a pure
+regression on an already compute-bound job.)
+
 ## MANDATORY: never change the app's actual memory footprint semantics as an "optimization"
 
 Do not propose reducing batch size, dropping cached data the app's correctness depends on, or
