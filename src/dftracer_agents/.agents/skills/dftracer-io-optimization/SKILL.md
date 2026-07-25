@@ -692,3 +692,18 @@ USENIX NSDI 2022, https://www.usenix.org/conference/nsdi22/presentation/eisenman
 
 **Guard rail.** A wall-clock gain from writing fewer checkpoints, reading less data, or running
 fewer epochs is *doing less*, not going faster. Check event and byte counts before crediting it.
+
+**Measurement methodology, reconfirmed 2026-07-24 (IOR 4.0.0, Tuolumne, HDF5 1.14.5):**
+- **Tracing state must be identical across every arm of an A/B.** A baseline captured with
+  `DFTRACER_ENABLE=1` (FUNCTION mode) compared against untraced optimization-variant runs
+  looked ~60% faster in the variants purely from removing tracing overhead (FUNCTION-mode
+  cost was ~37% of apparent write bandwidth at 4 KiB transfers on this workload) — nothing to
+  do with the optimization under test. Before crediting any delta, grep both arms' launch
+  scripts for `DFTRACER_ENABLE`/`DFTRACER_INIT` and refuse the comparison if they differ.
+  Report headline bandwidth from untraced runs only (trace collection is a separate,
+  intentionally-instrumented pass, not the number the optimization claim is made against).
+- **Every replicate must write to a fresh, unused directory, and arms must be interleaved**
+  (v0, v1, v0, v1, ... not v0×5 then v1×5). Filesystem/cache state drifted ~11% between two
+  back-to-back same-night campaigns on Lustre — larger than most of the optimization effects
+  under test. Back-to-back-by-arm ordering biases later arms toward warmer cache/layout state.
+  A candidate delta is only claimable when its full range does not overlap the baseline's.

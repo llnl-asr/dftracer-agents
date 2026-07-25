@@ -1105,15 +1105,26 @@ def _detect_info(
     if suffixes & {".f90", ".f95", ".f03", ".f", ".for", ".f77"}:
         languages.append("fortran")
 
-    if "CMakeLists.txt" in names:
+    # Build-system detection MUST be based on root-level markers only. A
+    # recursive scan (``names`` derived from ``source_dir.rglob("*")``) can
+    # pick up build descriptors belonging to vendored dependencies or test
+    # fixtures nested arbitrarily deep (e.g. IOR 4.0.0's
+    # ``testing/libnfs/CMakeLists.txt``), which would misattribute a
+    # subdirectory's build system to the whole project even though the
+    # actual top-level project uses a different one (e.g. Autotools via a
+    # root ``configure.ac``). Precedence among root-level markers mirrors
+    # the elif chain below.
+    root_names = {f.name for f in source_dir.iterdir() if f.is_file()}
+
+    if "CMakeLists.txt" in root_names:
         build_tool = "cmake"
-    elif "configure.ac" in names or "configure.in" in names:
+    elif "configure.ac" in root_names or "configure.in" in root_names:
         build_tool = "autotools"
-    elif "meson.build" in names:
+    elif "meson.build" in root_names:
         build_tool = "meson"
-    elif names & {"setup.py", "pyproject.toml", "setup.cfg"}:
+    elif root_names & {"setup.py", "pyproject.toml", "setup.cfg"}:
         build_tool = "python"
-    elif names & {"Makefile", "makefile", "GNUmakefile"}:
+    elif root_names & {"Makefile", "makefile", "GNUmakefile"}:
         build_tool = "make"
     else:
         build_tool = "unknown"

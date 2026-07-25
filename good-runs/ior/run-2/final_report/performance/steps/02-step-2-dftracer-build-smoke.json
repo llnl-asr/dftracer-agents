@@ -1,0 +1,51 @@
+{
+  "run_id": "ior/20260724_175545",
+  "key": "STEP 2: dftracer-build-smoke",
+  "index": 2,
+  "agent": "dftracer-build-smoke",
+  "notes": "autotools build of annotated IOR against install_dftracer + install_hdf5; single-process smoke test POSIX+HDF5+MPIIO",
+  "status": "ok",
+  "tries": 2,
+  "retries": 1,
+  "failed_attempts": 0,
+  "successful_attempts": 2,
+  "exec_s": 1063.123,
+  "wall_s": 1129.894,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 455.097,
+      "error": "",
+      "start_ns": 1784918301033928550,
+      "end_ns": 1784918756131320315
+    },
+    {
+      "number": 2,
+      "status": "ok",
+      "duration_s": 608.026,
+      "error": "",
+      "start_ns": 1784918822901936820,
+      "end_ns": 1784919430927688587
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

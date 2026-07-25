@@ -56,6 +56,7 @@ from fastmcp import FastMCP
 
 from ...mcp_service_factory import MCPService, MCPServiceFactory
 from ..optimizations.diagnose import _session_diagnose_bottlenecks_impl
+from ._flux_exec import run_on_allocation
 
 # Eagerly trigger `dftracer.analyzer.fact_engine`'s import chain here, at
 # module load time (the MCP server's main thread, on startup) — NOT lazily
@@ -116,7 +117,7 @@ def _describe_metric(metric: str) -> str:
 def _run_cli(cmd: List[str], timeout: int = 300) -> Dict[str, Any]:
     """Run a subprocess and return a normalised result dict."""
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        r = run_on_allocation(cmd, capture_output=True, text=True, timeout=timeout)
         return {
             "returncode": r.returncode,
             "stdout": r.stdout.strip(),

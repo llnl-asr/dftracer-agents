@@ -1,0 +1,43 @@
+{
+  "run_id": "ior/20260724_175545",
+  "key": "STEP 3: dftracer-tracer",
+  "index": 3,
+  "agent": "dftracer-tracer",
+  "notes": "baseline IOR 512-rank run (HDF5 backend), at least 2 replicates for noise band",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 671.63,
+  "wall_s": 671.63,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 671.63,
+      "error": "",
+      "start_ns": 1784919757509229973,
+      "end_ns": 1784920429139248096
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

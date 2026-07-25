@@ -35,6 +35,7 @@ from typing import List, Optional
 from fastmcp import FastMCP
 
 from ...mcp_service_factory import MCPService, MCPServiceFactory
+from ._flux_exec import run_on_allocation
 
 
 def _ensure_analyzable_path(trace_path: str) -> str:
@@ -79,7 +80,7 @@ def _ensure_analyzable_path(trace_path: str) -> str:
         split_bin = shutil.which("dftracer_split")
         if not split_bin:
             return trace_path
-        r = subprocess.run(
+        r = run_on_allocation(
             [split_bin, "-d", str(p), "--output", str(split_dir),
              "--index-dir", str(split_dir / "idx"), "--compress",
              "--app-name", "analyze"],
@@ -119,7 +120,7 @@ def _build_index_single_threaded(directory: str) -> None:
     if not index_bin:
         return
     try:
-        subprocess.run(
+        run_on_allocation(
             [index_bin, "-d", directory, "-f", "--executor-threads", "1"],
             capture_output=True, text=True, timeout=600,
         )
@@ -389,8 +390,15 @@ class DFAnalyzerService(MCPService):
             cluster_processes: Optional[int] = None,
             cluster_cores: Optional[int] = None,
             cluster_memory: Optional[str] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
-            """Run dfanalyzer on the provided trace path."""
+            """Run dfanalyzer on the provided trace path.
+
+            allocation_id: Explicit Flux jobid to run this (potentially
+            large-trace) analysis on, instead of the MCP server's own host.
+            When omitted, the tool auto-detects the current user's most
+            recent RUNNING flux allocation, if any.
+            """
             # dfanalyzer truncates a dir of raw per-rank *.pfw.gz files; split +
             # index them first so it reads the full event set across all ranks.
             trace_path = _ensure_analyzable_path(trace_path)
@@ -429,7 +437,7 @@ class DFAnalyzerService(MCPService):
             # if it already produced console output — SIGKILL the hung
             # process and return whatever was captured before the kill.
             try:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                result = run_on_allocation(cmd, allocation_id=allocation_id, capture_output=True, text=True, timeout=300)
                 stdout, stderr, returncode = result.stdout, result.stderr, result.returncode
             except subprocess.TimeoutExpired as exc:
                 # NOTE: even with text=True, TimeoutExpired.stdout/stderr are

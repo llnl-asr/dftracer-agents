@@ -1,0 +1,91 @@
+{
+  "run_id": "ior/20260724_175545",
+  "key": "STEP 7: dftracer-tracer",
+  "index": 7,
+  "agent": "dftracer-tracer",
+  "notes": "Ray MoLFormer 2-node baseline run with dual-source tracing (app + Ray framework), fixing ray.init kwarg and cluster setup issues",
+  "status": "running",
+  "tries": 7,
+  "retries": 6,
+  "failed_attempts": 3,
+  "successful_attempts": 0,
+  "exec_s": 3045.306,
+  "wall_s": 4717.016,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 947.473,
+      "error": "",
+      "start_ns": 1784956519270580429,
+      "end_ns": 1784957466743126885
+    },
+    {
+      "number": 2,
+      "status": "failed",
+      "duration_s": 3.675,
+      "error": "Transformers library ImportError: cannot import 'GeneralInterface'. Empty trace files (0 bytes) produced. App dependency mismatch requires VENV rebuild.",
+      "start_ns": 1784957480024803952,
+      "end_ns": 1784957483699667020
+    },
+    {
+      "number": 3,
+      "status": "superseded",
+      "duration_s": 263.343,
+      "error": "",
+      "start_ns": 1784958601713092324,
+      "end_ns": 1784958865055705288
+    },
+    {
+      "number": 4,
+      "status": "failed",
+      "duration_s": 413.826,
+      "error": "Training failed: hardcoded path $HOME/molformer2/pubchem_descriptor_stats.npz not found; file exists at $PROJECT_ROOT/workspaces/ray_molformer/20260725_000436/annotated/src/pubchem_descriptor_stats.npz",
+      "start_ns": 1784958893210553926,
+      "end_ns": 1784959307036471667
+    },
+    {
+      "number": 5,
+      "status": "failed",
+      "duration_s": 655.162,
+      "error": "Second distinct new failure: pandas/pyarrow numpy dtype conversion error prevents training from running; trace files empty (0 bytes). After fixing the first new bug (epoch_num uninitialized), hit this second blocking issue.",
+      "start_ns": 1784959374256489684,
+      "end_ns": 1784960029418921970
+    },
+    {
+      "number": 6,
+      "status": "superseded",
+      "duration_s": 747.782,
+      "error": "",
+      "start_ns": 1784960474458628937,
+      "end_ns": 1784961222241111980
+    },
+    {
+      "number": 7,
+      "status": "running",
+      "duration_s": 14.046,
+      "error": "",
+      "start_ns": 1784961222241117630,
+      "end_ns": null
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

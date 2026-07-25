@@ -32,6 +32,7 @@ from fastmcp import FastMCP
 
 from ...mcp_service_factory import MCPService
 from ..session.session_tools import _session_split_traces_impl, _session_validate_traces_impl
+from ._flux_exec import run_on_allocation
 
 
 # ── shared / default helpers ───────────────────────────────────────────
@@ -194,6 +195,7 @@ class DftracerUtilsService(MCPService):
             read_buffer_size: Optional[int] = None,
             mode: str = "bytes",
             index_dir: Optional[str] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Read bytes / lines from a GZIP or TAR.GZ compressed file.
 
@@ -223,7 +225,7 @@ class DftracerUtilsService(MCPService):
             cmd += ["--mode", mode]
             if index_dir is not None:
                 cmd += ["--index-dir", index_dir]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = run_on_allocation(cmd, allocation_id=allocation_id, capture_output=True, text=True, check=True)
             return result.stdout
 
         @self.core_subservice.tool()
@@ -236,6 +238,7 @@ class DftracerUtilsService(MCPService):
             checkpoint_size: Optional[int] = None,
             index_dir: Optional[str] = None,
             executor_threads: Optional[int] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Display metadata / index info for .pfw.gz files.
 
@@ -265,7 +268,7 @@ class DftracerUtilsService(MCPService):
                 cmd += ["--index-dir", index_dir]
             if executor_threads is not None:
                 cmd += ["--executor-threads", str(executor_threads)]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = run_on_allocation(cmd, allocation_id=allocation_id, capture_output=True, text=True, check=True)
             return result.stdout
 
         @self.core_subservice.tool()
@@ -279,6 +282,7 @@ class DftracerUtilsService(MCPService):
             checkpoint_size: Optional[int] = None,
             index_dir: Optional[str] = None,
             executor_threads: Optional[int] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Merge .pfw/.pfw.gz files into a single JSON-array output.
 
@@ -307,7 +311,7 @@ class DftracerUtilsService(MCPService):
                 cmd += ["--index-dir", index_dir]
             if executor_threads is not None:
                 cmd += ["--executor-threads", str(executor_threads)]
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            run_on_allocation(cmd, allocation_id=allocation_id, check=True, capture_output=True, text=True)
             return f"Merged trace files from {directory} → {output_file}"
 
         @self.core_subservice.tool()
@@ -323,6 +327,7 @@ class DftracerUtilsService(MCPService):
             checkpoint_size: Optional[int] = None,
             index_dir: Optional[str] = None,
             executor_threads: Optional[int] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Split traces into equal-size chunks.
 
@@ -360,7 +365,7 @@ class DftracerUtilsService(MCPService):
                 cmd += ["--index-dir", index_dir]
             if executor_threads is not None:
                 cmd += ["--executor-threads", str(executor_threads)]
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            run_on_allocation(cmd, allocation_id=allocation_id, check=True, capture_output=True, text=True)
             return f"Split trace files → {output_dir}"
 
         @self.core_subservice.tool()
@@ -370,6 +375,7 @@ class DftracerUtilsService(MCPService):
             checkpoint_size: Optional[int] = None,
             index_dir: Optional[str] = None,
             executor_threads: Optional[int] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Count valid events in .pfw/.pfw.gz files.
 
@@ -391,7 +397,7 @@ class DftracerUtilsService(MCPService):
                 cmd += ["--index-dir", index_dir]
             if executor_threads is not None:
                 cmd += ["--executor-threads", str(executor_threads)]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = run_on_allocation(cmd, allocation_id=allocation_id, capture_output=True, text=True, check=True)
             return result.stdout
 
         @self.core_subservice.tool()
@@ -399,6 +405,7 @@ class DftracerUtilsService(MCPService):
             directory: Optional[str] = None,
             verbose: bool = False,
             executor_threads: Optional[int] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Parallel-gzip .pfw → .pfw.gz in a directory.
 
@@ -416,7 +423,7 @@ class DftracerUtilsService(MCPService):
                 cmd.append("-v")
             if executor_threads is not None:
                 cmd += ["--executor-threads", str(executor_threads)]
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            run_on_allocation(cmd, allocation_id=allocation_id, check=True, capture_output=True, text=True)
             # pgzip has no stdout; return a message describing what happened.
             return "Compressed .pfw files in directory (check for *.pfw.gz)"
 
@@ -428,6 +435,7 @@ class DftracerUtilsService(MCPService):
             force_rebuild: bool = False,
             list_files: bool = False,
             show_info: bool = False,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Inspect / list files in a TAR.GZ archive with DFTracer data.
 
@@ -450,7 +458,7 @@ class DftracerUtilsService(MCPService):
                 cmd.append("--list-files")
             if show_info:
                 cmd.append("--info")
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = run_on_allocation(cmd, allocation_id=allocation_id, capture_output=True, text=True, check=True)
             return result.stdout
 
     # ── Analysis tools (stats, aggregator, call_tree, comparator) ─────
@@ -484,6 +492,7 @@ class DftracerUtilsService(MCPService):
             no_auto_index: bool = False,
             checkpoint_size: Optional[int] = None,
             executor_threads: Optional[int] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Compute event statistics (summary / categories / names / pid_tids …).
 
@@ -520,7 +529,7 @@ class DftracerUtilsService(MCPService):
                 cmd += ["--checkpoint-size", str(checkpoint_size)]
             if executor_threads is not None:
                 cmd += ["--executor-threads", str(executor_threads)]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = run_on_allocation(cmd, allocation_id=allocation_id, capture_output=True, text=True, check=True)
             return result.stdout
 
         @self.analysis_subservice.tool()
@@ -546,6 +555,7 @@ class DftracerUtilsService(MCPService):
             percentiles: Optional[str] = None,
             relative_accuracy: float = 0.01,
             format_type: str = "json",
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Aggregate DFTracer events into time-series counters.
 
@@ -598,7 +608,7 @@ class DftracerUtilsService(MCPService):
                 cmd += ["--percentiles", percentiles]
             cmd += ["--relative-accuracy", str(relative_accuracy)]
             cmd += ["--format", format_type]
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            run_on_allocation(cmd, allocation_id=allocation_id, check=True, capture_output=True, text=True)
             return f"Aggregated traces → {output_file}"
 
         @self.analysis_subservice.tool()
@@ -615,6 +625,7 @@ class DftracerUtilsService(MCPService):
             stats_only: bool = False,
             no_save: bool = False,
             fix_c_app_names: bool = False,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Build and analyze a hierarchical call tree from trace files.
 
@@ -659,7 +670,7 @@ class DftracerUtilsService(MCPService):
                 cmd.append("--stats-only")
             if no_save:
                 cmd.append("--no-save")
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = run_on_allocation(cmd, allocation_id=allocation_id, capture_output=True, text=True, check=True)
 
             # ── C_APP name restoration (workaround for dftracer_call_tree bug) ──
             if fix_c_app_names and actual_output and inputs:
@@ -723,6 +734,7 @@ class DftracerUtilsService(MCPService):
             index_dir: Optional[str] = None,
             force: bool = False,
             checkpoint_size: Optional[int] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Compare trace metrics between a baseline and variant run.
 
@@ -756,7 +768,7 @@ class DftracerUtilsService(MCPService):
                 cmd.append("--force")
             if checkpoint_size is not None:
                 cmd += ["--checkpoint-size", str(checkpoint_size)]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = run_on_allocation(cmd, allocation_id=allocation_id, capture_output=True, text=True, check=True)
             return result.stdout
 
     # ── Query tools (view, index) ─────────────────────────────────────
@@ -790,6 +802,7 @@ class DftracerUtilsService(MCPService):
             no_auto_index: bool = False,
             checkpoint_size: Optional[int] = None,
             executor_threads: Optional[int] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Extract a filtered subset of trace events with chunk-level pruning.
 
@@ -863,7 +876,7 @@ class DftracerUtilsService(MCPService):
                 cmd += ["--checkpoint-size", str(checkpoint_size)]
             if executor_threads is not None:
                 cmd += ["--executor-threads", str(executor_threads)]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = run_on_allocation(cmd, allocation_id=allocation_id, capture_output=True, text=True, check=True)
             return result.stdout
 
         @self.query_subservice.tool()
@@ -879,6 +892,7 @@ class DftracerUtilsService(MCPService):
             read_batch_size_mb: int = 4,
             manifest: bool = False,
             rebuild_summaries: bool = False,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Build bloom-filter per-chunk indices (and optional manifest).
 
@@ -914,7 +928,7 @@ class DftracerUtilsService(MCPService):
                 cmd.append("--manifest")
             if rebuild_summaries:
                 cmd.append("--rebuild-summaries")
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            run_on_allocation(cmd, allocation_id=allocation_id, check=True, capture_output=True, text=True)
             return f"Bloom index built in directory '{directory or '.'}'"
 
     # ── Organize / Reconstruct tools ──────────────────────────────────
@@ -944,6 +958,7 @@ class DftracerUtilsService(MCPService):
             force: bool = False,
             no_compress: bool = False,
             executor_threads: Optional[int] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Reorganize traces into query-based groups with provenance tracking.
 
@@ -977,7 +992,7 @@ class DftracerUtilsService(MCPService):
                 cmd.append("--no-compress")
             if executor_threads is not None:
                 cmd += ["--executor-threads", str(executor_threads)]
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            run_on_allocation(cmd, allocation_id=allocation_id, check=True, capture_output=True, text=True)
             return f"Reorganized traces → {output_dir or 'N/A'}"
 
         @self.query_subservice.tool()
@@ -988,6 +1003,7 @@ class DftracerUtilsService(MCPService):
             checkpoint_size: Optional[int] = None,
             no_compress: bool = False,
             executor_threads: Optional[int] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Reconstruct original traces from reorganized files via provenance sidecars.
 
@@ -1011,7 +1027,7 @@ class DftracerUtilsService(MCPService):
                 cmd.append("--no-compress")
             if executor_threads is not None:
                 cmd += ["--executor-threads", str(executor_threads)]
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            run_on_allocation(cmd, allocation_id=allocation_id, check=True, capture_output=True, text=True)
             return f"Reconstructed traces → {output}"
 
     # ── Replay tool ───────────────────────────────────────────────────
@@ -1053,6 +1069,7 @@ class DftracerUtilsService(MCPService):
             sample_rate: Optional[float] = None,
             sample_seed: Optional[int] = None,
             max_events: Optional[int] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Replay I/O operations from trace files with timing / filtering.
 
@@ -1126,7 +1143,7 @@ class DftracerUtilsService(MCPService):
                 cmd += ["--sample-seed", str(sample_seed)]
             if max_events is not None:
                 cmd += ["--max-events", str(max_events)]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = run_on_allocation(cmd, allocation_id=allocation_id, capture_output=True, text=True, check=True)
             return result.stdout
 
     # ── Utility tools (server) ────────────────────────────────────────
@@ -1149,6 +1166,7 @@ class DftracerUtilsService(MCPService):
             directory: Optional[str] = None,
             index_dir: Optional[str] = None,
             executor_threads: Optional[int] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Start the HTTP REST server for DFTracer trace data.
 
@@ -1168,7 +1186,7 @@ class DftracerUtilsService(MCPService):
                 cmd += ["--index-dir", index_dir]
             if executor_threads is not None:
                 cmd += ["--executor-threads", str(executor_threads)]
-            subprocess.run(cmd, check=False, capture_output=True, text=True)
+            run_on_allocation(cmd, allocation_id=allocation_id, check=False, capture_output=True, text=True)
             return f"Started DFTracer server on {bind_address}:{port} (trace dir={directory or './traces'}) — run as daemon for long-running instance."
 
     # ── DLIO tools ────────────────────────────────────────────────────
@@ -1204,6 +1222,7 @@ class DftracerUtilsService(MCPService):
             checkpoint_size: Optional[int] = None,
             executor_threads: Optional[int] = None,
             force: bool = False,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Generate a DLIO YAML config from raw DFTracer traces.
 
@@ -1242,7 +1261,7 @@ class DftracerUtilsService(MCPService):
                 cmd += ["--executor-threads", str(executor_threads)]
             if force:
                 cmd.append("-f")
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            run_on_allocation(cmd, allocation_id=allocation_id, check=True, capture_output=True, text=True)
             return f"DLIO config → {output}"
 
     # ── Synthetic trace tools ─────────────────────────────────────────
@@ -1272,6 +1291,7 @@ class DftracerUtilsService(MCPService):
             seed: int = 42,
             verify: bool = False,
             checkpoint_size_mb: int = 2,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Generate realistic synthetic DFTracer traces for testing bloom-filter indexing.
 
@@ -1298,7 +1318,7 @@ class DftracerUtilsService(MCPService):
                 cmd.append("--verify")
             # checkpoint-size expects bytes on the CLI when not using .pfw; we still convert MB → bytes.
             cmd += ["--checkpoint-size", str(checkpoint_size_mb * 1024 * 1024)]
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            run_on_allocation(cmd, allocation_id=allocation_id, check=True, capture_output=True, text=True)
             return f"Synthetic traces → {output_dir}"
 
     # ── MPI tools (aggregator_mpi, call_tree_mpi) ─────────────────────
@@ -1333,6 +1353,7 @@ class DftracerUtilsService(MCPService):
             keep_staging: bool = False,
             checkpoint_size: Optional[int] = None,
             executor_threads: Optional[int] = None,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Distributed-SST aggregator driven via ``mpirun``.
 
@@ -1366,7 +1387,7 @@ class DftracerUtilsService(MCPService):
                 cmd += ["--executor-threads", str(executor_threads)]
             # aggregator_mpi is designed to be invoked through mpirun; we still try to run it
             # but return a message noting the expected invocation pattern.
-            subprocess.run(cmd, check=False, capture_output=True, text=True)
+            run_on_allocation(cmd, allocation_id=allocation_id, check=False, capture_output=True, text=True)
             return (
                 f"Note: dftracer_aggregator_mpi must be run via mpirun.\n"
                 f"  mpirun -n <NP> dftracer_aggregator_mpi " + " ".join(cmd[1:])
@@ -1380,6 +1401,7 @@ class DftracerUtilsService(MCPService):
             gzip_: bool = False,
             verbose: bool = False,
             keep_staging: bool = False,
+            allocation_id: Optional[str] = None,
         ) -> str:
             """Distributed call-tree aggregation across MPI ranks.
 
@@ -1405,7 +1427,7 @@ class DftracerUtilsService(MCPService):
             if keep_staging:
                 cmd.append("--keep-staging")
             # Like aggregator_mpi, this typically runs under mpirun.
-            subprocess.run(cmd, check=False, capture_output=True, text=True)
+            run_on_allocation(cmd, allocation_id=allocation_id, check=False, capture_output=True, text=True)
             return (
                 f"Note: dftracer_call_tree_mpi should be invoked via mpirun.\n"
                 f"  mpirun -n <NP> " + " ".join(cmd)

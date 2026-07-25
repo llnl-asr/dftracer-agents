@@ -1,0 +1,43 @@
+{
+  "run_id": "molformer/20260723_235016",
+  "key": "STEP 9: dftracer-tracer N-node validation",
+  "index": 1,
+  "agent": "dftracer-tracer",
+  "notes": "1N x 4GPU baseline vs bf16-mixed variant with real 20K PubChem slice",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 582.626,
+  "wall_s": 582.626,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 582.626,
+      "error": "",
+      "start_ns": 1784922548673682056,
+      "end_ns": 1784923131299518766
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

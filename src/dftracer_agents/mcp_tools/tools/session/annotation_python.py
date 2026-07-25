@@ -1057,6 +1057,174 @@ def register_python_tools(mcp: FastMCP) -> None:
         )
 
     @mcp.tool()
+    def python_dedup_annotations(run_id: str, filepath: str) -> str:
+        """Detect and fix duplicate dftracer annotation logger/decorator stacks.
+
+        Real bug this catches: when a Python file is annotated twice by two
+        different tools/passes (e.g. ``python_annotate_file`` then
+        ``python_annotate_ai_file``, or the generic tool run twice), each pass
+        inserts its own ``DFTracerFn("<same category>")`` logger variable
+        (``_dft``, ``_dlp``) and stacks its own decorator on every function.
+        The result is every call emitting TWO overlapping, near-duplicate
+        trace spans with the same category — the "events in ranges with
+        similar names" symptom. ``python_lint_annotations`` does not catch
+        this because its checks are single-occurrence guards; this tool is
+        the dedicated fix.
+
+        Always run this AFTER any annotation pass (whole-file, AI, or
+        project-level) and BEFORE ``python_lint_annotations`` /
+        ``validate_annotations`` — it is idempotent and a no-op on files with
+        no duplication.
+
+        Fixes applied (in order):
+
+        1. **Duplicate logger assignments** — when two or more top-level
+           ``var = DFTracerFn("<cat>")`` assignments share the same category
+           string, keep exactly one (``_dft`` if present, else the first
+           found) and delete the other assignment line(s).
+        2. **Duplicate decorators** — delete every ``@<removed_var>.log`` /
+           ``@<removed_var>.log_init`` line, since the kept variable's
+           decorator on the same function already covers it.
+        3. **Duplicate dftracer.python imports** — when more than one
+           ``from dftracer.python import ...`` line is present, keep only the
+           most complete one (the one importing the most names, e.g. including
+           ``ai as dft_ai``) and delete the rest.
+        4. **Duplicate initialize_log() calls** — when more than one
+           ``_dft_log = dftracer.initialize_log(...)`` assignment exists, keep
+           the first and delete the rest, reporting each removed call's
+           arguments so a human can confirm no real config was lost.
+        5. **Duplicate finalize() calls** — collapse consecutive/duplicate
+           ``_dft_log.finalize()`` calls in the same function down to one.
+
+        Args:
+            run_id:   Session identifier returned by ``session_create``.
+            filepath: Path relative to the ``annotated/`` subfolder.
+
+        Returns:
+            JSON string with keys:
+                * ``status``               — ``"ok"`` or ``"error"``.
+                * ``changed``              — ``True`` if any fix was applied.
+                * ``removed_loggers``      — list of ``{"var", "category", "line"}``.
+                * ``removed_decorators``   — list of ``{"var", "line", "text"}``.
+                * ``removed_imports``      — list of removed import line texts.
+                * ``removed_inits``        — list of removed
+                  ``initialize_log(...)`` call texts (for manual review).
+                * ``removed_finalizes``    — count of duplicate finalize calls removed.
+                * ``total_lines``          — line count after fixing.
+        """
+        ws = _ws(run_id)
+        abs_path = ws / "annotated" / filepath
+        if not abs_path.exists():
+            return _err(f"File not found in annotated/: {filepath}")
+
+        cache_key = (run_id, filepath)
+        if cache_key in _PY_FILE_CACHE:
+            lines = list(_PY_FILE_CACHE[cache_key])
+        else:
+            lines = abs_path.read_text(errors="replace").splitlines()
+
+        removed_loggers: List[dict] = []
+        removed_decorators: List[dict] = []
+        removed_imports: List[str] = []
+        removed_inits: List[str] = []
+        removed_finalizes = 0
+
+        to_delete: set = set()
+
+        # ── Step 1: find top-level `var = DFTracerFn("cat")` assignments ──
+        logger_re = re.compile(r'^(\w+)\s*=\s*DFTracerFn\((.*)\)\s*$')
+        by_cat: Dict[str, List[tuple]] = {}
+        for i, ln in enumerate(lines):
+            if ln.startswith((" ", "\t")):
+                continue
+            m = logger_re.match(ln.strip())
+            if m:
+                var, cat_expr = m.group(1), m.group(2)
+                by_cat.setdefault(cat_expr, []).append((i, var))
+
+        removed_vars: set = set()
+        for cat_expr, occurrences in by_cat.items():
+            if len(occurrences) < 2:
+                continue
+            keep_var = next((v for _, v in occurrences if v == "_dft"), occurrences[0][1])
+            for idx, var in occurrences:
+                if var == keep_var and idx == next(i for i, v in occurrences if v == keep_var):
+                    continue
+                to_delete.add(idx)
+                removed_vars.add(var)
+                removed_loggers.append({"var": var, "category": cat_expr, "line": idx + 1})
+
+        # ── Step 2: strip decorators referencing a removed logger var ─────
+        if removed_vars:
+            dec_re = re.compile(r'^@(\w+)\.(log|log_init)\b')
+            for i, ln in enumerate(lines):
+                m = dec_re.match(ln.strip())
+                if m and m.group(1) in removed_vars:
+                    to_delete.add(i)
+                    removed_decorators.append({"var": m.group(1), "line": i + 1, "text": ln.strip()})
+
+        # ── Step 3: dedupe `from dftracer.python import ...` lines ────────
+        import_idxs = [i for i, ln in enumerate(lines) if ln.strip().startswith("from dftracer.python import")]
+        if len(import_idxs) > 1:
+            best = max(import_idxs, key=lambda i: len(lines[i]))
+            for i in import_idxs:
+                if i != best:
+                    to_delete.add(i)
+                    removed_imports.append(lines[i].strip())
+
+        # ── Step 4: dedupe `_dft_log = dftracer.initialize_log(...)` ──────
+        init_re = re.compile(r'^(\w+)\s*=\s*dftracer\.initialize_log\(')
+        init_idxs = [i for i, ln in enumerate(lines) if init_re.match(ln.strip()) and i not in to_delete]
+        if len(init_idxs) > 1:
+            keep = init_idxs[0]
+            for i in init_idxs[1:]:
+                to_delete.add(i)
+                removed_inits.append(lines[i].strip())
+
+        # ── Step 5: collapse duplicate consecutive finalize() calls ───────
+        # Handles the common "two annotation passes both appended
+        # `_dft_log.finalize()` right before `main()`'s return" case.
+        fin_re = re.compile(r'^(\w+)\.finalize\(\)\s*$')
+        i = 1
+        while i < len(lines):
+            cur = lines[i].strip()
+            prev = lines[i - 1].strip()
+            if (i not in to_delete and (i - 1) not in to_delete
+                    and fin_re.match(cur) and cur == prev):
+                to_delete.add(i)
+                removed_finalizes += 1
+            i += 1
+
+        if not to_delete:
+            return _ok(
+                f"{filepath}: no duplicate annotations found.",
+                changed=False,
+                removed_loggers=[], removed_decorators=[], removed_imports=[],
+                removed_inits=[], removed_finalizes=0,
+                total_lines=len(lines),
+            )
+
+        new_lines = [ln for i, ln in enumerate(lines) if i not in to_delete]
+        _PY_FILE_CACHE[cache_key] = list(new_lines)
+        abs_path.write_text("\n".join(new_lines) + "\n")
+
+        msg = (
+            f"Deduplicated {filepath}: removed {len(removed_loggers)} logger(s), "
+            f"{len(removed_decorators)} decorator(s), {len(removed_imports)} duplicate import(s), "
+            f"{len(removed_inits)} duplicate init(s), {removed_finalizes} duplicate finalize(s)."
+        )
+        return _ok(
+            msg,
+            changed=True,
+            removed_loggers=removed_loggers,
+            removed_decorators=removed_decorators,
+            removed_imports=removed_imports,
+            removed_inits=removed_inits,
+            removed_finalizes=removed_finalizes,
+            total_lines=len(new_lines),
+        )
+
+    @mcp.tool()
     def python_write_annotated_file(run_id: str, filepath: str) -> str:
         """Flush the in-memory annotated Python file buffer to disk.
 

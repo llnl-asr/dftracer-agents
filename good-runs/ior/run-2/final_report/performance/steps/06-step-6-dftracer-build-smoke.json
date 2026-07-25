@@ -1,0 +1,43 @@
+{
+  "run_id": "ior/20260724_175545",
+  "key": "STEP 6: dftracer-build-smoke",
+  "index": 6,
+  "agent": "dftracer-build-smoke",
+  "notes": "Re-running rebuild_dftracer.sh to fix cp313/py3.9 ABI mismatch in dftracer native extension (root cause of prior silent no-op trace); then smoke-testing annotated molformer_ray.py with dftracer FUNCTION mode",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 949.885,
+  "wall_s": 949.885,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 949.885,
+      "error": "",
+      "start_ns": 1784955394249881675,
+      "end_ns": 1784956344135051965
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}
