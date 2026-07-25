@@ -1,0 +1,51 @@
+{
+  "run_id": "ior/20260724_175545",
+  "key": "STEP 5a: dftracer-optimizer-io",
+  "index": 2,
+  "agent": "dftracer-optimizer-io",
+  "notes": "RETRY: measurement-validity recheck of v0/v3/comm variants, >=3 reps, fresh dirs, untraced",
+  "status": "superseded",
+  "tries": 2,
+  "retries": 1,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 54.806,
+  "wall_s": 4806.331,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 26.651,
+      "error": "",
+      "start_ns": 1784954086879147266,
+      "end_ns": 1784954113529947481
+    },
+    {
+      "number": 2,
+      "status": "superseded",
+      "duration_s": 28.155,
+      "error": "",
+      "start_ns": 1784958865055716478,
+      "end_ns": 1784958893210532556
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

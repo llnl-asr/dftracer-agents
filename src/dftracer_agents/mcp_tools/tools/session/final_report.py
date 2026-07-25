@@ -32,7 +32,9 @@ per-iteration run directories, wrapper scripts under ``tmp/``, logs under
         install.sh                ← rebuild deps + app for every case
         run_<case>.sh             ← one runner per case (baseline, opt1..optN)
         run_all.sh                ← run every case in order
-      logs/                       ← the run/build logs each case referenced
+
+    Raw run/build logs are intentionally NOT included — they live in the
+    session workspace's ``artifacts/`` dir, not in this reproducible package.
 
 Everything written is derived from what is already on disk — the tool never
 re-runs the application.
@@ -57,10 +59,25 @@ _LADDER_PREFIXES = ("baseline", "annotated", "opt")
 
 
 def _discover_runs(ws: Path) -> List[str]:
-    """Return run directory names in ladder order: baseline, annotated, opt1..optN.
+    """Return run names in incremental (chronological) ladder order.
 
-    Only directories that actually exist are returned. ``opt<n>`` entries are
-    sorted numerically (so ``opt10`` follows ``opt9``, not ``opt1``).
+    Two sources are merged, oldest-first:
+
+    1. Fixed-name run directories: ``baseline``, ``annotated``, ``opt1..optN``
+       (``opt<n>`` sorted numerically so ``opt10`` follows ``opt9``, not ``opt1``).
+    2. Free-form optimization-variant wrapper scripts under ``tmp/`` that do NOT
+       follow the fixed naming convention — e.g. a component optimizer subagent's
+       own descriptive variants (``io_v0_baseline``, ``io_v1_collmeta``,
+       ``comm_ab``, ``align1m``, ...). These are real measured optimization
+       attempts and must not be silently dropped from the final report just
+       because they weren't written into a top-level ``opt<n>/`` directory.
+       Discovered from ``tmp/*.sh`` wrapper scripts, ordered by mtime so the
+       report reflects the actual sequence the variants were tried in.
+
+    The two lists are concatenated (fixed ladder first, then free-form variants
+    in the order they were run) so ``run_all.sh`` reproduces every measured
+    optimization this session made, not just the ones matching the ladder
+    convention.
     """
     names = [d.name for d in ws.iterdir() if d.is_dir()]
     ordered: List[str] = []
@@ -69,6 +86,26 @@ def _discover_runs(ws: Path) -> List[str]:
             ordered.append(fixed)
     opts = [n for n in names if n.startswith("opt") and n[3:].isdigit()]
     ordered += sorted(opts, key=lambda n: int(n[3:]))
+
+    tmp = ws / "tmp"
+    if tmp.is_dir():
+        fixed_and_opt = set(ordered)
+        seen: set = set()
+        variant_scripts = sorted(
+            (p for p in tmp.glob("*.sh") if p.is_file()),
+            key=lambda p: p.stat().st_mtime,
+        )
+        for script in variant_scripts:
+            stem = script.stem
+            # Skip anything that's just a fixed-ladder name in disguise
+            # (e.g. tmp/baseline_run.sh) — already covered above.
+            if any(stem == f or stem.startswith(f"{f}_") or stem.endswith(f"_{f}")
+                   for f in fixed_and_opt):
+                continue
+            if stem in seen:
+                continue
+            seen.add(stem)
+            ordered.append(stem)
     return ordered
 
 
@@ -465,18 +502,11 @@ def _session_final_report_impl(
     _write_run_all(scripts_dir, collected, alloc_hint,
                    params_root=params_root if params_root.is_dir() else None)
 
-    # ---- logs -----------------------------------------------------------
-    logs_dir = final / "logs"
-    logs_dir.mkdir(exist_ok=True)
-    artifacts = ws / "artifacts"
+    # Raw run/build logs are intentionally NOT copied into final_report/ — they
+    # are workspace-local debugging exhaust, not part of the reproducible
+    # deliverable (the scripts + patches + REPORT.md numbers are). Anyone who
+    # needs the raw logs still has the session workspace's artifacts/ dir.
     n_logs = 0
-    if artifacts.is_dir():
-        for log in artifacts.glob("*run*.log"):
-            shutil.copy2(log, logs_dir / log.name)
-            n_logs += 1
-        for log in artifacts.glob("*build*.log"):
-            shutil.copy2(log, logs_dir / log.name)
-            n_logs += 1
 
     # ---- pipeline profile (what the agents cost to produce all of the above) --
     performance = _collect_performance(ws, final)
@@ -837,8 +867,9 @@ def register_final_report_tools(mcp: FastMCP) -> None:
           ``opt<n>.config.diff`` (parameter-file / run-wrapper delta).
         * ``plan/`` — the final ``pipeline_plan.md`` that was executed, its
           changelog, and ``plan_evolution.diff`` vs the first tracked revision.
-        * ``logs/`` — the build/run logs each case referenced.
         * ``REPORT.md``, ``CONVERSATION.md``, ``README.md`` — narrative docs.
+          Raw run/build logs are NOT copied in — they stay in the session
+          workspace's ``artifacts/`` dir, out of the reproducible package.
 
         The three narrative documents are passed in by the caller: the agent
         knows what was found and why, and this tool must not invent results.

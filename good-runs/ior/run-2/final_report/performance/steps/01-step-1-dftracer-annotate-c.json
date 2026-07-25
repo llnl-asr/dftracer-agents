@@ -1,0 +1,51 @@
+{
+  "run_id": "ior/20260724_175545",
+  "key": "STEP 1: dftracer-annotate-c",
+  "index": 1,
+  "agent": "dftracer-annotate-c",
+  "notes": "Fixed 2 critical annotation issues: ior-main.c unreachable FINI, aiori-HDF5.c duplicate END() calls. Lesson recorded in skills.",
+  "status": "ok",
+  "tries": 2,
+  "retries": 1,
+  "failed_attempts": 1,
+  "successful_attempts": 1,
+  "exec_s": 300.327,
+  "wall_s": 545.939,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "failed",
+      "duration_s": 295.781,
+      "error": "Annotation successful (30 files, 1259 insertions) but 2 critical issues found: (1) ior-main.c has unreachable DFTRACER_C_FINI code after return, (2) aiori-HDF5.c has 11 duplicate DFTRACER_C_FUNCTION_END statements in error paths. Manual fixes required before build step. See artifacts/annotation_summary.log for details.",
+      "start_ns": 1784917228166330177,
+      "end_ns": 1784917523946875940
+    },
+    {
+      "number": 2,
+      "status": "ok",
+      "duration_s": 4.546,
+      "error": "",
+      "start_ns": 1784917769559257099,
+      "end_ns": 1784917774105506005
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

@@ -32,6 +32,8 @@ tools:
 - mcp__dftracer__profile_step_begin
 - mcp__dftracer__profile_step_end
 - mcp__dftracer__profile_status
+- mcp__dftracer__session_service_start
+- mcp__dftracer__session_service_stop
 skills:
 - dftracer-context-economy
 - dftracer-profiling
@@ -49,6 +51,17 @@ sections:
       over any summary here.
     - `graph_query(mode="docs", question="dftracer-preload-run")` — PFS rule: every optimization
       iteration must write data to the system-detected PFS, never `/tmp` or home.
+- title: "Tracing-state pre-check (MANDATORY, added 2026-07-24)"
+  body: |
+    Before comparing any variant's bandwidth against an established baseline (from a prior
+    step or a prior session), grep both launch scripts for `DFTRACER_ENABLE`/`DFTRACER_INIT`
+    and confirm they match. A traced baseline vs an untraced variant (or vice versa) produces
+    a bandwidth delta that is pure tracing overhead, not the optimization under test — FUNCTION
+    mode measured at ~37% of write bandwidth at 4 KiB transfers on one workload. Refuse the
+    comparison and re-measure with matched tracing state if they differ. Also: every replicate
+    must write to a fresh, unused output path, and arms must be interleaved (not run back-to-back
+    by arm) — filesystem/cache drift between back-to-back campaigns has been measured larger
+    than the effect under test. Only claim a delta when ranges across reps do not overlap.
     - `graph_query(mode="docs", question="dftracer-system-detect")` — use the detected PFS path.
     - The layer skill for each bottleneck you touch: `software-posix`, `software-mpi`,
       `software-hdf5` — read the specific tuning + dftracer-tracing sections.

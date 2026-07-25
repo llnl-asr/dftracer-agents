@@ -347,6 +347,19 @@ MPI interception (MPI_Reduce/Barrier/Bcast) + POSIX interception (lseek/write/re
   always cross-check `raw_stats_summary.unique_file_count`/
   `unique_process_count` against the actual file count on disk before trusting
   a diagnose severity list as a complete-run census.
+- **2026-07-24**: IOR deletes its own test files on completion unless `-k`
+  (keepFile) is passed — post-hoc `du`/`stat` on the output dir cannot confirm
+  data was actually committed to the PFS. Pass `-k` if you need to verify
+  written volume after the run, or rely on indirect evidence (e.g. a
+  subsequent read-back phase completing at the expected rate/size).
+- **2026-07-24 optimization re-verification**: at 512 ranks/8 nodes, HDF5
+  1.14.5, `-a HDF5 -b 16m -t 4k -s 32 -C -F`, NONE of collective-metadata-ops,
+  ROMIO cb, or NIC/NUMA affinity changed bandwidth outside noise (confirms
+  the 2026-07-10 negative finding still holds under the newer HDF5). A
+  `--hdf5.setAlignment=1m` variant showed a marginal, not-fully-clean write
+  gain (+10%, p<0.01 but one rep overlapped baseline) at the cost of a clean
+  −6.3% read regression — net negative for this read+write workload, not
+  recommended.
 
 ---
 

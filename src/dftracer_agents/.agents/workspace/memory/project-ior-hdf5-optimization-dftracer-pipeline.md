@@ -1,26 +1,91 @@
 ---
 name: project-ior-hdf5-optimization-dftracer-pipeline
-description: IOR 4.0.0 HDF5 dftracer pipeline session on Tuolumne — 512-rank baseline stable, exhaustive ROMIO/striping sweep found no lever beats the 4KB-transfer baseline
+description: IOR 4.0.0 + HDF5 1.14.5 dftracer pipeline on Tuolumne (session <session>) — reconfirms prior negative I/O-optimization finding under newer HDF5; full 4-dim checklist walked, final_report/ validated
 metadata:
   type: project
 ---
 
-**Session:** `ior/20260710_172024` on Tuolumne. Full pipeline: build → annotate (C) → smoke → trace → analyze/diagnose → optimize → report.
 
-**Build:** dftracer rebuilt against source-built HDF5 1.14.5 (never Cray HDF5, per [[feedback_always_source_hdf5]]). IOR 4.0.0 built with HDF5 support against that same source HDF5.
+## Latest session: `<session>` (IOR 4.0.0, HDF5 1.14.5 built from source, Tuolumne AMD MI300A / Cray PE)
 
-**Annotation:** C annotation across ior.c, aiori-POSIX.c, aiori-MPIIO.c, aiori-HDF5.c, aiori-MMAP.c, aiori-DUMMY.c, utilities.c. Smoke-tested with HDF5/MPIIO/MPI/POSIX events all confirmed present in trace.
+**Status:** Complete. Full pipeline (session-setup -> annotate-c -> build-smoke ->
+tracer/baseline -> analyzer+diagnoser -> optimizer x4 dimensions -> report ->
+privacy-guard) ran to completion. `final_report/` assembled, validated
+(structural: config/script wiring + PDF-render reproducibility confirmed;
+full 512-rank flux re-execution not performed at validation time — no
+active allocation), and privacy-clean.
 
-**Baseline:** HDF5 backend (`-a HDF5 -b 16m -t 4k -s 32 -C -F`), 512 ranks / 8 nodes, alloc `<flux-jobid>`, Lustre `/p/lustre5`, 256GB total volume. Write 18.2-21.7 GiB/s, read 11.6-12.5 GiB/s across two measurement passes, no OOM. An earlier 768-rank attempt at higher volume DID OOM — root-caused to per-node aggregate write volume + page-cache pressure; fixed by scaling to 512 ranks / 64 per node.
+**Central question answered:** does HDF5 1.14.5's newer collective-metadata
+API (`H5Pset_all_coll_metadata_ops`/`H5Pset_coll_metadata_write`) change the
+prior session's (`ior/20260710_172024`) negative finding that no I/O lever
+beats the plain 4 KiB-real-transfer baseline for `-a HDF5 -b 16m -t 4k -s 32
+-C -F` (file-per-process, 512 ranks/8 nodes)? **No.** Reconfirmed under
+HDF5 1.14.5; both write and read deltas are within measurement noise.
 
-**Analysis:** `mcp__dftracer__diagnose` is currently broken (API drift) — bottleneck list derived manually from `mcp__dftracer__analyze` (checkpoint mode, `cluster_n_workers=1`; multi-worker reconfirmed unreliable/racy at this file count). Top finding: baseline's real request size is 4KB (40.7M POSIX ops).
+**Full N-way comparator result (untraced, n=7 interleaved reps, fresh dirs
+per rep — see [[feedback-app-pattern-swap-not-optimization]] methodology):**
+v0 baseline write median 28905 MiB/s, read 17143 MiB/s. Five variants tested
+(HDF5 alignment=1m, HDF5 collective-metadata-ops, ROMIO collective buffering,
+MPI shared-memory collectives, NIC/NUMA affinity) — none beat v0 outside its
+noise band. Alignment=1m showed an attractive +10% write gain but it was NOT
+range-clean (1/7 reps overlapped v0) and paired with a clean -6.3% read
+regression, so it was rejected rather than credited.
 
-**Optimization — the key finding is negative, and that is the deliverable:** an initial pass incorrectly treated bumping the app's own transfer size (`-t 4k`→`4m`, +190% write) as "the optimization." Corrected per user direction: changing the app's own request size is a pattern swap (relabeled in the KB as a DIAGNOSTIC characterization only, bounding headroom), not a valid system optimization. The corrected loop held `-t 4k` fixed and tried real system-level levers — ROMIO data sieving, ROMIO collective/two-phase buffering, Lustre striping — ALL neutral-to-negative. Root cause: (a) no non-contiguity for sieving to coalesce, (b) file-per-process means one writer per file so no cross-rank aggregation for collective I/O to exploit, (c) Lustre client page cache already coalesces the 4KB writes into large RPCs before OSTs see them. No lever beats the plain 4KB-transfer baseline for this IOR file-per-process/contiguous pattern on Lustre.
+**Methodology bug found and fixed mid-session (important, generalizable):**
+comparing a FUNCTION-mode-*traced* baseline against *untraced* optimization
+variants inflated the untraced arms' apparent gain by ~60%, purely from
+removed dftracer tracing overhead (measured independently at ~37% of
+apparent write bandwidth for this 4 KiB-transfer workload). The affected
+campaign was retracted and fully re-run with tracing state (`DFTRACER_ENABLE`)
+identical across every arm. **Rule for future sessions: verify tracing state
+is identical across every arm of any A/B before crediting a delta.**
 
-**Pipeline-level outcome (not just an app result):** the standing rule "never treat an app-request-size/transfer-size sweep as the optimization" was persisted into the `dftracer-optimizer` agent template and the `dftracer-io-optimization` skill, then re-synced via `agents_sync` this session — this is a generalizable correction to the optimization pipeline itself, applicable beyond IOR.
+**System-level cross-session pattern reconfirmed (3rd time):** NUMA/core-affinity
+binding (`MPICH_OFI_NIC_POLICY=NUMA`) has no measurable effect on this
+Tuolumne MI300A system — also seen on h5bench and ScaFFold sessions. Treat as
+an established prior; don't re-test from scratch without new reason.
+`cb_nodes`/`CRAY_CB_NODES_MULTIPLIER` confirmed ignored by Cray MPICH here.
 
-**Lessons already persisted this session** (see the skills directly, not repeated here): `workload-ior` (annotation-tool bulk-pass gotchas, source-HDF5 requirement reconfirmed, `cluster_n_workers` race reconfirmed at scale + a new 2x double-count bug in `analyze()` non-checkpoint mode, Lustre file-per-process coalescing findings, striping correction), `system-tuolumne` (Lustre readahead already maxed), `dftracer-annotate-c` (rule 10e: resolve the `dftracer.h` include path before `clang_syntax_check`).
+**Pipeline-tooling bugs found and fixed this session:**
+- `session_detect` build-tool misdetection: a vendored `testing/libnfs/CMakeLists.txt`
+  inside IOR's source tree caused a false "cmake" classification for this
+  Autotools project. Fixed in `detection.py` (scoped detection to repo root).
+- `session_final_report` run-discovery gap: only recognized the fixed
+  `baseline`/`annotated`/`opt<N>` naming ladder, silently dropping this
+  session's free-form `tmp/*.sh` optimizer-variant scripts. Fixed to
+  incrementally discover any non-ladder `tmp/*.sh` (mtime order).
+- `session_final_report` no longer copies raw run/build logs into
+  `final_report/logs/` by default (logs stay in the session's own `artifacts/`).
 
-**Settings change:** added `workspaces/**` rm-rf/mv allow-rules to the real (non-symlink) `src/dftracer_agents/.agents/workspace/.claude/settings.json` so session cleanup doesn't hit the destructive-action classifier every time.
+**Pipeline-tooling issue flagged, NOT fixed at tool level (recurring across
+IOR sessions on error-macro-heavy C code):** the clang C annotator
+(`clang_add_braces`/`clang_annotate_file`) mis-places `DFTRACER_C_FUNCTION_END()`
+— duplicating it ahead of every internal `HDF5_CHECK()`-style error-check
+macro instead of once per real return path, and placing `END()`/`FINI()`
+after an unreachable `return` in top-level `main()` functions. Documented as
+PC8. Corrected by hand again this session in `aiori-HDF5.c`/`ior-main.c`/
+`contrib/cbif.c` — will recur on the next IOR (or similarly-styled C) annotation
+pass until fixed at the tool level.
 
-**Status:** pipeline complete, session finalized. `privacy_scan` clean (339 files) after one redact pass over 10 files that had leaked real paths/UUIDs/job-ids into `scripts/sandbox/sandbox-config.yaml`, `.agents/workspace/.claude/settings.json`, several memory files, and `install.py`/`session_tools.py`.
+**Known gaps disclosed in this session's report (not retrofitted):**
+`session_service_start`/`stop` was not bracketed around the optimizer's
+untraced recheck runs (policy rule 12 gap); the profiler force-closes
+concurrent optimizer subagent steps as "superseded" so per-subagent timing
+in `profile_status`/`PERFORMANCE.md` under-reports 3 of 4 dimensions;
+`profile_bind` was called late (after STEPs 1-4 had already run).
+
+**Unmeasured-but-applicable candidates for a future round (see REPORT.md
+§11 Remaining Work / Resume Point for exact commands):** align1m x Lustre
+striping factorial (untested); 15-20 replicate confirmation of align1m's
+write-side gain (pdebug's 60-min wall limit blocked this); burst-buffer/Rabbit
+near-node flash stage-out (never tried, needs a fresh `#DW`-flagged allocation).
+
+**PDF rendering recipe (new, reusable):** no pandoc on this system; pure-Python
+path works with no sudo: `pip install --target <local-dir> xhtml2pdf` (pulls
+reportlab), then `markdown-it-py` (already present) to render markdown -> HTML,
+`xhtml2pdf.pisa.CreatePDF` to render HTML -> PDF. Script pattern saved as
+`final_report/scripts/render_pdf.sh` + `_render_pdf.py` for reuse in future
+sessions needing a REPORT.pdf deliverable.
+
+See also: [[project-ior-hdf5-optimization-dftracer-pipeline]] (this file,
+updated in place), [[feedback-app-pattern-swap-not-optimization]].
