@@ -55,6 +55,19 @@ sections:
     | 6 | Best-case trace run + split | `dftracer-tracer` | level_1 | run command, data_dir, env_extra, allocation shape, run_name |
     | 7 | Analyze + diagnose bottlenecks | `dftracer-analyzer` then `dftracer-diagnoser` | level_3 | preset (posix vs dlio), which views, checkpoint dir |
     | 8 | Optimization loop (L1/L2/L3 + proposals + compare) | `dftracer-optimizer` | level_4 | metric objective, max iterations, termination criteria |
+    | 9 | Final report assembly + validation (MANDATORY, never omit) | `dftracer-report` | level_2 | run_id; expects `session_final_report` to return `pdf.generated`, `completeness.ok`, and `readme_check.ok` all true before the step is done — see notes below |
+    | 10 | Privacy scan/redact of everything persisted this session (MANDATORY, last step) | `dftracer-privacy-guard` | level_1 | run_id; must report `clean` before the session is considered done |
+
+    **Stages 9 and 10 are ALWAYS part of the plan, with no exception** — every session, regardless
+    of app/system/outcome (even a failed or partial pipeline), ends with `dftracer-report` assembling
+    `final_report/` and `dftracer-privacy-guard` scanning it. `session_final_report` writes and checks
+    three deterministic gates every call: a rendered `REPORT.pdf`, a `completeness` check (does
+    `REPORT.md` have every required section, code snippet, and "what's next" line for each
+    optimization), and a `readme_check` smoke test (does `README.md` alone let a reader with only
+    `final_report/` actually reproduce the session — every script named, `config.ini`/`WORKSPACE_ROOT`
+    explained, a literal runnable command, a pointer back to `REPORT.md`). None of these three may be
+    false when stage 9 is marked done in the plan — if any gate fails, `dftracer-report` fixes the
+    named gap and re-calls the tool, it does not mark the step complete on a partial pass.
 - title: Rules for the plan you emit
   body: "- Number every step. For each step give: the executor subagent name, the\n  exact inputs it needs (paths, commands, flags), and the expected artifact\n  it must return (run_id, trace dir, bottleneck list, etc.).\n- Carry forward `run_id` and canonical paths between steps \u2014 get them from\n  `session_get_run_paths`, never hand-build paths.\n- Call out decision points that need a human (e.g. \"annotation scope: 51\n  files \u2014 confirm before annotating\").\n- Keep the plan self-contained: each executor subagent starts with a COLD\n  context, so the plan text for a step must include everything that step's\n  subagent needs. Do not assume shared memory.\n"
 - title: Write the plan INTO the session (primary output)
@@ -71,9 +84,21 @@ sections:
 - title: 'STEP 8: dftracer-optimizer'
   body: |
     ...
+- title: 'STEP 9: dftracer-report'
+  body: |
+    <self-contained instructions: run_id; call session_final_report with a fully
+    detailed report_md/conversation_md/readme_md (see dftracer-report's own Report
+    Structure section for the full template); check the returned pdf/completeness/
+    readme_check fields are all true before marking this step done>
+- title: 'STEP 10: dftracer-privacy-guard'
+  body: |
+    <self-contained instructions: run_id; privacy_scan(paths=[..., "final_report"])
+    must include final_report/ explicitly (it is NOT in the tool's default scan set);
+    redact and re-scan until clean>
 - title: DISPATCH ORDER
   body: |
-    dftracer-session-setup, dftracer-build-app, ... , dftracer-optimizer
+    dftracer-session-setup, dftracer-build-app, ... , dftracer-optimizer,
+    dftracer-report, dftracer-privacy-guard
     ```
 
     Every `## STEP N: <agent-name>` heading MUST use the exact executor subagent

@@ -12,6 +12,10 @@ per-iteration run directories, wrapper scripts under ``tmp/``, logs under
     final_report/
       README.md               ← how to reproduce the session manually
       REPORT.md               ← what was done, results, root cause
+      REPORT.pdf              ← same content, rendered (pandoc, else a pure-
+                                Python markdown-it-py+xhtml2pdf fallback with
+                                no sudo required) — generated automatically
+                                every call, never left to agent improvisation
       CONVERSATION.md         ← narrative walkthrough of how we got there
       PERFORMANCE.md          ← what the AGENT PIPELINE cost: per-step time,
                                 retries, tokens, USD (from performance/)
@@ -32,6 +36,10 @@ per-iteration run directories, wrapper scripts under ``tmp/``, logs under
         install.sh                ← rebuild deps + app for every case
         run_<case>.sh             ← one runner per case (baseline, opt1..optN)
         run_all.sh                ← run every case in order
+        render_pdf.sh             ← regenerate REPORT.pdf from REPORT.md standalone
+        readme_smoke_test.sh      ← static check: does README.md actually name every
+                                    script, explain config.ini/WORKSPACE_ROOT, give a
+                                    real runnable command, and point back to REPORT.md?
 
     Raw run/build logs are intentionally NOT included — they live in the
     session workspace's ``artifacts/`` dir, not in this reproducible package.
@@ -47,6 +55,8 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import sys
 
 from fastmcp import FastMCP
 
@@ -109,6 +119,55 @@ def _discover_runs(ws: Path) -> List[str]:
     return ordered
 
 
+def _diff_files(old: Path, new: Path, out: Path) -> int:
+    """Write a unified diff of two individual files to *out*. Returns line count.
+
+    Companion to ``_diff_trees`` for apps that keep one shared annotated
+    script with suffixed variants (``molformer_train_opt1.py`` next to
+    ``molformer_train.py``) instead of a full per-run ``source/`` tree copy —
+    common for single-file Python ML training scripts. Same stdout-not-exit-
+    code convention as ``_diff_trees``.
+    """
+    if not old.is_file() or not new.is_file():
+        return 0
+    r = subprocess.run(
+        ["diff", "-u", str(old), str(new)], capture_output=True, text=True,
+    )
+    if not r.stdout:
+        return 0
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(r.stdout)
+    return len(r.stdout.splitlines())
+
+
+def _variant_source_files(ws: Path) -> Dict[str, Path]:
+    """Find single-file annotated-source variants under ``<ws>/annotated/src``.
+
+    Returns a map of ``opt<N>`` (or any other suffix) -> the variant file's
+    path, plus a ``"base"`` entry for the un-suffixed original, when the
+    directory holds a base script (e.g. ``app.py``) alongside suffixed
+    siblings (``app_opt1.py``, ``app_opt2.py``) instead of one full
+    per-run ``source/`` tree copy per optimization iteration.
+    """
+    src_dir = ws / "annotated" / "src"
+    if not src_dir.is_dir():
+        return {}
+    files = [p for p in src_dir.iterdir() if p.is_file()]
+    result: Dict[str, Path] = {}
+    for p in files:
+        stem, suffix = p.stem, p.suffix
+        for other in files:
+            if other is p:
+                continue
+            other_stem = other.stem
+            if other_stem.startswith(stem + "_") and other.suffix == suffix:
+                variant = other_stem[len(stem) + 1:]
+                if variant.startswith("opt") or variant.startswith("v"):
+                    result.setdefault("base", p)
+                    result[variant] = other
+    return result
+
+
 def _diff_trees(old: Path, new: Path, out: Path) -> int:
     """Write a unified diff of two directory trees to *out*. Returns line count.
 
@@ -169,6 +228,27 @@ def _anonymize_script(path: Path, ws: Path) -> None:
         )
         text = shebang + loader + "".join(rest)
     path.write_text(text)
+
+
+def _anonymize_path_refs(path: Path, ws: Path) -> None:
+    """Strip the workspace's absolute path out of a plain text file, in place.
+
+    Diff/patch files written by ``_diff_trees``/``_diff_files`` embed the
+    full absolute paths being compared (``diff -ruN <old> <new>`` puts them in
+    the ``---``/``+++`` header lines) — the same PII class ``_anonymize_script``
+    strips from collected wrapper scripts, but patches were previously written
+    to ``final_report/patches/`` unmodified. Best-effort and silent on any
+    read/decode failure (e.g. a stray binary diff) since this is a privacy
+    scrub, not a build step — ``privacy_scan``/``privacy_redact`` remain the
+    authoritative, deterministic check before a session is considered done.
+    """
+    try:
+        text = path.read_text(errors="ignore")
+    except OSError:
+        return
+    ws_str = str(ws)
+    if ws_str in text:
+        path.write_text(text.replace(ws_str, "$WS"))
 
 
 def _collect_scripts(ws: Path, dest: Path, runs: List[str]) -> List[str]:
@@ -332,6 +412,95 @@ def _write_run_all(dest: Path, scripts: List[str], alloc_hint: str,
     p.chmod(0o755)
 
 
+_README_SMOKE_TEST_SCRIPT = r"""#!/bin/bash
+# Static smoke test: does final_report/README.md actually contain everything
+# needed to reproduce this session from this folder alone -- every script
+# under scripts/ is named, config.ini/WORKSPACE_ROOT is explained, and there
+# is at least one real, runnable command block. This does NOT execute the
+# app (that is scripts/run_all.sh's job, and the "self-contained validation"
+# step in session_final_report) -- it only checks the README's INSTRUCTIONS
+# are complete enough for a reader who has never seen this session to follow
+# them, so a thin or stale README fails fast instead of only being noticed
+# by a human mid-reproduction.
+set -u
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FINAL="$HERE/.."
+README="$FINAL/README.md"
+FAIL=0
+
+fail() { echo "MISSING: $1" >&2; FAIL=1; }
+
+if [ ! -f "$README" ]; then
+  echo "MISSING: README.md does not exist" >&2
+  exit 1
+fi
+
+grep -qi "WORKSPACE_ROOT" "$README"  || fail "no mention of WORKSPACE_ROOT (reader won't know to set it)"
+grep -qi "config.ini"     "$README"  || fail "no mention of config.ini (reader won't know it's the one place to set a real path)"
+
+# Every script this session actually produced must be named somewhere in the
+# README, or a reader has no way to know it exists / when to run it.
+for s in "$HERE"/*.sh; do
+  name="$(basename "$s")"
+  [ "$name" = "readme_smoke_test.sh" ] && continue
+  grep -q -- "$name" "$README" || fail "scripts/$name exists but is never mentioned in README.md"
+done
+
+# At least one real, copy-pasteable command (not just prose describing what
+# to do) -- a fenced code block containing a shell invocation.
+if ! grep -qE '^\s*(bash |\./|flux |cd )' "$README"; then
+  fail "no literal runnable command (e.g. 'bash scripts/install.sh', './scripts/run_all.sh <alloc-id>') found in README.md"
+fi
+
+# A verification step: the reader needs to know what "reproduced" means --
+# some pointer back to the numbers in REPORT.md to compare against.
+grep -qi "REPORT.md" "$README" || fail "no pointer back to REPORT.md to compare reproduced numbers against"
+
+if [ "$FAIL" -ne 0 ]; then
+  echo "README smoke test: FAILED -- see MISSING lines above" >&2
+  exit 1
+fi
+echo "README smoke test: PASSED -- every script is named, config.ini/WORKSPACE_ROOT explained, a runnable command and a verification pointer are both present."
+"""
+
+
+def _write_readme_smoke_test(scripts_dir: Path) -> Path:
+    """Persist the standalone README completeness smoke test into ``scripts/``.
+
+    Written every call (not just when it fails) so a reader who copies only
+    `final_report/` elsewhere can re-run it themselves after editing the
+    README, without this MCP tool.
+    """
+    p = scripts_dir / "readme_smoke_test.sh"
+    p.write_text(_README_SMOKE_TEST_SCRIPT)
+    p.chmod(0o755)
+    return p
+
+
+def _run_readme_smoke_test(final: Path) -> Dict[str, Any]:
+    """Execute the README smoke test and report pass/fail + what's missing.
+
+    Static/mechanical, not a full reproduction run (that's the separate
+    ``validated``/``run_all.sh`` flow) -- this only checks that the
+    INSTRUCTIONS are complete, which is cheap enough to run every call and
+    catches a stale/thin README before a human ever tries to follow it.
+    """
+    script = final / "scripts" / "readme_smoke_test.sh"
+    if not script.is_file():
+        return {"ok": False, "reason": "readme_smoke_test.sh was not written"}
+    r = subprocess.run(
+        ["bash", str(script)], capture_output=True, text=True, timeout=30,
+    )
+    if r.returncode != 0:
+        missing = [
+            line.split("MISSING: ", 1)[1]
+            for line in (r.stderr or "").splitlines()
+            if line.startswith("MISSING: ")
+        ]
+        return {"ok": False, "missing": missing or [(r.stderr or r.stdout).strip()]}
+    return {"ok": True, "output": r.stdout.strip()}
+
+
 def _write_install(dest: Path, state: Dict[str, Any]) -> None:
     """Emit ``install.sh`` reconstructing dependencies + the app build.
 
@@ -402,6 +571,206 @@ def _plan_evolution(ws: Path, out: Path) -> None:
     )
 
 
+_RENDER_PDF_SCRIPT = r"""#!/bin/bash
+# Render final_report/REPORT.md -> final_report/REPORT.pdf.
+# Saved here (not just run ad hoc) so the PDF is reproducible without this
+# tool: `bash scripts/render_pdf.sh` from inside final_report/ regenerates it
+# from whatever REPORT.md currently contains.
+set -e
+cd "$(dirname "$0")/.."   # final_report/
+SRC="REPORT.md"
+DST="REPORT.pdf"
+
+if command -v pandoc >/dev/null 2>&1; then
+    pandoc "$SRC" -o "$DST" --pdf-engine=xelatex 2>/dev/null \
+        || pandoc "$SRC" -o "$DST"
+    exit $?
+fi
+
+# No pandoc (common on locked-down HPC login/compute nodes, no sudo): pure
+# Python fallback, installed locally with no privilege escalation.
+PYBIN="${PYTHON_BIN:-python3}"
+"$PYBIN" - "$SRC" "$DST" <<'PYEOF'
+import subprocess, sys, os
+
+def ensure(pkg, import_name=None):
+    import_name = import_name or pkg
+    try:
+        __import__(import_name)
+    except ImportError:
+        # --user fails inside a venv ("user site-packages are not visible");
+        # a venv's own pip already installs to its own site-packages without
+        # it, so only pass --user when NOT running inside a venv.
+        in_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
+        cmd = [sys.executable, "-m", "pip", "install", "-q"]
+        if not in_venv:
+            cmd.append("--user")
+        cmd.append(pkg)
+        subprocess.run(cmd, check=True)
+
+ensure("markdown-it-py", "markdown_it")
+ensure("xhtml2pdf")
+
+from markdown_it import MarkdownIt
+from xhtml2pdf import pisa
+
+src, dst = sys.argv[1], sys.argv[2]
+md_text = open(src, encoding="utf-8").read()
+html_body = MarkdownIt("commonmark").enable(["table", "strikethrough"]).render(md_text)
+STYLE = (
+    "body { font-family: Helvetica, Arial, sans-serif; font-size: 10pt; } "
+    "table { border-collapse: collapse; width: 100%; margin: 8px 0; } "
+    "th, td { border: 1px solid #999; padding: 4px 6px; font-size: 9pt; } "
+    "th { background: #eee; } "
+    "pre { background: #f5f5f5; padding: 6px; font-size: 8pt; white-space: pre-wrap; } "
+    "code { font-family: monospace; } "
+    "h1, h2, h3 { color: #222; }"
+)
+html = (
+    "<html><head><meta charset=\"utf-8\"><style>" + STYLE + "</style></head>"
+    "<body>" + html_body + "</body></html>"
+)
+
+with open(dst, "wb") as fh:
+    result = pisa.CreatePDF(html, dest=fh)
+if result.err:
+    sys.exit(f"xhtml2pdf reported {result.err} error(s)")
+PYEOF
+"""
+
+
+def _render_pdf(final: Path) -> Dict[str, Any]:
+    """Render ``REPORT.md`` -> ``REPORT.pdf`` and save the script that did it.
+
+    Tries system/module ``pandoc`` first (best typography), falls back to a
+    pure-Python ``markdown-it-py`` + ``xhtml2pdf`` chain (no sudo, works on
+    locked-down HPC nodes) if pandoc is unavailable. Never raises — a failed
+    PDF render is reported in the return dict, not a tool-call exception,
+    since the markdown REPORT.md is still the authoritative deliverable.
+    """
+    report_md_path = final / "REPORT.md"
+    if not report_md_path.exists():
+        return {"generated": False, "reason": "REPORT.md not written yet"}
+
+    scripts_dir = final / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    script_path = scripts_dir / "render_pdf.sh"
+    script_path.write_text(_RENDER_PDF_SCRIPT)
+    script_path.chmod(0o755)
+
+    pdf_path = final / "REPORT.pdf"
+    try:
+        r = subprocess.run(
+            ["bash", str(script_path)],
+            cwd=str(final),
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env={**__import__("os").environ, "PYTHON_BIN": sys.executable},
+        )
+    except Exception as e:  # noqa: BLE001 - PDF rendering is best-effort
+        return {"generated": False, "reason": f"render_pdf.sh raised: {e}"}
+
+    if r.returncode != 0:
+        return {
+            "generated": False,
+            "reason": (r.stderr or r.stdout or "unknown error").strip()[-2000:],
+            "script": str(script_path),
+        }
+    if not pdf_path.exists() or pdf_path.read_bytes()[:5] != b"%PDF-":
+        return {
+            "generated": False,
+            "reason": "render_pdf.sh exited 0 but no valid %PDF- file was produced",
+            "script": str(script_path),
+        }
+    return {
+        "generated": True,
+        "path": str(pdf_path),
+        "size_bytes": pdf_path.stat().st_size,
+        "script": str(script_path),
+    }
+
+
+_REQUIRED_REPORT_SECTIONS = [
+    "Executive Summary",
+    "Baseline Detail",
+    "Per-Agent Contributions",
+    "Tool Findings vs Manual Analysis",
+    "Bottleneck Diagnosis",
+    "Optimization Proposals",
+    "Optimization Ledger",
+    "N-Way Comparator",
+    "Iteration Results",
+    "Lessons Learned",
+    "Recommendations",
+    "Remaining Work",
+]
+
+
+def _validate_report_completeness(
+    final: Path, runs: List[str], patches: Dict[str, int], pdf_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Check ``REPORT.md`` against the mandatory structure, not just that it exists.
+
+    A ``session_final_report`` call can succeed mechanically (files written,
+    PDF rendered) while the report content itself is thin — missing sections,
+    no code snippets, no per-optimization "what's next". This is a deterministic
+    proxy for that: it can't judge prose quality, but it can catch the concrete,
+    checkable gaps (a missing section header, zero code fences for a session
+    that ran opt<N> variants, an empty ``patches`` dict when opt runs exist)
+    that made this exact report's ``session_final_report`` output look "ok"
+    while the earlier CLAUDE.md-mandated per-optimization detail was still
+    missing. Returns ``{"ok": bool, "missing": [...], "warnings": [...]}`` so
+    the calling agent (or a future one resuming this session) knows exactly
+    what to fix and re-call the tool, rather than shipping a report that only
+    *looks* validated because the mechanical parts succeeded.
+    """
+    missing: List[str] = []
+    warnings: List[str] = []
+
+    report_path = final / "REPORT.md"
+    text = report_path.read_text(encoding="utf-8") if report_path.exists() else ""
+    if not text:
+        return {"ok": False, "missing": ["REPORT.md is empty or missing"], "warnings": []}
+
+    for section in _REQUIRED_REPORT_SECTIONS:
+        if section.lower() not in text.lower():
+            missing.append(f"REPORT.md is missing the required '{section}' section")
+
+    opt_runs = [r for r in runs if r.startswith("opt")]
+    if opt_runs:
+        n_code_fences = text.count("```")
+        # Each optimization's code/config snippet should be its own fenced
+        # block; a report with fewer fenced blocks than optimizations almost
+        # certainly fell back to naming files instead of showing the diff.
+        if n_code_fences < len(opt_runs) * 2:  # each fence pair = one block
+            warnings.append(
+                f"only {n_code_fences // 2} code block(s) in REPORT.md for "
+                f"{len(opt_runs)} optimization run(s) — every optimization "
+                "should carry its own code/config snippet (Pipeline Policy "
+                "rule: per-optimization triple)"
+            )
+        if "what's next" not in text.lower() and "what next" not in text.lower():
+            warnings.append(
+                "no 'what's next' language found in REPORT.md — every "
+                "optimization (applied or rejected) needs its own next-step line"
+            )
+        if not patches:
+            missing.append(
+                f"patches/ is empty but {len(opt_runs)} opt run(s) exist — "
+                "either the app kept no per-run source/ snapshot and no "
+                "annotated/src/<name>_opt<N> variant files were found, or "
+                "session_capture_run_record was never called for these runs"
+            )
+
+    if not pdf_result.get("generated"):
+        missing.append(
+            f"REPORT.pdf was not generated: {pdf_result.get('reason', 'unknown reason')}"
+        )
+
+    return {"ok": not missing, "missing": missing, "warnings": warnings}
+
+
 def _session_final_report_impl(
     run_id: str,
     report_md: str = "",
@@ -442,6 +811,7 @@ def _session_final_report_impl(
 
     base_src = ws / "baseline" / "source"
     ann_src = ws / "annotated" / "source"
+    variants = _variant_source_files(ws)
     if base_src.is_dir() and ann_src.is_dir():
         patches["annotated.patch"] = _diff_trees(
             base_src, ann_src, patch_dir / "annotated.patch")
@@ -450,6 +820,13 @@ def _session_final_report_impl(
         n = _build_config_diff(base_src, ann_src, patch_dir / "build_config.diff")
         if n:
             patches["build_config.diff"] = n
+    elif "base" in variants:
+        # Single-file app: no per-run source/ tree, but annotated/src holds the
+        # base script directly (already the annotated version at this point in
+        # the pipeline) — nothing to diff against a pre-annotation baseline
+        # copy, so this is intentionally a no-op; the opt<N> variants below are
+        # what the report actually needs.
+        pass
 
     # Optimization iterations often re-use the annotated tree and differ only in
     # build flags / parameter file / run script, so capture BOTH a source diff
@@ -458,15 +835,33 @@ def _session_final_report_impl(
     prev_run = "annotated"
     for run in [r for r in runs if r.startswith("opt")]:
         rsrc = ws / run / "source"
+        variant_key = run[len("opt"):] if run.startswith("opt") else None
+        variant_file = variants.get(f"opt{variant_key}") if variant_key else None
         if rsrc.is_dir():
             patches[f"{run}.patch"] = _diff_trees(
                 prev_src, rsrc, patch_dir / f"{run}.patch")
             prev_src = rsrc
+        elif variant_file and "base" in variants:
+            # Single-file variant pattern (e.g. train_opt1.py next to
+            # train.py) — diff each variant against the shared base script
+            # rather than a per-run source/ tree copy.
+            n = _diff_files(
+                variants["base"], variant_file, patch_dir / f"{run}.patch")
+            if n:
+                patches[f"{run}.patch"] = n
 
         # Preferred: the record captured by session_capture_run_record at the end
         # of the step. It survives the next iteration overwriting build config,
-        # flash.par, and the run wrapper in place.
+        # flash.par, and the run wrapper in place. Sessions may name this file
+        # after any prior run (not necessarily the immediately-preceding one —
+        # e.g. every opt<N> diffed straight against "baseline"), so fall back to
+        # whatever from_*.record.diff is actually present rather than requiring
+        # an exact from_<prev_run> match.
         rec_diff = ws / run / "patches" / f"from_{prev_run}.record.diff"
+        if not rec_diff.is_file():
+            candidates = sorted((ws / run / "patches").glob("from_*.record.diff")) \
+                if (ws / run / "patches").is_dir() else []
+            rec_diff = candidates[0] if candidates else rec_diff
         if rec_diff.is_file():
             dst = patch_dir / f"{run}.record.diff"
             shutil.copy2(rec_diff, dst)
@@ -479,6 +874,14 @@ def _session_final_report_impl(
                 patches[f"{run}.config.diff"] = cfg
 
         prev_run = run
+
+    # Every patch file embeds the workspace's real absolute path in its diff
+    # headers — strip it now, once, rather than relying solely on the
+    # end-of-session privacy_scan/privacy_redact pass to catch it (defense in
+    # depth: this class of PII is fully mechanical to remove at the source).
+    for p in patch_dir.glob("*"):
+        if p.is_file():
+            _anonymize_path_refs(p, ws)
 
     # ---- per-run parameter files, so each case can actually be re-run ----
     params_root = final / "params"
@@ -501,6 +904,7 @@ def _session_final_report_impl(
     _write_install(scripts_dir, state)
     _write_run_all(scripts_dir, collected, alloc_hint,
                    params_root=params_root if params_root.is_dir() else None)
+    _write_readme_smoke_test(scripts_dir)
 
     # Raw run/build logs are intentionally NOT copied into final_report/ — they
     # are workspace-local debugging exhaust, not part of the reproducible
@@ -529,17 +933,46 @@ def _session_final_report_impl(
     (final / "README.md").write_text(
         hdr + (readme_md or "# Reproducing this session\n\n(not supplied)\n"))
 
+    # ---- PDF rendering (MANDATORY, deterministic — not left to agent recipe) --
+    pdf_result = _render_pdf(final)
+
+    # ---- report-completeness validation (MANDATORY, deterministic) ------
+    # Checked, not assumed: a mechanically "ok" assembly can still ship a thin
+    # REPORT.md missing required sections/snippets/patches. See
+    # _validate_report_completeness's docstring for why this exists.
+    completeness = _validate_report_completeness(final, runs, patches, pdf_result)
+
+    # ---- README reproducibility smoke test (MANDATORY, deterministic) ---
+    # A README that "exists" can still be useless to a reader who has never
+    # seen this session -- this actually checks the instructions are complete
+    # (every script named, config.ini/WORKSPACE_ROOT explained, a real
+    # runnable command present, a pointer back to REPORT.md to verify
+    # against), not just that the file is non-empty.
+    readme_check = _run_readme_smoke_test(final)
+
     return _ok(
         "final_report assembled",
         final_report_dir=str(final),
         runs=runs,
         patches=patches,
-        scripts=collected + ["install.sh", "run_all.sh", "lib_load_config.sh"],
+        scripts=collected + [
+            "install.sh", "run_all.sh", "lib_load_config.sh",
+            "render_pdf.sh", "readme_smoke_test.sh",
+        ],
         config="config.ini",
         logs_copied=n_logs,
         performance=performance or "no performance/ dir (pipeline was not profiled)",
         validated=validated,
+        pdf=pdf_result,
+        completeness=completeness,
+        readme_check=readme_check,
         reminder=(
+            "REPORT.md is incomplete — see the completeness field's 'missing' "
+            "list, fix REPORT.md/patches, and re-call session_final_report "
+            "before calling this session done." if not completeness["ok"] else
+            "README.md is missing reproduction instructions — see the "
+            "readme_check field's 'missing' list, fix README.md, and re-call "
+            "session_final_report before calling this session done." if not readme_check["ok"] else
             None if validated else
             "Run a self-contained validation (config.ini + scripts/run_all.sh, "
             "output isolated from the original run data) before calling this "
@@ -903,7 +1336,15 @@ def register_final_report_tools(mcp: FastMCP) -> None:
                 see the detail-bar note above; follow the full structured
                 template, not a condensed summary).
             conversation_md: Markdown body for ``CONVERSATION.md`` (narrative).
-            readme_md: Markdown body for ``README.md`` (manual reproduction).
+            readme_md: Markdown body for ``README.md`` — must give a reader who
+                has ONLY this ``final_report/`` folder (no session workspace,
+                no conversation history) exact, copy-pasteable commands: copy
+                the folder, edit ``config.ini``'s ``WORKSPACE_ROOT``, the exact
+                ``bash scripts/install.sh`` / ``bash scripts/run_all.sh
+                <alloc-id>`` invocations, every script by name and what it
+                does, and a pointer back to the ``REPORT.md`` numbers to
+                compare against. ``readme_check`` (see Returns) fails if this
+                is thin.
             alloc_hint: Default Flux allocation id baked into ``run_all.sh``.
             validated: Set True only after the self-contained validation above
                 has actually been run and passed.
@@ -913,8 +1354,13 @@ def register_final_report_tools(mcp: FastMCP) -> None:
         Returns:
             JSON with ``status``, ``final_report_dir``, the ``runs`` discovered,
             a ``patches`` map of filename→line count, the ``scripts``/``config``
-            written, ``logs_copied``, ``validated``, and (if not yet validated)
-            a ``reminder`` to run the validation before calling this done.
+            written, ``logs_copied``, ``validated``, ``pdf`` (PDF render result),
+            ``completeness`` (``{ok, missing, warnings}`` — REPORT.md structure
+            check), ``readme_check`` (``{ok, missing}`` — the README smoke test:
+            does it name every script, explain config.ini/WORKSPACE_ROOT, give
+            a real runnable command, and point back to REPORT.md?), and (if
+            anything above is not yet true) a ``reminder`` naming exactly what
+            to fix before calling this session done.
         """
         return _session_final_report_impl(
             run_id=run_id,

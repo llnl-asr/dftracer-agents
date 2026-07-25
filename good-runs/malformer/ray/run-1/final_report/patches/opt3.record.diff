@@ -1,0 +1,27 @@
+diff -ruN --no-dereference $WS/baseline/record/meta.json $WS/opt3/record/meta.json
+--- $WS/baseline/record/meta.json	2026-07-25 09:35:06.042060000 -0700
++++ $WS/opt3/record/meta.json	2026-07-25 11:54:38.950309000 -0700
+@@ -1,9 +1,9 @@
+ {
+-  "run_name": "baseline",
+-  "prev_run_name": null,
+-  "captured_at": "2026-07-25T16:35:06.040346+00:00",
+-  "source_path": "$WS/annotated/source",
+-  "notes": "2-node/8-GPU (MI300A) Ray Train baseline run, 5000-row real PubChem dataset with RDKit descriptors on Lustre. 20 training iterations completed (loss went NaN mid-run \u2014 likely descriptor-normalization-stats mismatch with the new dataset, a real numerical issue not an infra bug). Both driver and Ray Train worker processes produced non-empty dftracer traces confirming dataset I/O (pubchem_filtered.csv, pubchem_descriptor_stats.npz) is captured. Root causes fixed to reach this point: jemalloc/LD_PRELOAD static-TLS crash under ROCm killing gcs_server; Spindle library-relay deadlock (spindle.level=off); Ray raylet prestart-worker-storm hang at --num-cpus>1 (fixed to --num-cpus=1); HF_HUB_OFFLINE needed on both head and worker ray-start calls; dftracer.initialize_log()/finalize() needed explicitly inside train_func_per_worker since Ray Train workers never execute the driver's __main__ block.",
++  "run_name": "opt3",
++  "prev_run_name": "baseline",
++  "captured_at": "2026-07-25T18:54:38.949369+00:00",
++  "source_path": "$WS/annotated",
++  "notes": "STEP 10a compute opt3 = NaN correctness fix (torch.nan_to_num on normalized descriptors) + bf16 autocast around forward+loss. 2N/8GPU, batch=128, 20 fixed iterations, traced. Result: training phase 40s vs matched-window baseline 40s = NO CHANGE; 20/20 iterations with zero NaN.",
+   "captured": {
+     "build_config": [],
+     "params": [],
+@@ -11,7 +11,7 @@
+       "run.sh"
+     ],
+     "logs": [
+-      "baseline_run.log"
++      "opt3_run.log"
+     ]
+   }
+ }

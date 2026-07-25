@@ -1,0 +1,25 @@
+--- $WS/annotated/src/molformer_ray_descriptors.py	2026-07-25 09:44:15.596687000 -0700
++++ $WS/annotated/src/molformer_ray_descriptors_opt2.py	2026-07-25 11:26:25.247579000 -0700
+@@ -198,6 +198,22 @@
+         # Normalize
+         descriptors = (descriptors - norm_mean) / norm_std
+ 
++        # OPT2 CORRECTNESS FIX (NaN root cause, verified offline against the
++        # real 5000-row pubchem_filtered.csv): the raw CSV descriptor columns
++        # contain 1220 NaN cells and 6 +/-inf cells, concentrated in RDKit
++        # Gasteiger partial-charge descriptors (Max/Min/MaxAbs/MinAbsPartialCharge),
++        # which RDKit emits as NaN/inf when charge computation does not converge.
++        # Those cells flow into the MSE regression target, so reg_loss becomes
++        # NaN on the first batch containing one, and backward() then poisons
++        # every model weight for the remainder of the run.
++        # NOTE: this is NOT a stats.npz/dataset mismatch -- pubchem_descriptor_stats.npz
++        # was verified column-aligned with rdkit._descList AND the CSV header,
++        # and its per-column means agree with the CSV to a median |z| of 0.15.
++        # Fix: map ONLY the non-finite cells to 0.0 (= the column mean in
++        # normalized space). Finite values are left bit-identical; this touches
++        # ~0.13% of cells and does not change the workload.
++        descriptors = torch.nan_to_num(descriptors, nan=0.0, posinf=0.0, neginf=0.0)
++
+         return input_dict, descriptors
+ 
+     for epoch in range(epoch_num, num_epochs):

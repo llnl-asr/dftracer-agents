@@ -1,0 +1,30 @@
+--- $WS/annotated/src/molformer_ray_descriptors.py	2026-07-25 09:44:15.596687000 -0700
++++ $WS/annotated/src/molformer_ray_descriptors_opt1.py	2026-07-25 11:18:48.058620000 -0700
+@@ -216,11 +216,22 @@
+             
+ 
+             encodings, targets = collate_fn(batch)
+-            # outputs = model(**encodings, regression_targets=targets)
+-            mlm_outputs, preds = model(**encodings, regression_targets=targets)
+-            mlm_loss = mlm_outputs.loss
+-            reg_loss = nn.functional.mse_loss(preds, targets)
+-            loss = mlm_loss + reg_loss
++            # OPT1: compute-bound workload (STEP 9 diagnosis: ~92% of wall
++            # time is GPU forward/backward compute, POSIX I/O 0.26%, Ray
++            # comm 7.4%). No autocast/mixed precision was used anywhere in
++            # the original loop. MI300A supports bf16 natively at full
++            # throughput without a GradScaler (unlike fp16, bf16 has fp32's
++            # exponent range so it does not need loss scaling) -- this is
++            # the highest-confidence, lowest-risk compute optimization for
++            # this workload. Wrap only the forward pass (loss compute
++            # included) in torch.autocast; backward()/optimizer.step() stay
++            # outside so gradients/master weights remain fp32.
++            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
++                # outputs = model(**encodings, regression_targets=targets)
++                mlm_outputs, preds = model(**encodings, regression_targets=targets)
++                mlm_loss = mlm_outputs.loss
++                reg_loss = nn.functional.mse_loss(preds, targets)
++                loss = mlm_loss + reg_loss
+ 
+ 
+ 
