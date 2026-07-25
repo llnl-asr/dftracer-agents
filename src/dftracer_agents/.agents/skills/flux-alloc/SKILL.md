@@ -494,3 +494,43 @@ both scale and truncation simultaneously — not creditable as a wall-time resul
    and explicitly flag that a clean equal-scale completed re-run is still needed to quantify
    wall-time impact. Report the mechanism as validated and the wall-time speedup as
    NOT YET MEASURED — never silently launder a confounded number into a clean-looking delta.
+
+## Trace-processing MCP tools: pass `allocation_id` explicitly (MANDATORY)
+
+The dftracer MCP tools that scan/merge/compress/analyze large `.pfw`/`.pfw.gz` trace
+directories — `analyze`, `split`, `event_count`, `merge`, `reader`, `comparator`,
+`aggregator`, `aggregator_mpi`, `stats`, `view`, `index`, `organize`, `reconstruct`,
+`call_tree`, `call_tree_mpi`, `pgzip`, `tar` — all run their underlying binary via a
+shared helper that auto-detects a live Flux allocation and runs the command there
+(`flux proxy <jobid> flux run ...`) instead of on the MCP server's own (often shared
+login/service) host. This auto-detection only works when there's exactly one relevant
+allocation running under the current user, and picks whichever has the most walltime
+remaining — which may not be the one the agent actually means to use.
+
+**Every agent that calls one of these tools on a session with a live allocation MUST**:
+
+1. **Confirm an allocation exists** before the call — check session state for a
+   recorded JOBID (from an earlier `session_run_with_dftracer(allocation_id=...)` call
+   or a `flux_alloc` this session made), or run `flux jobs -a` to check.
+2. **Pass `allocation_id=<jobid>` explicitly** to the tool call rather than relying on
+   auto-detection — this is the only way to guarantee the RIGHT allocation is used when
+   more than one may be running (e.g. a validation-run allocation vs. a leftover one from
+   an earlier step), and it skips an extra `flux jobs` round-trip per call.
+3. **If no allocation exists** and the trace directory is large (many files / large
+   total size), ask the user for one (per "Allocations: ASK the user first" above)
+   rather than letting the tool silently fall back to running on the MCP server's host —
+   that fallback exists for correctness/availability, not as the default for large scans.
+4. **Small, quick checks are fine without an allocation** — a single small trace file's
+   `event_count`, or a `stats`/`view` query against an already-compacted small trace, does
+   not need to wait on an allocation. Use judgment on "large" the same way you would for
+   choosing whether a smoke test needs a compute node.
+
+```python
+# Example: agent already has run_id's allocation from session state
+mcp__dftracer__analyze(trace_path=compact_dir, analyzer_preset="generic",
+                        allocation_id=session_jobid)
+mcp__dftracer__event_count(directory=compact_dir, allocation_id=session_jobid)
+```
+
+If `allocation_id` is omitted, the tool still works (auto-detect, then local fallback) —
+but explicit is preferred so multi-allocation ambiguity never silently picks the wrong one.

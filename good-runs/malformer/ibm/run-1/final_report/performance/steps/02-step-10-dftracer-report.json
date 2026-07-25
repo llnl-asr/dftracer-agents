@@ -1,0 +1,43 @@
+{
+  "run_id": "molformer/20260723_235016",
+  "key": "STEP 10: dftracer-report",
+  "index": 2,
+  "agent": "dftracer-report",
+  "notes": "Final report assembly + memory write + privacy scan for molformer session",
+  "status": "running",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 44.196,
+  "wall_s": 44.196,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "running",
+      "duration_s": 44.196,
+      "error": "",
+      "start_ns": 1784923969629929903,
+      "end_ns": null
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

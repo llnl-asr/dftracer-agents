@@ -665,6 +665,35 @@ This skill uses:
 
 Never `sudo`; never search or write under `/opt/cray`; never write outside the project root.
 
+## `scripts/env.sh` overwrites LD_LIBRARY_PATH after module load — must append, not replace (2026-07-24)
+
+**Symptom:** a binary built and linked successfully against cray-mpich fails at
+run time with `error while loading shared libraries: libmpi_cray.so.12: cannot
+open shared object file` or `libpmi.so.0: cannot open shared object file`,
+even though `module load cray-mpich/9.0.1` was run just before.
+
+**Root cause:** the session's generated `scripts/env.sh` (from
+`session_detect`/`session_configure`) does `module load ...` and THEN does
+`export LD_LIBRARY_PATH=<CCE paths>:/usr/lib64:...` with no `:$LD_LIBRARY_PATH`
+tail — this silently discards the `LD_LIBRARY_PATH` entries the `cray-mpich`
+and `cray-pmi` modules themselves set (where `libmpi_cray.so.12`/
+`libpmi.so.0` actually live), keeping only the CCE compiler runtime paths.
+Any downstream step that sources `env.sh` and then runs an MPI binary breaks,
+even though the module load itself succeeded.
+
+**Fix:** any script that needs additional session-local library paths (HDF5,
+dftracer, etc.) on top of `env.sh` must APPEND them to the LD_LIBRARY_PATH
+`env.sh` leaves in place, never replace it wholesale:
+```bash
+source <ws>/scripts/env.sh
+export LD_LIBRARY_PATH="<session_local_libs>:${LD_LIBRARY_PATH}"
+```
+This is the same class of bug as the general "MPI library path" pitfall
+above (`flux run` not inheriting `LD_LIBRARY_PATH`), but happens even in a
+plain single-process run/build step, purely from `env.sh`'s own overwrite.
+Worth fixing at the `session_detect`/`session_configure` tool level so
+`env.sh` itself appends instead of replaces.
+
 ## dftracer build on Cray PE (2026-07-09)
 
 **Symptom:** dftracer pip install from source fails:

@@ -289,6 +289,19 @@ PC7  Wrong DFTRACER_INIT value
        HYBRID    — both LD_PRELOAD and application annotation active
      Using an invalid value silently disables tracing.
 
+PC8  MCP tool places END() before every error-checking macro, fragmenting the trace span
+     MCP clang_annotate_project tool places DFTRACER_C_FUNCTION_END() before EVERY
+     error-checking macro (HDF5_CHECK, MPI_CHECK, etc.) that contains implicit exit
+     logic, instead of once before the function's actual return statement. This violates
+     dftracer-annotate-c Rule E (error-checking macros should NOT have END before them).
+     Observed in session ior/20260724_175545 with HDF5_Open() getting 15 extra END()
+     calls (lines 270, 273, 280, 307, 312, 331, 335, 343, 360, 363, 369, 374, 378, 391,
+     395, 418), creating fragmented spans instead of one continuous function span.
+     → Fix: manually remove all intermediate END() calls before error-check macros; place
+     a single END() before the function's actual return statement. This is a known MCP
+     tool limitation requiring post-processing cleanup for HDF5-heavy code. See also
+     [[workload-ior]] for this same issue.
+
 ---
 
 ## C++-Specific Pitfalls (CP)

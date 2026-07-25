@@ -1,0 +1,2872 @@
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/finetune/args.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/finetune/args.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/finetune/args.py	2026-07-23 16:50:17.769790000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/finetune/args.py	2026-07-23 19:08:47.735506000 -0700
+@@ -1,6 +1,9 @@
+ import argparse
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("args")
+ 
+ 
++@_dft.log
+ def get_parser(parser=None):
+     if parser is None:
+         parser = argparse.ArgumentParser()
+@@ -98,6 +101,7 @@
+     parser.add_argument("--batch_size", type=int, default=64)
+ 
+     return parser
++@_dft.log
+ def parse_args():
+     parser = get_parser()
+     args = parser.parse_args()
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/finetune/finetune_pubchem_light_classification_multitask.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/finetune/finetune_pubchem_light_classification_multitask.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/finetune/finetune_pubchem_light_classification_multitask.py	2026-07-23 16:50:17.777799000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/finetune/finetune_pubchem_light_classification_multitask.py	2026-07-24 09:32:18.360848000 -0700
+@@ -14,7 +14,7 @@
+ from rotate_attention.rotate_builder import RotateEncoderBuilder as rotate_builder
+ from fast_transformers.feature_maps import GeneralizedRandomFeatures
+ from functools import partial
+-from apex import optimizers
++#from apex import optimizers  # apex unavailable on this ROCm cluster; using torch.optim.AdamW instead of FusedLAMB
+ import subprocess
+ from argparse import ArgumentParser, Namespace
+ import numpy as np
+@@ -24,9 +24,16 @@
+ from sklearn.metrics import accuracy_score, roc_curve, auc, roc_auc_score
+ from torch.utils.data import DataLoader
+ from rdkit import Chem
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++from dftracer.python import dftracer, dft_fn as DFTracerFn, ai as dft_ai
++_dlp = DFTracerFn("finetune_pubchem_light_classification_multitask")
++_dft_log = dftracer.initialize_log(logfile=None, data_dir=dataset, process_id=-1)
++_dft = DFTracerFn("finetune_pubchem_light_classification_multitask")
++_dft_log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=-1)
+ #from pytorch_lightning.plugins.ddp_plugin import DDPPlugin
+ #from pytorch_lightning.plugins.sharded_plugin import DDPShardedPlugin
+ 
++@_dft.log
+ def normalize_smiles(smi, canonical, isomeric):
+     try:
+         normalized = Chem.MolToSmiles(
+@@ -39,6 +46,8 @@
+ class MultitaskModel(pl.LightningModule):
+     """  the full GPT language model, with a context size of block_size """
+ 
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, config, tokenizer):
+         super(MultitaskModel, self).__init__()
+ 
+@@ -94,6 +103,8 @@
+         dims = [150, 50, 50, 2]
+ 
+ 
++        @_dlp.log_init
++        @_dft.log_init
+         def __init__(self, smiles_embed_dim, num_tasks, dims=dims, dropout=0.2):
+             super().__init__()
+             self.desc_skip_connection = True
+@@ -108,6 +119,8 @@
+             self.relu2 = nn.GELU()
+             self.final = nn.Linear(smiles_embed_dim, num_tasks) #classif
+ 
++        @dft_ai.compute.forward
++        @_dft.log
+         def forward(self, smiles_emb):
+             x_out = self.fc1(smiles_emb)
+             x_out = self.dropout1(x_out)
+@@ -128,11 +141,15 @@
+             return F.sigmoid(z)
+ 
+     class lm_layer(nn.Module):
++        @_dlp.log_init
++        @_dft.log_init
+         def __init__(self, n_embd, n_vocab):
+             super().__init__()
+             self.embed = nn.Linear(n_embd, n_embd)
+             self.ln_f = nn.LayerNorm(n_embd)
+             self.head = nn.Linear(n_embd, n_vocab, bias=False)
++        @dft_ai.compute.forward
++        @_dft.log
+         def forward(self, tensor):
+             tensor = self.embed(tensor)
+             tensor = F.gelu(tensor)
+@@ -140,6 +157,7 @@
+             tensor = self.head(tensor)
+             return tensor
+ 
++    @_dft.log
+     def get_loss(self, smiles_emb, measures, mask):
+         z_pred = self.net.forward(smiles_emb).squeeze()
+         #measures = measures.long()
+@@ -148,6 +166,8 @@
+         #print('measures:', measures.shape)
+         return self.loss(z_pred, measures), z_pred, measures, mask
+ 
++    @dft_ai.checkpoint.capture
++    @_dft.log
+     def on_save_checkpoint(self, checkpoint):
+         #save RNG states each time the model and states are saved
+         out_dict = dict()
+@@ -159,6 +179,8 @@
+             out_dict['python_state']=random.getstate()
+         checkpoint['rng'] = out_dict
+ 
++    @dft_ai.checkpoint.restart
++    @_dft.log
+     def on_load_checkpoint(self, checkpoint):
+         #load RNG states each time the model and states are loaded from checkpoint
+         rng = checkpoint['rng']
+@@ -174,6 +196,8 @@
+             else:
+                 print('unrecognized state')
+ 
++    @_dlp.log
++    @_dft.log
+     def _init_weights(self, module):
+         if isinstance(module, (nn.Linear, nn.Embedding)):
+             module.weight.data.normal_(mean=0.0, std=0.02)
+@@ -184,6 +208,8 @@
+             module.weight.data.fill_(1.0)
+ 
+ 
++    @_dlp.log
++    @_dft.log
+     def configure_optimizers(self):
+         # separate out all parameters to those that will and won't experience regularizing weight decay
+         decay = set()
+@@ -227,9 +253,11 @@
+             betas = (0.9, 0.99)
+         print('betas are {}'.format(betas))
+         learning_rate = self.train_config.lr_start * self.train_config.lr_multiplier
+-        optimizer = optimizers.FusedLAMB(optim_groups, lr=learning_rate, betas=betas)
++        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas)  # apex FusedLAMB unavailable on ROCm; using AdamW
+         return optimizer
+ 
++    @_dlp.log
++    @_dft.log
+     def training_step(self, batch, batch_idx):
+         idx = batch[0]
+         mask = batch[1]
+@@ -256,6 +284,8 @@
+ 
+         return {"loss": loss}
+ 
++    @dft_ai.pipeline.evaluate
++    @_dft.log
+     def validation_step(self, val_batch, batch_idx, dataset_idx):
+         idx = val_batch[0]
+         mask = val_batch[1]
+@@ -284,6 +314,8 @@
+             "mask":target_masks.detach(),
+             "dataset_idx": dataset_idx,
+         }
++    @dft_ai.pipeline.evaluate
++    @_dft.log
+     def validation_epoch_end(self, outputs):
+         # results_by_dataset = self.split_results_by_dataset(outputs)
+         tensorboard_logs = {}
+@@ -392,6 +424,8 @@
+         return {"avg_val_loss": val_loss}
+ 
+ 
++@_dlp.log
++@_dft.log
+ def get_dataset(data_root, filename,  dataset_len,  measure_names):
+     df = pd.read_csv(os.path.join(data_root, filename))
+     print("Length of dataset:", len(df))
+@@ -402,6 +436,8 @@
+     return dataset
+ 
+ class MultitaskEmbeddingDataset(torch.utils.data.Dataset):
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, df,  measure_names):
+         self.measure_names = measure_names
+         df['canonical_smiles'] = df['smiles'].apply(lambda smi: normalize_smiles(smi, canonical=True, isomeric=False))
+@@ -413,6 +449,8 @@
+ 
+         self.df = self.df.reset_index(drop=True)
+ 
++    @dft_ai.data.item
++    @_dft.log
+     def __getitem__(self, index):
+ 
+         canonical_smiles = self.df.loc[index, 'canonical_smiles']
+@@ -421,10 +459,13 @@
+         measures = [0.0 if np.isnan(x) else x for x in measures]
+         return canonical_smiles, measures, mask
+ 
++    @_dft.log
+     def __len__(self):
+         return len(self.df)
+ 
+ class PropertyPredictionDataModule(pl.LightningDataModule):
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, hparams):
+         super(PropertyPredictionDataModule, self).__init__()
+         if type(hparams) is dict:
+@@ -434,9 +475,12 @@
+         self.tokenizer = MolTranBertTokenizer('bert_vocab.txt')
+         self.dataset_name = hparams.dataset_name
+ 
++    @_dft.log
+     def get_split_dataset_filename(dataset_name, split):
+         return split + ".csv"
+ 
++    @_dlp.log
++    @_dft.log
+     def prepare_data(self):
+         print("Inside prepare_dataset")
+         train_filename = PropertyPredictionDataModule.get_split_dataset_filename(
+@@ -479,10 +523,13 @@
+         #     f"Train dataset size: {len(self.train_ds)}, val: {len(self.val_ds1), len(self.val_ds2)}, test: {len(self.test_ds)}"
+         # )
+ 
++    @dft_ai.data.preprocess
++    @_dft.log
+     def collate(self, batch):
+         tokens = self.tokenizer.batch_encode_plus([ smile[0] for smile in batch], padding=True, add_special_tokens=True)
+         return (torch.tensor(tokens['input_ids']), torch.tensor(tokens['attention_mask']), torch.tensor([smile[1] for smile in batch], dtype=torch.float32), torch.tensor([smile[2] for smile in batch]))
+ 
++    @_dft.log
+     def val_dataloader(self):
+         return [
+             DataLoader(
+@@ -495,6 +542,7 @@
+             for ds in self.val_ds
+         ]
+ 
++    @_dft.log
+     def train_dataloader(self):
+         return DataLoader(
+             self.train_ds,
+@@ -512,6 +560,8 @@
+         based on validation loss.
+     """
+ 
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, save_step_frequency=-1,
+         prefix="N-Step-Checkpoint",
+         use_modelcheckpoint_filename=False,
+@@ -525,6 +575,8 @@
+         self.save_step_frequency = save_step_frequency
+         self.prefix = prefix
+         self.use_modelcheckpoint_filename = use_modelcheckpoint_filename
++    @_dlp.log
++    @_dft.log
+     def on_batch_end(self, trainer: pl.Trainer, _):
+         """ Check if we should save a checkpoint after every train batch """
+         epoch = trainer.current_epoch
+@@ -541,6 +593,7 @@
+             trainer.save_checkpoint(ckpt_path)
+ 
+ class ModelCheckpointAtEpochEnd(pl.Callback):
++    @_dft.log
+     def on_epoch_end(self, trainer, pl_module):
+         metrics = trainer.callback_metrics
+         metrics['epoch'] = trainer.current_epoch
+@@ -548,10 +601,14 @@
+             trainer.checkpoint_callback.on_validation_end(trainer, pl_module)
+ 
+ 
++@_dlp.log
++@_dft.log
+ def append_to_file(filename, line):
+     with open(filename, "a") as f:
+         f.write(line + "\n")
+ 
++@dft_ai
++@_dft.log
+ def main():
+     margs = args.parse_args()
+     print("Using " + str(
+@@ -634,7 +691,7 @@
+     os.makedirs(checkpoint_dir, exist_ok=True)
+ 
+     checkpoint_path = os.path.join(checkpoints_folder, margs.measure_name)
+-    checkpoint_callback = pl.callbacks.ModelCheckpoint(period=1, save_last=True, dirpath=checkpoint_dir, filename='checkpoint', verbose=True)
++    checkpoint_callback = pl.callbacks.ModelCheckpoint(every_n_epochs=1, save_last=True, dirpath=checkpoint_dir, filename='checkpoint', verbose=True)
+ 
+     print(margs)
+ 
+@@ -678,6 +735,8 @@
+     trainer.fit(model, datamodule)
+     toc = time.perf_counter()
+     print('Time was {}'.format(toc - tic))
++    _dft_log.finalize()
++    _dft_log.finalize()
+ 
+ 
+ if __name__ == '__main__':
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/finetune/finetune_pubchem_light_classification.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/finetune/finetune_pubchem_light_classification.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/finetune/finetune_pubchem_light_classification.py	2026-07-23 16:50:17.775767000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/finetune/finetune_pubchem_light_classification.py	2026-07-24 09:32:09.592865000 -0700
+@@ -14,7 +14,7 @@
+ from rotate_attention.rotate_builder import RotateEncoderBuilder as rotate_builder
+ from fast_transformers.feature_maps import GeneralizedRandomFeatures
+ from functools import partial
+-from apex import optimizers
++#from apex import optimizers  # apex unavailable on this ROCm cluster; using torch.optim.AdamW instead of FusedLAMB
+ import subprocess
+ from argparse import ArgumentParser, Namespace
+ import numpy as np
+@@ -24,9 +24,16 @@
+ from sklearn.metrics import accuracy_score, roc_curve, auc
+ from torch.utils.data import DataLoader
+ from rdkit import Chem
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++from dftracer.python import dftracer, dft_fn as DFTracerFn, ai as dft_ai
++_dlp = DFTracerFn("finetune_pubchem_light_classification")
++_dft_log = dftracer.initialize_log(logfile=None, data_dir=dataset, process_id=-1)
++_dft = DFTracerFn("finetune_pubchem_light_classification")
++_dft_log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=-1)
+ #from pytorch_lightning.plugins.ddp_plugin import DDPPlugin
+ #from pytorch_lightning.plugins.sharded_plugin import DDPShardedPlugin
+ 
++@_dft.log
+ def normalize_smiles(smi, canonical, isomeric):
+     try:
+         normalized = Chem.MolToSmiles(
+@@ -38,6 +45,8 @@
+ 
+ class LightningModule(pl.LightningModule):
+ 
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, config, tokenizer):
+         super(LightningModule, self).__init__()
+ 
+@@ -89,6 +98,8 @@
+         dims = [150, 50, 50, 2]
+ 
+         
++        @_dlp.log_init
++        @_dft.log_init
+         def __init__(self, smiles_embed_dim, num_classes, dims=dims, dropout=0.2):
+             super().__init__()
+             self.desc_skip_connection = True 
+@@ -103,6 +114,8 @@
+             self.relu2 = nn.GELU()
+             self.final = nn.Linear(smiles_embed_dim, num_classes) #classif
+ 
++        @dft_ai.compute.forward
++        @_dft.log
+         def forward(self, smiles_emb):
+             x_out = self.fc1(smiles_emb)
+             x_out = self.dropout1(x_out)
+@@ -122,11 +135,15 @@
+             #z = self.layers(smiles_emb)
+             return z
+     class lm_layer(nn.Module):
++        @_dlp.log_init
++        @_dft.log_init
+         def __init__(self, n_embd, n_vocab):
+             super().__init__()
+             self.embed = nn.Linear(n_embd, n_embd)
+             self.ln_f = nn.LayerNorm(n_embd)
+             self.head = nn.Linear(n_embd, n_vocab, bias=False)
++        @dft_ai.compute.forward
++        @_dft.log
+         def forward(self, tensor):
+             tensor = self.embed(tensor)
+             tensor = F.gelu(tensor)
+@@ -134,6 +151,7 @@
+             tensor = self.head(tensor)
+             return tensor
+ 
++    @_dft.log
+     def get_loss(self, smiles_emb, measures):
+         z_pred = self.net.forward(smiles_emb).squeeze()
+         measures = measures.long()
+@@ -141,6 +159,8 @@
+         #print('measures:', measures.shape)
+         return self.loss(z_pred, measures), z_pred, measures
+ 
++    @dft_ai.checkpoint.capture
++    @_dft.log
+     def on_save_checkpoint(self, checkpoint):
+         #save RNG states each time the model and states are saved
+         out_dict = dict()
+@@ -152,6 +172,8 @@
+             out_dict['python_state']=random.getstate()
+         checkpoint['rng'] = out_dict
+ 
++    @dft_ai.checkpoint.restart
++    @_dft.log
+     def on_load_checkpoint(self, checkpoint):
+         #load RNG states each time the model and states are loaded from checkpoint
+         rng = checkpoint['rng']
+@@ -167,6 +189,8 @@
+             else:
+                 print('unrecognized state')
+ 
++    @_dlp.log
++    @_dft.log
+     def _init_weights(self, module):
+         if isinstance(module, (nn.Linear, nn.Embedding)):
+             module.weight.data.normal_(mean=0.0, std=0.02)
+@@ -177,6 +201,8 @@
+             module.weight.data.fill_(1.0)
+ 
+ 
++    @_dlp.log
++    @_dft.log
+     def configure_optimizers(self):
+         # separate out all parameters to those that will and won't experience regularizing weight decay
+         decay = set()
+@@ -220,9 +246,11 @@
+             betas = (0.9, 0.99)
+         print('betas are {}'.format(betas))
+         learning_rate = self.train_config.lr_start * self.train_config.lr_multiplier
+-        optimizer = optimizers.FusedLAMB(optim_groups, lr=learning_rate, betas=betas)
++        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas)  # apex FusedLAMB unavailable on ROCm; using AdamW
+         return optimizer
+ 
++    @_dlp.log
++    @_dft.log
+     def training_step(self, batch, batch_idx):
+         idx = batch[0]
+         mask = batch[1]
+@@ -247,6 +275,8 @@
+ 
+         return {"loss": loss}
+ 
++    @dft_ai.pipeline.evaluate
++    @_dft.log
+     def validation_step(self, val_batch, batch_idx, dataset_idx):
+         idx =     val_batch[0]
+         mask = val_batch[1]
+@@ -271,6 +301,8 @@
+             "actual": actual.detach(),
+             "dataset_idx": dataset_idx,
+         }
++    @dft_ai.pipeline.evaluate
++    @_dft.log
+     def validation_epoch_end(self, outputs):
+         # results_by_dataset = self.split_results_by_dataset(outputs)
+         tensorboard_logs = {}
+@@ -357,6 +389,8 @@
+         return {"avg_val_loss": avg_loss}
+ 
+ 
++@_dlp.log
++@_dft.log
+ def get_dataset(data_root, filename,  dataset_len, aug, measure_name):
+     df = pd.read_csv(os.path.join(data_root, filename))
+     print("Length of dataset:", len(df))
+@@ -367,6 +401,8 @@
+     return dataset
+ 
+ class PropertyPredictionDataset(torch.utils.data.Dataset):
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, df, measure_name, tokenizer=None, aug=True):
+         df = df[['smiles', measure_name]]
+         df = df.dropna()
+@@ -379,17 +415,22 @@
+         self.df = df_good
+         self.df = self.df.reset_index(drop=True)
+ 
++    @dft_ai.data.item
++    @_dft.log
+     def __getitem__(self, index):
+ 
+         canonical_smiles = self.df.loc[index, 'canonical_smiles']
+         measures = self.df.loc[index, self.measure_name]
+         return canonical_smiles, measures
+   
++    @_dft.log
+     def __len__(self):
+         return len(self.df)
+ 
+ 
+ class PropertyPredictionDataModule(pl.LightningDataModule):
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, hparams):
+         super(PropertyPredictionDataModule, self).__init__()
+         if type(hparams) is dict:
+@@ -399,9 +440,12 @@
+         self.tokenizer = MolTranBertTokenizer('bert_vocab.txt')
+         self.dataset_name = hparams.dataset_name
+ 
++    @_dft.log
+     def get_split_dataset_filename(dataset_name, split):
+         return split + ".csv"
+ 
++    @_dlp.log
++    @_dft.log
+     def prepare_data(self):
+         print("Inside prepare_dataset")
+         train_filename = PropertyPredictionDataModule.get_split_dataset_filename(
+@@ -447,10 +491,13 @@
+         #     f"Train dataset size: {len(self.train_ds)}, val: {len(self.val_ds1), len(self.val_ds2)}, test: {len(self.test_ds)}"
+         # )
+ 
++    @dft_ai.data.preprocess
++    @_dft.log
+     def collate(self, batch):
+         tokens = self.tokenizer.batch_encode_plus([ smile[0] for smile in batch], padding=True, add_special_tokens=True)
+         return (torch.tensor(tokens['input_ids']), torch.tensor(tokens['attention_mask']), torch.tensor([smile[1] for smile in batch]))
+ 
++    @_dft.log
+     def val_dataloader(self):
+         return [
+             DataLoader(
+@@ -463,6 +510,7 @@
+             for ds in self.val_ds
+         ]
+ 
++    @_dft.log
+     def train_dataloader(self):
+         return DataLoader(
+             self.train_ds,
+@@ -480,6 +528,8 @@
+         based on validation loss.
+     """
+ 
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, save_step_frequency=-1,
+         prefix="N-Step-Checkpoint",
+         use_modelcheckpoint_filename=False,
+@@ -493,6 +543,8 @@
+         self.save_step_frequency = save_step_frequency
+         self.prefix = prefix
+         self.use_modelcheckpoint_filename = use_modelcheckpoint_filename
++    @_dlp.log
++    @_dft.log
+     def on_batch_end(self, trainer: pl.Trainer, _):
+         """ Check if we should save a checkpoint after every train batch """
+         epoch = trainer.current_epoch
+@@ -509,6 +561,7 @@
+             trainer.save_checkpoint(ckpt_path)
+ 
+ class ModelCheckpointAtEpochEnd(pl.Callback):
++    @_dft.log
+     def on_epoch_end(self, trainer, pl_module):
+         metrics = trainer.callback_metrics
+         metrics['epoch'] = trainer.current_epoch
+@@ -516,10 +569,14 @@
+             trainer.checkpoint_callback.on_validation_end(trainer, pl_module)
+ 
+ 
++@_dlp.log
++@_dft.log
+ def append_to_file(filename, line):
+     with open(filename, "a") as f:
+         f.write(line + "\n")
+ 
++@dft_ai
++@_dft.log
+ def main():
+     margs = args.parse_args()
+     print("Using " + str(
+@@ -563,7 +620,7 @@
+     
+ 
+     checkpoint_path = os.path.join(checkpoints_folder, margs.measure_name)
+-    checkpoint_callback = pl.callbacks.ModelCheckpoint(period=1, save_last=True, dirpath=checkpoint_dir, filename='checkpoint', verbose=True)
++    checkpoint_callback = pl.callbacks.ModelCheckpoint(every_n_epochs=1, save_last=True, dirpath=checkpoint_dir, filename='checkpoint', verbose=True)
+ 
+     print(margs)
+ 
+@@ -607,6 +664,8 @@
+     trainer.fit(model, datamodule)
+     toc = time.perf_counter()
+     print('Time was {}'.format(toc - tic))
++    _dft_log.finalize()
++    _dft_log.finalize()
+ 
+ 
+ if __name__ == '__main__':
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/finetune/finetune_pubchem_light.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/finetune/finetune_pubchem_light.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/finetune/finetune_pubchem_light.py	2026-07-23 16:50:17.773780000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/finetune/finetune_pubchem_light.py	2026-07-24 09:32:13.910635000 -0700
+@@ -14,7 +14,7 @@
+ from rotate_attention.rotate_builder import RotateEncoderBuilder as rotate_builder
+ from fast_transformers.feature_maps import GeneralizedRandomFeatures
+ from functools import partial
+-from apex import optimizers
++#from apex import optimizers  # apex unavailable on this ROCm cluster; using torch.optim.AdamW instead of FusedLAMB
+ import subprocess
+ from argparse import ArgumentParser, Namespace
+ import numpy as np
+@@ -23,14 +23,23 @@
+ from torch.utils.data import DataLoader
+ from sklearn.metrics import r2_score
+ from utils import normalize_smiles
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++from dftracer.python import dftracer, dft_fn as DFTracerFn, ai as dft_ai
++_dlp = DFTracerFn("finetune_pubchem_light")
++_dft_log = dftracer.initialize_log(logfile=None, data_dir=dataset, process_id=-1)
++_dft = DFTracerFn("finetune_pubchem_light")
++_dft_log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=-1)
+ 
+ # create a function (this my favorite choice)
++@_dft.log
+ def RMSELoss(yhat,y):
+     return torch.sqrt(torch.mean((yhat-y)**2))
+ 
+ 
+ class LightningModule(pl.LightningModule):
+ 
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, config, tokenizer):
+         super(LightningModule, self).__init__()
+ 
+@@ -81,6 +90,8 @@
+         dims = [150, 50, 50, 2]
+ 
+ 
++        @_dlp.log_init
++        @_dft.log_init
+         def __init__(self, smiles_embed_dim, dims=dims, dropout=0.2):
+             super().__init__()
+             self.desc_skip_connection = True 
+@@ -95,6 +106,8 @@
+             self.relu2 = nn.GELU()
+             self.final = nn.Linear(smiles_embed_dim, 1)
+ 
++        @dft_ai.compute.forward
++        @_dft.log
+         def forward(self, smiles_emb):
+             x_out = self.fc1(smiles_emb)
+             x_out = self.dropout1(x_out)
+@@ -114,11 +127,15 @@
+             return z
+ 
+     class lm_layer(nn.Module):
++        @_dlp.log_init
++        @_dft.log_init
+         def __init__(self, n_embd, n_vocab):
+             super().__init__()
+             self.embed = nn.Linear(n_embd, n_embd)
+             self.ln_f = nn.LayerNorm(n_embd)
+             self.head = nn.Linear(n_embd, n_vocab, bias=False)
++        @dft_ai.compute.forward
++        @_dft.log
+         def forward(self, tensor):
+             tensor = self.embed(tensor)
+             tensor = F.gelu(tensor)
+@@ -126,12 +143,15 @@
+             tensor = self.head(tensor)
+             return tensor
+ 
++    @_dft.log
+     def get_loss(self, smiles_emb, measures):
+ 
+         z_pred = self.net.forward(smiles_emb).squeeze()
+         measures = measures.float()
+ 
+         return self.loss(z_pred, measures), z_pred, measures
++    @dft_ai.checkpoint.capture
++    @_dft.log
+     def on_save_checkpoint(self, checkpoint):
+         #save RNG states each time the model and states are saved
+         out_dict = dict()
+@@ -143,6 +163,8 @@
+             out_dict['python_state']=random.getstate()
+         checkpoint['rng'] = out_dict
+ 
++    @dft_ai.checkpoint.restart
++    @_dft.log
+     def on_load_checkpoint(self, checkpoint):
+         #load RNG states each time the model and states are loaded from checkpoint
+         rng = checkpoint['rng']
+@@ -158,6 +180,8 @@
+             else:
+                 print('unrecognized state')
+ 
++    @_dlp.log
++    @_dft.log
+     def _init_weights(self, module):
+         if isinstance(module, (nn.Linear, nn.Embedding)):
+             module.weight.data.normal_(mean=0.0, std=0.02)
+@@ -168,6 +192,8 @@
+             module.weight.data.fill_(1.0)
+ 
+ 
++    @_dlp.log
++    @_dft.log
+     def configure_optimizers(self):
+         # separate out all parameters to those that will and won't experience regularizing weight decay
+         decay = set()
+@@ -211,9 +237,11 @@
+             betas = (0.9, 0.99)
+         print('betas are {}'.format(betas))
+         learning_rate = self.train_config.lr_start * self.train_config.lr_multiplier
+-        optimizer = optimizers.FusedLAMB(optim_groups, lr=learning_rate, betas=betas)
++        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas)  # apex FusedLAMB unavailable on ROCm; using AdamW
+         return optimizer
+ 
++    @_dlp.log
++    @_dft.log
+     def training_step(self, batch, batch_idx):
+         idx = batch[0]
+         mask = batch[1]
+@@ -239,6 +267,8 @@
+ 
+         return {"loss": loss}
+ 
++    @dft_ai.pipeline.evaluate
++    @_dft.log
+     def validation_step(self, val_batch, batch_idx, dataset_idx):
+         idx =     val_batch[0]
+         mask = val_batch[1]
+@@ -263,6 +293,8 @@
+             "actual": actual.detach(),
+             "dataset_idx": dataset_idx,
+         }
++    @dft_ai.pipeline.evaluate
++    @_dft.log
+     def validation_epoch_end(self, outputs):
+         # results_by_dataset = self.split_results_by_dataset(outputs)
+         tensorboard_logs = {}
+@@ -325,6 +357,8 @@
+         return {"avg_val_loss": avg_loss}
+ 
+ 
++@_dlp.log
++@_dft.log
+ def get_dataset(data_root, filename, dataset_len, aug, measure_name):
+     df = pd.read_csv(os.path.join(data_root, filename))
+     print("Length of dataset:", len(df))
+@@ -335,6 +369,8 @@
+     return dataset
+ 
+ class PropertyPredictionDataset(torch.utils.data.Dataset):
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, df,  measure_name, tokenizer, aug=True):
+         df = df.dropna()  # TODO - Check why some rows are na
+         self.df = df
+@@ -362,15 +398,20 @@
+         self.aug = aug
+         self.is_measure_available = "measure" in df.columns
+ 
++    @dft_ai.data.item
++    @_dft.log
+     def __getitem__(self, index):
+         original_smiles = self.original_smiles[index]
+         canonical_smiles = self.original_canonical_map[original_smiles]
+         return canonical_smiles, self.measure_map[original_smiles]
+ 
++    @_dft.log
+     def __len__(self):
+         return len(self.original_smiles)
+ 
+ class PropertyPredictionDataModule(pl.LightningDataModule):
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, hparams):
+         super(PropertyPredictionDataModule, self).__init__()
+         if type(hparams) is dict:
+@@ -380,9 +421,12 @@
+         self.tokenizer = MolTranBertTokenizer('bert_vocab.txt')
+         self.dataset_name = hparams.dataset_name
+ 
++    @_dft.log
+     def get_split_dataset_filename(dataset_name, split):
+         return dataset_name + "_" + split + ".csv"
+ 
++    @_dlp.log
++    @_dft.log
+     def prepare_data(self):
+         print("Inside prepare_dataset")
+         train_filename = PropertyPredictionDataModule.get_split_dataset_filename(
+@@ -428,10 +472,13 @@
+         #     f"Train dataset size: {len(self.train_ds)}, val: {len(self.val_ds1), len(self.val_ds2)}, test: {len(self.test_ds)}"
+         # )
+ 
++    @dft_ai.data.preprocess
++    @_dft.log
+     def collate(self, batch):
+         tokens = self.tokenizer.batch_encode_plus([ smile[0] for smile in batch], padding=True, add_special_tokens=True)
+         return (torch.tensor(tokens['input_ids']), torch.tensor(tokens['attention_mask']), torch.tensor([smile[1] for smile in batch]))
+ 
++    @_dft.log
+     def val_dataloader(self):
+         return [
+             DataLoader(
+@@ -444,6 +491,7 @@
+             for ds in self.val_ds
+         ]
+ 
++    @_dft.log
+     def train_dataloader(self):
+         return DataLoader(
+             self.train_ds,
+@@ -461,6 +509,8 @@
+         based on validation loss.
+     """
+ 
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, save_step_frequency=-1,
+         prefix="N-Step-Checkpoint",
+         use_modelcheckpoint_filename=False,
+@@ -475,6 +525,8 @@
+         self.prefix = prefix
+         self.use_modelcheckpoint_filename = use_modelcheckpoint_filename
+ 
++    @_dlp.log
++    @_dft.log
+     def on_batch_end(self, trainer: pl.Trainer, _):
+         """ Check if we should save a checkpoint after every train batch """
+         epoch = trainer.current_epoch
+@@ -491,6 +543,7 @@
+             trainer.save_checkpoint(ckpt_path)
+ 
+ class ModelCheckpointAtEpochEnd(pl.Callback):
++    @_dft.log
+     def on_epoch_end(self, trainer, pl_module):
+         metrics = trainer.callback_metrics
+         metrics['epoch'] = trainer.current_epoch
+@@ -498,10 +551,14 @@
+             trainer.checkpoint_callback.on_validation_end(trainer, pl_module)
+ 
+ 
++@_dlp.log
++@_dft.log
+ def append_to_file(filename, line):
+     with open(filename, "a") as f:
+         f.write(line + "\n")
+ 
++@dft_ai
++@_dft.log
+ def main():
+     margs = args.parse_args()
+     print("Using " + str(
+@@ -544,7 +601,7 @@
+     os.makedirs(checkpoint_dir, exist_ok=True)
+ 
+     checkpoint_path = os.path.join(checkpoints_folder, margs.measure_name)
+-    checkpoint_callback = pl.callbacks.ModelCheckpoint(period=1, save_last=True, dirpath=checkpoint_dir, filename='checkpoint', verbose=True)
++    checkpoint_callback = pl.callbacks.ModelCheckpoint(every_n_epochs=1, save_last=True, dirpath=checkpoint_dir, filename='checkpoint', verbose=True)
+ 
+     print(margs)
+ 
+@@ -588,6 +645,8 @@
+     trainer.fit(model, datamodule)
+     toc = time.perf_counter()
+     print('Time was {}'.format(toc - tic))
++    _dft_log.finalize()
++    _dft_log.finalize()
+ 
+ 
+ if __name__ == '__main__':
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/finetune/tokenizer/tokenizer.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/finetune/tokenizer/tokenizer.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/finetune/tokenizer/tokenizer.py	2026-07-23 16:50:17.823096000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/finetune/tokenizer/tokenizer.py	2026-07-23 19:08:47.737624000 -0700
+@@ -1,10 +1,13 @@
+ from transformers import BertTokenizer
+ import regex as re
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("tokenizer")
+ 
+ PATTERN = "(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
+ 
+ 
+ class MolTranBertTokenizer(BertTokenizer):
++    @_dft.log_init
+     def __init__(self, vocab_file: str = '',
+                  do_lower_case=False,
+                  unk_token='<pad>',
+@@ -25,10 +28,12 @@
+         self.wordpiece_tokenizer = None
+         self.basic_tokenizer = None
+ 
++    @_dft.log
+     def _tokenize(self, text):
+         split_tokens = self.regex_tokenizer.findall(text)
+         return split_tokens
+ 
++    @_dft.log
+     def convert_tokens_to_string(self, tokens):
+         out_string = "".join(tokens).strip()
+         return out_string
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/finetune/utils.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/finetune/utils.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/finetune/utils.py	2026-07-23 16:50:17.824817000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/finetune/utils.py	2026-07-23 19:12:14.110191000 -0700
+@@ -4,12 +4,18 @@
+ import pandas as pd
+ from typing import List
+ from rdkit import Chem
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++from dftracer.python import dftracer, dft_fn as DFTracerFn, ai as dft_ai
++_dlp = DFTracerFn("utils")
++_dft = DFTracerFn("utils")
+ 
+ 
++@_dft.log
+ def getipaddress():
+     return socket.gethostbyname(socket.getfqdn())
+ 
+ 
++@_dft.log
+ def debug():
+     print("Waiting for debugger to connect")
+     if (
+@@ -23,16 +29,22 @@
+ 
+ 
+ class ListDataset:
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, seqs):
+         self.seqs = seqs
+ 
++    @dft_ai.data.item
++    @_dft.log
+     def __getitem__(self, index):
+         return self.seqs[index]
+ 
++    @_dft.log
+     def __len__(self):
+         return len(self.seqs)
+ 
+ 
++@_dft.log
+ def transform_single_embedding_to_multiple(smiles_z_map):
+     """Transforms an embedding map of the format smi->embedding to
+     smi-> {"canonical_embeddings":embedding}. This function exists
+@@ -47,6 +59,7 @@
+     return retval
+ 
+ 
++@_dft.log
+ def normalize_smiles(smi, canonical, isomeric):
+     normalized = Chem.MolToSmiles(
+         Chem.MolFromSmiles(smi), canonical=canonical, isomericSmiles=isomeric
+@@ -54,6 +67,8 @@
+     return normalized
+ 
+ 
++@_dlp.log
++@_dft.log
+ def get_all_proteins(affinity_dir: str):
+     files = glob.glob(affinity_dir + "/*.csv")
+     all_proteins = []
+@@ -64,11 +79,15 @@
+     return set(all_proteins)
+ 
+ 
++@_dlp.log
++@_dft.log
+ def append_to_file(filename, line):
+     with open(filename, "a") as f:
+         f.write(line + "\n")
+ 
+ 
++@_dlp.log
++@_dft.log
+ def write_to_file(filename, line):
+     with open(filename, "w") as f:
+         f.write(line + "\n")
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/args.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/args.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/args.py	2026-07-23 16:50:17.928086000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/args.py	2026-07-23 19:08:47.748685000 -0700
+@@ -1,6 +1,9 @@
+ import argparse
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("args")
+ 
+ 
++@_dft.log
+ def get_parser(parser=None):
+     if parser is None:
+         parser = argparse.ArgumentParser()
+@@ -232,6 +235,7 @@
+     parser.add_argument("--batch_size", type=int, default=64)
+ 
+     return parser
++@_dft.log
+ def parse_args():
+     parser = get_parser()
+     args = parser.parse_args()
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/dataset_pubchem.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/dataset_pubchem.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/dataset_pubchem.py	2026-07-23 16:50:17.933089000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/dataset_pubchem.py	2026-07-24 12:16:24.121309000 -0700
+@@ -5,6 +5,11 @@
+ import pandas as pd
+ import numpy as np
+ import time
++from dftracer.python import dft_fn as DFTracerFn, ai as dft_ai
++_dlp = DFTracerFn("dataset_pubchem")
++_dft = DFTracerFn("dataset_pubchem")
++# imported library module, not an entry point: no initialize_log()/finalize() here.
++# The process-wide dftracer log is owned by the entry point (train_pubchem_light.py).
+ 
+ class SS:
+     bos = '<bos>'
+@@ -15,6 +20,7 @@
+ class DatasetPubchem(torch.utils.data.IterableDataset):
+ #class DatasetPubchem(torch.utils.data.Dataset):
+     
++    @_dft.log_init
+     def __init__(self, train_load=None, vocab=None,  randomize_smiles=False):
+         """PubChem Dataset
+ 
+@@ -49,12 +55,14 @@
+             self.c2i = {c: i for i, c in vocab.items()}
+             self.i2c = {i: c for i, c in vocab.items()}
+ 
++    @dft_ai.data.item
+     def process(self,text):
+             #return np.asarray(self.string2ids(self.smi_tokenizer(smiles), add_bos=True, add_eos=True))
+         print(text)
+         mol = ''.join(self.regex.findall(text.split()[-1]))
+         return mol
+         #return np.asarray(self.string2ids(self.smi_tokenizer(mol), add_bos=True, add_eos=True))
++    @dft_ai.data.item
+     def line_mapper(self, line):
+         text = self.process(line)
+         return text
+@@ -62,6 +70,7 @@
+         #pass
+         return self.len
+     #    return len(self.smiles)
++    @_dlp.log
+     def __iter__(self):
+         data_file = open(self.database_file)
+         data_map = map(self.line_mapper, data_file)
+@@ -96,6 +105,7 @@
+ 
+ 
+     def create_collate_fn(self, pad):
++        @_dlp.log
+         def collate(batch):
+             '''
+             Padds batch of variable length
+@@ -103,7 +113,7 @@
+             assume it takes in images rather than arbitrary tensors.
+                             '''
+             ## get sequence lengths
+-            lengths = torch.tensor([ t.shape[0] for t in batch if t.shape[0] > 4 and t.shape[0] < 42 ]])
++            lengths = torch.tensor([ t.shape[0] for t in batch if t.shape[0] > 4 and t.shape[0] < 42 ])
+             batch_tmp = [ torch.from_numpy(t) for t in batch if t.shape[0] > 4 and t.shape[0] < 42 ]
+             batch_tmp = torch.nn.utils.rnn.pad_sequence(batch_tmp, batch_first=True, padding_value=pad)
+             target = [ torch.from_numpy(t[1:]) for t in batch if t.shape[0] > 4 and t.shape[0] < 42 ]
+@@ -114,7 +124,7 @@
+             target_mid = None 
+             assert(False)
+             if len(batch_tmp) < len(batch):
+-                lengths_mid = torch.tensor([ t.shape[0] for t in batch if t.shape[0] >= 42 and t.shape[0] <= 100 ]])
++                lengths_mid = torch.tensor([ t.shape[0] for t in batch if t.shape[0] >= 42 and t.shape[0] <= 100 ])
+                 batch_tmp_mid = [ torch.from_numpy(t) for t in batch if t.shape[0] >= 42 and t.shape[0] <= 100 ]
+                 batch_tmp_mid = torch.nn.utils.rnn.pad_sequence(batch_tmp_mid, batch_first=True, padding_value=pad)
+                 target_mid = [ torch.from_numpy(t[1:]) for t in batch if t.shape[0] >= 42  and t.shape[0] <= 100 ]
+@@ -128,7 +138,7 @@
+ 
+             print(len(batch_tmp) < len(batch))
+             if len(batch_tmp) < len(batch):
+-                lengths_long = torch.tensor([ t.shape[0] for t in batch if t.shape[0] >= 101 and t.shape[0] <= 200 ]])
++                lengths_long = torch.tensor([ t.shape[0] for t in batch if t.shape[0] >= 101 and t.shape[0] <= 200 ])
+                 batch_tmp_long = [ torch.from_numpy(t) for t in batch if t.shape[0] >= 101 and t.shape[0] <= 200 ]
+                 batch_tmp_long = torch.nn.utils.rnn.pad_sequence(batch_tmp_long, batch_first=True, padding_value=pad)
+                 target_long = [ torch.from_numpy(t[1:]) for t in batch if t.shape[0] >= 101  and t.shape[0] <= 200 ]
+@@ -187,6 +197,7 @@
+         string = ''.join([self.id2char(id) for id in ids])
+ 
+         return string
++    @dft_ai.data.item
+     def read_smiles_csv(path, fields=None, normalize=True):
+         df = pd.read_csv(path)
+         fields=['SMILES']
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_0/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_0/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_0/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_0/hparams.yaml	2026-07-24 10:08:20.395631000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cpu
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 128
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 1
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 64
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 2
++n_embd: 64
++n_head: 2
++n_jobs: 1
++n_last: 1000
++n_layer: 2
++n_samples: null
++n_workers: 0
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_1/checkpoints/epoch=0-step=5.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_1/checkpoints/epoch=0-step=5.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_1/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_1/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_1/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_1/hparams.yaml	2026-07-24 10:11:27.348420000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cpu
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 128
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 1
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 64
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 2
++n_embd: 64
++n_head: 2
++n_jobs: 1
++n_last: 1000
++n_layer: 2
++n_samples: null
++n_workers: 0
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_10/checkpoints/epoch=0-step=5.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_10/checkpoints/epoch=0-step=5.ckpt differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_11/checkpoints/epoch=0-step=5.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_11/checkpoints/epoch=0-step=5.ckpt differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_12/checkpoints/epoch=0-step=5.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_12/checkpoints/epoch=0-step=5.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_12/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_12/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_12/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_12/hparams.yaml	2026-07-24 12:18:35.372053000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cuda
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 128
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 1
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 64
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 2
++n_embd: 64
++n_head: 2
++n_jobs: 1
++n_last: 1000
++n_layer: 2
++n_samples: null
++n_workers: 0
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_13/checkpoints/epoch=0-step=157.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_13/checkpoints/epoch=0-step=157.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_13/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_13/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_13/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_13/hparams.yaml	2026-07-24 12:52:34.196061000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cuda
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 256
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 4
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 128
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 32
++n_embd: 128
++n_head: 4
++n_jobs: 1
++n_last: 1000
++n_layer: 4
++n_samples: null
++n_workers: 2
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_13/metrics.csv /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_13/metrics.csv
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_13/metrics.csv	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_13/metrics.csv	2026-07-24 12:53:22.595850000 -0700
+@@ -0,0 +1,4 @@
++epoch,step,train_loss
++0,49,3.569446563720703
++0,99,2.518641948699951
++0,149,1.9792555570602417
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_14/checkpoints/epoch=0-step=157.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_14/checkpoints/epoch=0-step=157.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_14/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_14/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_14/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_14/hparams.yaml	2026-07-24 13:02:45.302888000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cuda
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 256
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 4
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 128
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 32
++n_embd: 128
++n_head: 4
++n_jobs: 1
++n_last: 1000
++n_layer: 4
++n_samples: null
++n_workers: 1
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_14/metrics.csv /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_14/metrics.csv
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_14/metrics.csv	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_14/metrics.csv	2026-07-24 13:03:34.555685000 -0700
+@@ -0,0 +1,4 @@
++epoch,step,train_loss
++0,49,3.2421655654907227
++0,99,2.693331003189087
++0,149,2.3929622173309326
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_15/checkpoints/epoch=0-step=79.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_15/checkpoints/epoch=0-step=79.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_15/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_15/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_15/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_15/hparams.yaml	2026-07-24 13:07:05.829775000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cuda
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 256
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 4
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 128
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 64
++n_embd: 128
++n_head: 4
++n_jobs: 1
++n_last: 1000
++n_layer: 4
++n_samples: null
++n_workers: 2
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_15/metrics.csv /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_15/metrics.csv
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_15/metrics.csv	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_15/metrics.csv	2026-07-24 13:07:29.841243000 -0700
+@@ -0,0 +1,2 @@
++epoch,step,train_loss
++0,49,3.5809521675109863
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_16/checkpoints/epoch=0-step=40.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_16/checkpoints/epoch=0-step=40.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_16/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_16/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_16/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_16/hparams.yaml	2026-07-24 13:10:54.853973000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cuda
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 256
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 4
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 128
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 128
++n_embd: 128
++n_head: 4
++n_jobs: 1
++n_last: 1000
++n_layer: 4
++n_samples: null
++n_workers: 2
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_2/checkpoints/epoch=0-step=5.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_2/checkpoints/epoch=0-step=5.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_2/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_2/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_2/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_2/hparams.yaml	2026-07-24 10:36:54.753235000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cuda
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 128
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 1
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 64
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 2
++n_embd: 64
++n_head: 2
++n_jobs: 1
++n_last: 1000
++n_layer: 2
++n_samples: null
++n_workers: 0
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_3/checkpoints/epoch=0-step=5.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_3/checkpoints/epoch=0-step=5.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_3/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_3/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_3/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_3/hparams.yaml	2026-07-24 10:52:10.218631000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cuda
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 128
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 1
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 64
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 2
++n_embd: 64
++n_head: 2
++n_jobs: 1
++n_last: 1000
++n_layer: 2
++n_samples: null
++n_workers: 0
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_4/checkpoints/epoch=0-step=5.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_4/checkpoints/epoch=0-step=5.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_4/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_4/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_4/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_4/hparams.yaml	2026-07-24 11:26:56.801460000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cuda
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 128
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 1
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 64
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 2
++n_embd: 64
++n_head: 2
++n_jobs: 1
++n_last: 1000
++n_layer: 2
++n_samples: null
++n_workers: 0
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_5/checkpoints/epoch=0-step=5.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_5/checkpoints/epoch=0-step=5.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_5/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_5/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_5/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_5/hparams.yaml	2026-07-24 11:36:59.210304000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cuda
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 128
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 1
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 64
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 2
++n_embd: 64
++n_head: 2
++n_jobs: 1
++n_last: 1000
++n_layer: 2
++n_samples: null
++n_workers: 0
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_6/checkpoints/epoch=0-step=5.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_6/checkpoints/epoch=0-step=5.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_6/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_6/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_6/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_6/hparams.yaml	2026-07-24 11:40:24.052094000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cuda
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 128
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 1
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 64
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 2
++n_embd: 64
++n_head: 2
++n_jobs: 1
++n_last: 1000
++n_layer: 2
++n_samples: null
++n_workers: 0
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_7/checkpoints/epoch=0-step=5.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_7/checkpoints/epoch=0-step=5.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_7/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_7/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_7/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_7/hparams.yaml	2026-07-24 11:42:14.220974000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cuda
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 128
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 1
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 64
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 2
++n_embd: 64
++n_head: 2
++n_jobs: 1
++n_last: 1000
++n_layer: 2
++n_samples: null
++n_workers: 0
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_8/checkpoints/epoch=0-step=5.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_8/checkpoints/epoch=0-step=5.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_8/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_8/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_8/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_8/hparams.yaml	2026-07-24 12:05:08.615950000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cuda
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 128
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 1
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 64
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 2
++n_embd: 64
++n_head: 2
++n_jobs: 1
++n_last: 1000
++n_layer: 2
++n_samples: null
++n_workers: 0
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_9/checkpoints/epoch=0-step=5.ckpt and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_9/checkpoints/epoch=0-step=5.ckpt differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_9/hparams.yaml /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_9/hparams.yaml
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/lightning_logs/version_9/hparams.yaml	1969-12-31 16:00:00.000000000 -0800
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/lightning_logs/version_9/hparams.yaml	2026-07-24 12:09:45.916886000 -0700
+@@ -0,0 +1,68 @@
++accelerator: ddp
++batch_size: 64
++beam_size: 0
++checkpoint_every: 1000
++clip_grad: 50
++config_load: null
++config_save: null
++d_dropout: 0.1
++data_path: ''
++data_root: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/affinity
++dataset_length: null
++dataset_name: sol
++debug: false
++device: cuda
++dropout: 0.1
++eval_every: 50000
++fast_dev_run: false
++fc_h: 128
++finetune_path: ''
++freeze_model: false
++from_scratch: false
++gen_save: null
++gpus: 1
++grad_acc: 1
++log_file: null
++lr: 0.001
++lr_end: 0.00030000000000000003
++lr_multiplier: 1
++lr_start: 0.00030000000000000003
++max_epochs: 1
++max_len: 64
++measure_name: measure
++min_len: 1
++mode: cls
++model_arch: null
++model_load: null
++model_save: model.pt
++model_save_dir: ./models_dump/
++n_batch: 2
++n_embd: 64
++n_head: 2
++n_jobs: 1
++n_last: 1000
++n_layer: 2
++n_samples: null
++n_workers: 0
++nucleus_thresh: 0.9
++num_epoch: 1
++num_feats: 32
++num_nodes: 1
++num_seq_returned: 0
++num_workers: 0
++pretext_size: 0
++q_dropout: 0.5
++restart_path: ''
++resume: false
++root_dir: .
++rotate: false
++seed: 12345
++smiles_embedding: /dccstor/medscan7/smallmolecule/runs/ba-predictor/small-data/embeddings/protein/ba_embeddings_tanh_512_2986138_2.pt
++tb_loc: null
++train_load: pubchem
++unlike_alpha: 1.0
++unlikelihood: false
++use_linear: 0
++val_load: null
++vocab_load: null
++vocab_save: null
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/pubchem_canon_script.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/pubchem_canon_script.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/pubchem_canon_script.py	2026-07-23 16:50:17.936088000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/pubchem_canon_script.py	2026-07-23 19:08:47.751587000 -0700
+@@ -3,6 +3,8 @@
+ import pyarrow as pa
+ 
+ import datasets
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("pubchem_canon_script")
+ 
+ 
+ logger = logging.getLogger(__name__)
+@@ -27,9 +29,11 @@
+ 
+     BUILDER_CONFIG_CLASS = PubChemConfig
+ 
++    @_dft.log
+     def _info(self):
+         return datasets.DatasetInfo(features=FEATURES)
+ 
++    @_dft.log
+     def _split_generators(self, dl_manager):
+         """The `data_files` kwarg in load_dataset() can be a str, List[str], Dict[str,str], or Dict[str,List[str]].
+ 
+@@ -51,6 +55,7 @@
+             splits.append(datasets.SplitGenerator(name=split_name, gen_kwargs={"files": files}))
+         return splits
+ 
++    @_dft.log
+     def _generate_tables(self, files):
+ 
+         for file_idx, file in enumerate(files):
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/pubchem_encoder.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/pubchem_encoder.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/pubchem_encoder.py	2026-07-23 16:50:17.939100000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/pubchem_encoder.py	2026-07-24 12:15:56.318982000 -0700
+@@ -3,9 +3,14 @@
+ import numpy as np
+ import random
+ import collections
++from dftracer.python import dft_fn as DFTracerFn
++_dft = DFTracerFn("pubchem_encoder")
++# imported library module, not an entry point: no initialize_log()/finalize() here.
++# The process-wide dftracer log is owned by the entry point (train_pubchem_light.py).
+ 
+ class Encoder():
+ 
++    @_dft.log_init
+     def __init__(self, max_length=500, add_bos=True, add_eos=True, feature_size=32):
+         self.vocab_encoder = torch.load('pubchem_canon_zinc_final_vocab_sorted.pth')
+ 
+@@ -63,6 +68,7 @@
+         self.add_bos = add_bos
+         self.add_eos = add_eos
+ 
++    @_dft.log
+     def encode(self, char):
+         #if len(char) > self.max_length:
+         #    char = char[:self.max_length]
+@@ -73,10 +79,12 @@
+ 
+         return torch.tensor([self.char2id[word] for word in char])
+ 
++    @_dft.log
+     def encoder(self, tokens):
+         #return *map(lambda x: self.encode(x), tokens)
+         return [self.encode(mol) for mol in tokens]
+ 
++    @_dft.log
+     def process_text(self, text):
+         #print(text)
+         #random length sequences seems to help training
+@@ -146,6 +154,7 @@
+             outbucket3 = []
+         return outbucket0, outbucket1, outbucket2, outbucket3
+ 
++    @_dft.log
+     def mask_tokens( self, inputs, special_tokens_mask= None):
+         """
+         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
+@@ -178,6 +187,7 @@
+ 
+         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
+         return inputs, labels
++    @_dft.log
+     def pack_tensors(self, tokens):
+         array = self.encoder(tokens)
+         array =  torch.nn.utils.rnn.pad_sequence(array, batch_first=True, padding_value=self.pad)
+@@ -186,6 +196,7 @@
+         special_token_mask = [list(map(lambda x: 1 if x in [self.bos, self.eos, self.pad] else 0, stuff)) for stuff in array.tolist()]
+         masked_array, masked_labels = self.mask_tokens(array, special_token_mask)
+         return masked_array, masked_labels#, lengths
++    @_dft.log
+     def process(self, text):
+         arrays = []
+         #lengths = []
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/pubchem_script.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/pubchem_script.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/pubchem_script.py	2026-07-23 16:50:17.941090000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/pubchem_script.py	2026-07-23 19:08:47.754585000 -0700
+@@ -3,6 +3,8 @@
+ import pyarrow as pa
+ 
+ import datasets
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("pubchem_script")
+ 
+ 
+ logger = logging.getLogger(__name__)
+@@ -27,9 +29,11 @@
+ 
+     BUILDER_CONFIG_CLASS = PubChemConfig
+ 
++    @_dft.log
+     def _info(self):
+         return datasets.DatasetInfo(features=FEATURES)
+ 
++    @_dft.log
+     def _split_generators(self, dl_manager):
+         """The `data_files` kwarg in load_dataset() can be a str, List[str], Dict[str,str], or Dict[str,List[str]].
+ 
+@@ -51,6 +55,7 @@
+             splits.append(datasets.SplitGenerator(name=split_name, gen_kwargs={"files": files}))
+         return splits
+ 
++    @_dft.log
+     def _generate_tables(self, files):
+ 
+         for file_idx, file in enumerate(files):
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/__pycache__/args.cpython-313.pyc and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/__pycache__/args.cpython-313.pyc differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/__pycache__/pubchem_encoder.cpython-313.pyc and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/__pycache__/pubchem_encoder.cpython-313.pyc differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/rotate_attention/__pycache__/attention_layer.cpython-313.pyc and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/rotate_attention/__pycache__/attention_layer.cpython-313.pyc differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/rotate_attention/__pycache__/rotary.cpython-313.pyc and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/rotate_attention/__pycache__/rotary.cpython-313.pyc differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/rotate_attention/__pycache__/rotate_builder.cpython-313.pyc and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/rotate_attention/__pycache__/rotate_builder.cpython-313.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tokenizer/tokenizer.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tokenizer/tokenizer.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tokenizer/tokenizer.py	2026-07-23 16:50:17.953085000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tokenizer/tokenizer.py	2026-07-23 19:08:47.756521000 -0700
+@@ -1,10 +1,13 @@
+ from transformers import BertTokenizer
+ import regex as re
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("tokenizer")
+ 
+ PATTERN = "(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
+ 
+ 
+ class MolTranBertTokenizer(BertTokenizer):
++    @_dft.log_init
+     def __init__(self, vocab_file: str = '',
+                  do_lower_case=False,
+                  unk_token='<pad>',
+@@ -25,10 +28,12 @@
+         self.wordpiece_tokenizer = None
+         self.basic_tokenizer = None
+ 
++    @_dft.log
+     def _tokenize(self, text):
+         split_tokens = self.regex_tokenizer.findall(text)
+         return split_tokens
+ 
++    @_dft.log
+     def convert_tokens_to_string(self, tokens):
+         out_string = "".join(tokens).strip()
+         return out_string
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/train_pubchem_light.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/train_pubchem_light.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/train_pubchem_light.py	2026-07-23 16:50:17.954099000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/train_pubchem_light.py	2026-07-24 12:17:16.525058000 -0700
+@@ -12,7 +12,7 @@
+ from datasets import load_dataset, concatenate_datasets, load_from_disk
+ from pubchem_encoder import Encoder
+ import pytorch_lightning as pl
+-from pytorch_lightning.utilities import rank_zero_warn, rank_zero_only, seed
++from pytorch_lightning.utilities import rank_zero_warn, rank_zero_only
+ from pytorch_lightning.callbacks import LearningRateMonitor
+ 
+ from fast_transformers.builders import TransformerEncoderBuilder
+@@ -22,13 +22,24 @@
+ from fast_transformers.feature_maps import Favor,GeneralizedRandomFeatures
+ import torch.nn.functional as F
+ from functools import partial
+-from apex import optimizers
++#from apex import optimizers  # apex unavailable on this ROCm cluster; using torch.optim.AdamW instead of FusedLAMB
+ 
+ from torch.utils.data import DataLoader
+ import subprocess
++from dftracer.python import dftracer, dft_fn as DFTracerFn, ai as dft_ai
++_dlp = DFTracerFn("train_pubchem_light")
++_dft = DFTracerFn("train_pubchem_light")
++_dft_log = dftracer.initialize_log(logfile=os.environ.get('DFTRACER_LOG_FILE'), data_dir=os.environ.get('DFTRACER_DATA_DIR'), process_id=-1)
++# dftracer app-parameter metadata
++_dft_log.log_metadata_event("app", "molformer")
++_dft_log.log_metadata_event("workload", "pretraining")
++_dft_log.log_metadata_event("accelerator", "ddp")
++_dft_log.log_metadata_event("device", "cuda_rocm")
+ 
+ class LightningModule(pl.LightningModule):
+ 
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, config, vocab):
+         super(LightningModule, self).__init__()
+ 
+@@ -60,19 +71,24 @@
+         self.blocks = builder.get()
+         self.lang_model = self.lm_layer(config.n_embd, n_vocab)
+         self.train_config = config
++        self.validation_step_outputs = []
+         #if we are starting from scratch set seeds
+         if config.restart_path == "":
+-            seed.seed_everything(config.seed)
++            pl.seed_everything(config.seed)
+ 
+ 
+ 
+ 
+     class lm_layer(nn.Module):
++        @_dlp.log_init
++        @_dft.log_init
+         def __init__(self, n_embd, n_vocab):
+             super().__init__()
+             self.embed = nn.Linear(n_embd, n_embd)
+             self.ln_f = nn.LayerNorm(n_embd)
+             self.head = nn.Linear(n_embd, n_vocab, bias=False)
++        @dft_ai.compute.forward
++        @_dft.log
+         def forward(self, tensor):
+             tensor = self.embed(tensor)
+             tensor = F.gelu(tensor)
+@@ -80,6 +96,8 @@
+             tensor = self.head(tensor)
+             return tensor
+ 
++    @dft_ai.checkpoint.capture
++    @_dft.log
+     def on_save_checkpoint(self, checkpoint):
+         #save RNG states each time the model and states are saved
+         out_dict = dict()
+@@ -91,6 +109,8 @@
+             out_dict['python_state']=random.getstate()
+         checkpoint['rng'] = out_dict
+ 
++    @dft_ai.checkpoint.restart
++    @_dft.log
+     def on_load_checkpoint(self, checkpoint):
+         #load RNG states each time the model and states are loaded from checkpoint
+         rng = checkpoint['rng']
+@@ -106,6 +126,8 @@
+             else:
+                 print('unrecognized state')
+ 
++    @_dlp.log
++    @_dft.log
+     def _init_weights(self, module):
+         if isinstance(module, (nn.Linear, nn.Embedding)):
+             module.weight.data.normal_(mean=0.0, std=0.02)
+@@ -115,6 +137,8 @@
+             module.bias.data.zero_()
+             module.weight.data.fill_(1.0)
+ 
++    @_dlp.log
++    @_dft.log
+     def configure_optimizers(self):
+ 
+         # separate out all parameters to those that will and won't experience regularizing weight decay
+@@ -155,9 +179,11 @@
+         ]
+         betas = (0.9, 0.99)
+         learning_rate = self.train_config.lr_start * self.train_config.lr_multiplier
+-        optimizer = optimizers.FusedLAMB(optim_groups, lr=learning_rate, betas=betas)
++        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas)  # apex FusedLAMB unavailable on ROCm; using AdamW
+         return optimizer
+ 
++    @_dlp.log
++    @_dft.log
+     def training_step(self, batch, batch_idx):
+         idxl =     batch[0]
+         targetsl = batch[1]
+@@ -193,11 +219,16 @@
+         self.log('train_loss', loss, on_step=True)
+         return {'loss':loss}#, 'log':tensorboard_log}
+ 
+-    def validation_epoch_end(self, outputs):
+-
++    @dft_ai.pipeline.evaluate
++    @_dft.log
++    def on_validation_epoch_end(self):
++        outputs = self.validation_step_outputs
+         avg_loss = torch.tensor([output['loss'] for output in outputs]).mean()
+         loss = {'loss': avg_loss.item()}
+         self.log('validation_loss', loss['loss'])
++        self.validation_step_outputs.clear()
++    @dft_ai.pipeline.evaluate
++    @_dft.log
+     def validation_step(self, batch, batch_idx):
+         idxl =     batch[0]
+         targetsl = batch[1]
+@@ -227,9 +258,13 @@
+             else:
+                 loss += loss_tmp
+         self.log('train_loss', loss, on_step=True)
+-        return {'loss':loss}
++        output = {'loss':loss}
++        self.validation_step_outputs.append(output)
++        return output
+ 
+ class MoleculeModule(pl.LightningDataModule):
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self,  max_len, data_path, train_args):
+         super().__init__()
+         self.data_path = data_path
+@@ -238,40 +273,52 @@
+         self.text_encoder = Encoder(max_len)
+ 
+ 
++    @_dft.log
+     def prepare_data(self):
+         pass
+ 
++    @_dft.log
+     def get_vocab(self):
+         #using home made tokenizer, should look into existing tokenizer
+         return self.text_encoder.char2id
+ 
++    @_dft.log
+     def get_cache(self):
+         return self.cache_files
++    @staticmethod
++    def _load_smiles_text_dataset(data_files, cache_dir):
++        # Equivalent to pubchem_script.py/zinc_script.py's custom ArrowBasedBuilder:
++        # both just read each input file and, per line, keep the LAST whitespace-separated
++        # token (handles "CID<TAB>SMILES"-style lines) into a single "text" column.
++        # datasets>=3's custom-script dynamic-import loader (trust_remote_code) is unreliable
++        # under this environment, so we use the built-in "text" loader plus an equivalent map()
++        # instead of importing pubchem_script.py/zinc_script.py directly.
++        ds = load_dataset('text', data_files=data_files, cache_dir=cache_dir, split='train')
++        return ds.map(lambda ex: {'text': ex['text'].split()[-1]})
++
++    @_dlp.log
++    @_dft.log
+     def setup(self, stage=None):
+         #using huggingface dataloader
+         # create cache in tmp directory of locale mabchine under the current users name to prevent locking issues
+         pubchem_path = {'train':'../data/pubchem/CID-SMILES-CANONICAL.smi'}
+-        if 'CANONICAL' in pubchem_path:
+-            pubchem_script = './pubchem_canon_script.py'
+-        else:
+-            pubchem_script = './pubchem_script.py'
+         zinc_path = '../data/ZINC'
+         if 'ZINC' in self.data_path or 'zinc' in self.data_path:
+             zinc_files = [f for f in glob.glob(os.path.join(zinc_path,'*.smi'))]
+             for zfile in zinc_files:
+                 print(zfile)
+             self.data_path = {'train': zinc_files}
+-            dataset_dict = load_dataset('./zinc_script.py', data_files=self.data_path, cache_dir=os.path.join('/tmp',getpass.getuser(), 'zinc'),split='train')
++            dataset_dict = self._load_smiles_text_dataset(self.data_path, os.path.join('/tmp',getpass.getuser(), 'zinc'))
+ 
+         elif 'pubchem' in self.data_path:
+-            dataset_dict =  load_dataset(pubchem_script, data_files=pubchem_path, cache_dir=os.path.join('/tmp',getpass.getuser(), 'pubchem'), split='train')
++            dataset_dict = self._load_smiles_text_dataset(pubchem_path, os.path.join('/tmp',getpass.getuser(), 'pubchem'))
+         elif 'both' in self.data_path or 'Both' in self.data_path or 'BOTH' in self.data_path:
+-            dataset_dict_pubchem =  load_dataset(pubchem_script, data_files=pubchem_path, cache_dir=os.path.join('/tmp',getpass.getuser(), 'pubchem'),split='train')
++            dataset_dict_pubchem = self._load_smiles_text_dataset(pubchem_path, os.path.join('/tmp',getpass.getuser(), 'pubchem'))
+             zinc_files = [f for f in glob.glob(os.path.join(zinc_path,'*.smi'))]
+             for zfile in zinc_files:
+                 print(zfile)
+             self.data_path = {'train': zinc_files}
+-            dataset_dict_zinc =  load_dataset('./zinc_script.py', data_files=self.data_path, cache_dir=os.path.join('/tmp',getpass.getuser(), 'zinc'),split='train')
++            dataset_dict_zinc = self._load_smiles_text_dataset(self.data_path, os.path.join('/tmp',getpass.getuser(), 'zinc'))
+             dataset_dict = concatenate_datasets([dataset_dict_zinc, dataset_dict_pubchem])
+         self.pubchem= dataset_dict
+         print(dataset_dict.cache_files)
+@@ -282,13 +329,16 @@
+             self.cache_files.append(tmp)
+ 
+ 
++    @_dft.log
+     def train_dataloader(self):
+         loader =  DataLoader(self.pubchem, collate_fn=self.text_encoder.process, **self.train_args)
+         print(len(loader))
+         return loader
+ 
++    @_dft.log
+     def val_dataloader(self):
+         pass
++    @_dft.log
+     def test_dataloader(self):
+         pass
+ class CheckpointEveryNSteps(pl.Callback):
+@@ -297,6 +347,8 @@
+         based on validation loss.
+     """
+ 
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, save_step_frequency=-1,
+         prefix="N-Step-Checkpoint",
+         use_modelcheckpoint_filename=False,
+@@ -310,6 +362,8 @@
+         self.save_step_frequency = save_step_frequency
+         self.prefix = prefix
+         self.use_modelcheckpoint_filename = use_modelcheckpoint_filename
++    @_dlp.log
++    @_dft.log
+     def on_batch_end(self, trainer: pl.Trainer, _):
+         """ Check if we should save a checkpoint after every train batch """
+         epoch = trainer.current_epoch
+@@ -324,22 +378,27 @@
+             ckpt_path = os.path.join(trainer.checkpoint_callback.dirpath, filename)
+             trainer.save_checkpoint(ckpt_path)
+ class ModelCheckpointAtEpochEnd(pl.Callback):
++    @_dft.log
+     def on_epoch_end(self, trainer, pl_module):
+         metrics = trainer.callback_metrics
+         metrics['epoch'] = trainer.current_epoch
+         if trainer.disable_validation:
+             trainer.checkpoint_callback.on_validation_end(trainer, pl_module)
++@_dlp.log
++@_dft.log
+ @rank_zero_only
+ def remove_tree(cachefiles):
+     if type(cachefiles) == type([]):
+         #if cachefiles are identical remove all but one file path
+         cachefiles = list(set(cachefiles))
+         for cache in cachefiles:
+-            shutil.rmtree(cache)
++            shutil.rmtree(cache, ignore_errors=True)
+     else:
+-        shutil.rmtree(cachefiles)
++        shutil.rmtree(cachefiles, ignore_errors=True)
+ 
+ 
++@_dlp.log
++@_dft.log
+ def get_nccl_socket_ifname():
+     ipa = subprocess.run(['ip', 'a'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+     lines = ipa.stdout.decode('utf-8').split('\n')
+@@ -354,6 +413,8 @@
+     os.environ['NCCL_SOCKET_IFNAME'] = ','.join(all_names)
+ 
+ 
++@_dlp.log
++@_dft.log
+ def fix_infiniband():
+     # os.environ['NCCL_SOCKET_IFNAME'] = "^lo,docker,virbr,vmnet,vboxnet,wl,ww,ppp,bond"
+ 
+@@ -380,6 +441,8 @@
+ 
+ 
+ 
++@dft_ai
++@_dft.log
+ def main():
+     fix_infiniband()
+ 
+@@ -410,26 +473,34 @@
+ 
+     train_config = {'batch_size':config.n_batch, 'num_workers':config.n_workers, 'pin_memory':True}
+     ## this should allow us to save a model for every x iterations and it should overwrite
+-    checkpoint_callback = pl.callbacks.ModelCheckpoint(period=1, save_top_k=-1, verbose=True)
++    checkpoint_callback = pl.callbacks.ModelCheckpoint(every_n_epochs=1, save_top_k=-1, verbose=True)
+     train_loader = MoleculeModule(config.max_len, config.train_load, train_config)
+     train_loader.setup()#config.debug)
+     cachefiles = train_loader.get_cache()
+     model = LightningModule(config, train_loader.get_vocab())
+ 
++    # lightning_fabric's Ampere-tensor-core tip check calls torch.cuda.get_device_capability(),
++    # which crashes (RuntimeError: stoi) parsing ROCm/HIP device names it wasn't written for.
++    # It's purely an informational nag (not needed for training), so no-op it on ROCm devices.
++    if torch.cuda.is_available() and torch.version.hip is not None:
++        import lightning_fabric.accelerators.cuda as _lf_cuda
++        import pytorch_lightning.accelerators.cuda as _pl_cuda
++        _noop_precision_check = lambda device: None
++        _lf_cuda._check_cuda_matmul_precision = _noop_precision_check
++        _pl_cuda._check_cuda_matmul_precision = _noop_precision_check
+     trainer = pl.Trainer(default_root_dir=config.root_dir,
+                 max_epochs=config.max_epochs,
+-                accelerator=config.accelerator,
++                accelerator='gpu' if config.device.startswith('cuda') else 'cpu',
++                strategy=config.accelerator,
+                 num_nodes=config.num_nodes,
+-                gpus=config.gpus,
+-                callbacks=[ModelCheckpointAtEpochEnd(), CheckpointEveryNSteps(config.checkpoint_every)],
+-                checkpoint_callback=checkpoint_callback,
+-                resume_from_checkpoint=config.restart_path if config.restart_path != "" else None,
++                devices=config.gpus,
++                callbacks=[ModelCheckpointAtEpochEnd(), CheckpointEveryNSteps(config.checkpoint_every), checkpoint_callback],
+                 accumulate_grad_batches=config.grad_acc,
+-                num_sanity_val_steps=10,
+-                val_check_interval=config.eval_every,
+-                weights_summary='full')
++                num_sanity_val_steps=0,
++                limit_val_batches=0)  # val_dataloader() is unimplemented (pass) upstream; disable validation checks
++    ckpt_path = config.restart_path if config.restart_path != "" else None
+     try:
+-        trainer.fit(model, train_loader)
++        trainer.fit(model, train_loader, ckpt_path=ckpt_path)
+     except Exception as exp:
+         print(type(exp))
+         print(exp)
+@@ -441,6 +512,7 @@
+     else:
+         rank_zero_warn('Debug mode not found eraseing cache')
+         remove_tree(cachefiles)
++    _dft_log.finalize()
+ 
+ 
+ if __name__ == '__main__':
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-684874.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-684874.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-42722.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-42722.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-2176995.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-2176995.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-2176996.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-2176996.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-2176997.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-2176997.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-2176998.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-2176998.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-2176999.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-2176999.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-2177000.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-2177000.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-3399348.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-3399348.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-3399349.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-3399349.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-3399350.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-3399350.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-3399351.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-3399351.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-3399352.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-3399352.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-3399353.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-3399353.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-3244533.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-3244533.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-3244534.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-3244534.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-3244536.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-3244536.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-3244537.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-3244537.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-3244538.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-3244538.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-3244539.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-3244539.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-2907346.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-2907346.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-2907348.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-2907348.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-2907349.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-2907349.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-2907350.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-2907350.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-2907351.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-2907351.core differ
+Binary files /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/tuolumne<node>-python-2907352.core and /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/tuolumne<node>-python-2907352.core differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/utils.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/utils.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/utils.py	2026-07-23 16:50:17.956105000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/utils.py	2026-07-23 19:12:14.116416000 -0700
+@@ -4,12 +4,18 @@
+ import pandas as pd
+ from typing import List
+ from rdkit import Chem
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++from dftracer.python import dftracer, dft_fn as DFTracerFn, ai as dft_ai
++_dlp = DFTracerFn("utils")
++_dft = DFTracerFn("utils")
+ 
+ 
++@_dft.log
+ def getipaddress():
+     return socket.gethostbyname(socket.getfqdn())
+ 
+ 
++@_dft.log
+ def debug():
+     print("Waiting for debugger to connect")
+     if (
+@@ -23,16 +29,22 @@
+ 
+ 
+ class ListDataset:
++    @_dlp.log_init
++    @_dft.log_init
+     def __init__(self, seqs):
+         self.seqs = seqs
+ 
++    @dft_ai.data.item
++    @_dft.log
+     def __getitem__(self, index):
+         return self.seqs[index]
+ 
++    @_dft.log
+     def __len__(self):
+         return len(self.seqs)
+ 
+ 
++@_dft.log
+ def transform_single_embedding_to_multiple(smiles_z_map):
+     """Transforms an embedding map of the format smi->embedding to
+     smi-> {"canonical_embeddings":embedding}. This function exists
+@@ -47,6 +59,7 @@
+     return retval
+ 
+ 
++@_dft.log
+ def normalize_smiles(smi, canonical, isomeric):
+     normalized = Chem.MolToSmiles(
+         Chem.MolFromSmiles(smi), canonical=canonical, isomericSmiles=isomeric
+@@ -54,6 +67,8 @@
+     return normalized
+ 
+ 
++@_dlp.log
++@_dft.log
+ def get_all_proteins(affinity_dir: str):
+     files = glob.glob(affinity_dir + "/*.csv")
+     all_proteins = []
+@@ -64,11 +79,15 @@
+     return set(all_proteins)
+ 
+ 
++@_dlp.log
++@_dft.log
+ def append_to_file(filename, line):
+     with open(filename, "a") as f:
+         f.write(line + "\n")
+ 
+ 
++@_dlp.log
++@_dft.log
+ def write_to_file(filename, line):
+     with open(filename, "w") as f:
+         f.write(line + "\n")
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/val_script.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/val_script.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/val_script.py	2026-07-23 16:50:17.958087000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/val_script.py	2026-07-23 19:08:47.761632000 -0700
+@@ -3,6 +3,8 @@
+ import pyarrow as pa
+ 
+ import datasets
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("val_script")
+ 
+ 
+ logger = logging.getLogger(__name__)
+@@ -26,9 +28,11 @@
+ 
+     BUILDER_CONFIG_CLASS = ValConfig
+ 
++    @_dft.log
+     def _info(self):
+         return datasets.DatasetInfo(features=FEATURES)
+ 
++    @_dft.log
+     def _split_generators(self, dl_manager):
+         """The `data_files` kwarg in load_dataset() can be a str, List[str], Dict[str,str], or Dict[str,List[str]].
+ 
+@@ -50,6 +54,7 @@
+             splits.append(datasets.SplitGenerator(name=split_name, gen_kwargs={"files": files}))
+         return splits
+ 
++    @_dft.log
+     def _generate_tables(self, files):
+ 
+         for file_idx, file in enumerate(files):
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/zinc_script.py /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/zinc_script.py
+--- /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/baseline/source/training/zinc_script.py	2026-07-23 16:50:17.960084000 -0700
++++ /usr/WS2/$USER/dftracer-agents/workspaces/molformer/20260723_235016/annotated/source/training/zinc_script.py	2026-07-23 19:08:47.763640000 -0700
+@@ -3,6 +3,8 @@
+ import pyarrow as pa
+ 
+ import datasets
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("zinc_script")
+ 
+ 
+ logger = logging.getLogger(__name__)
+@@ -26,9 +28,11 @@
+ 
+     BUILDER_CONFIG_CLASS = ZincConfig
+ 
++    @_dft.log
+     def _info(self):
+         return datasets.DatasetInfo(features=FEATURES)
+ 
++    @_dft.log
+     def _split_generators(self, dl_manager):
+         """The `data_files` kwarg in load_dataset() can be a str, List[str], Dict[str,str], or Dict[str,List[str]].
+ 
+@@ -50,6 +54,7 @@
+             splits.append(datasets.SplitGenerator(name=split_name, gen_kwargs={"files": files}))
+         return splits
+ 
++    @_dft.log
+     def _generate_tables(self, files):
+ 
+         for file_idx, file in enumerate(files):

@@ -172,6 +172,37 @@ dftracer/brahma (C++ frontend) cannot — see [[workload-h5bench]] for the fix.
 
 ---
 
+### MCP tool over-detects error-checking macros, places duplicate END() calls
+
+**Session:** ior/20260724_175545
+
+When using MCP `clang_annotate_project` on HDF5-heavy code, the tool places
+`DFTRACER_C_FUNCTION_END()` before EVERY error-checking macro (HDF5_CHECK,
+MPI_CHECK, etc.) instead of just before the function's real return statement.
+
+**Symptom:** HDF5_Open() got 15 extra DFTRACER_C_FUNCTION_END() calls at lines
+270, 273, 280, 307, 312, 331, 335, 343, 360, 363, 369, 374, 378, 391, 395, 418
+— one before each HDF5_CHECK macro — creating fragmented trace spans instead of
+one continuous function span.
+
+**Root Cause:** The tool correctly detects that HDF5_CHECK macros contain hidden
+returns (they expand to `if (rc != 0) { ... return/goto; }`), but over-applies
+the fix per dftracer-annotate-c Rule E (error-checking macros should NOT have
+END before them — only visible return statements should).
+
+**Fix (manual post-processing):**
+1. Remove all intermediate DFTRACER_C_FUNCTION_END() calls before error-check macros
+2. Place a SINGLE DFTRACER_C_FUNCTION_END() before the function's actual return statement
+3. This creates one continuous span covering the entire function's execution
+
+**Workaround:** After running `clang_annotate_project`, scan HDF5-heavy files
+(especially `aiori-HDF5.c`) for duplicate END() calls and remove them manually.
+
+**Note:** This is a known MCP tool limitation. Ideally the tool should be fixed
+to not place END before error-checking macros. See dftracer-annotate-c PC8.
+
+---
+
 ## dftracer MPI+HDF5 install on Tuolumne (Cray) — full working recipe (2026-07-06)
 
 `session_install_dftracer` FAILS on Tuolumne two ways: it auto-enables HIP
@@ -297,6 +328,25 @@ MPI interception (MPI_Reduce/Barrier/Bcast) + POSIX interception (lseek/write/re
 - `mcp__dftracer__diagnose` currently errors `'Diagnoser' object has no
   attribute 'diagnose_checkpoint'` — API drift vs installed dfdiagnoser. Read
   the `checkpoint/_flat_view_*.parquet` + `_raw_stats_*.json` directly instead.
+- **Re-confirmed 2026-07-24** (HDF5 1.14.5, 512-rank/8-node, 2-replicate baseline):
+  `dfanalyzer` on the LOGIN node with an explicit `cluster.n_workers` override
+  (32, then 8) crashed both times with `DFTUtilsError: Resource temporarily
+  unavailable` (each worker spawns its own multi-hundred-thread I/O runtime —
+  thread-creation limits under the login-node's cgroup). What worked: run
+  inside a dedicated flux allocation (even 1 node is enough for analyze/
+  diagnose — no need to match the app run's node count) with the tool's
+  DEFAULT worker sizing (no explicit `cluster.n_workers`). Try default sizing
+  first inside an allocation; only pass an explicit worker count if the
+  default clearly under/oversizes for that node.
+- A `dfanalyzer` checkpoint run can silently ingest only a time-window SUBSET
+  of a large multi-replicate trace set with no error: on this session's 2,971-
+  chunk-file baseline it reported only 386 files / 299 procs / 46.7s job time
+  (vs. the true 512 ranks × 2 replicates over a run that took far longer).
+  The ingested subset was internally consistent (POSIX/MPI/HDF5 layer math
+  checked out), so partial results aren't necessarily wrong, just incomplete —
+  always cross-check `raw_stats_summary.unique_file_count`/
+  `unique_process_count` against the actual file count on disk before trusting
+  a diagnose severity list as a complete-run census.
 
 ---
 
@@ -385,6 +435,59 @@ Always test with hints unset first, then add `cb_write` only.
 
 For full MPI/ROMIO software strategies, see [[software-mpi]].
 For HDF5-specific tuning, see [[software-hdf5]].
+
+## Autotools build: annotated tree needs its OWN configure regen, not a copy (2026-07-24)
+
+**Symptom:** `session_build_annotated` fails with
+`[Errno 2] No such file or directory: '<ws>/annotated/configure'` (the tool
+expects `annotated/configure` to already exist for autotools apps — it does
+not run `autoreconf`/`./configure` from scratch itself).
+
+**Root cause:** the annotation pass copies IOR's `.c`/`.h` sources into
+`annotated/source/` but does not carry over the pre-patched `configure`/
+`configure.ac`/`Makefile.in` from the plain `source/` tree. Naively copying
+the SIBLING tree's generated `configure`/`Makefile.in`/`config/*` files
+across is wrong too — `config.status` then regenerates `Makefile`s that
+reference the wrong (or missing) input files (`cannot find input file:
+'src/config.h.in'`), because `Makefile.in` embeds file lists specific to
+the source tree it was generated from.
+
+**Fix:** regenerate the annotated tree's OWN build system from its OWN
+`configure.ac`:
+```bash
+cd <ws>/annotated/source
+sed -i 's/AC_PREREQ(\[2.71\])/AC_PREREQ([2.69])/' configure.ac  # match system autoconf 2.69
+autoreconf -fi -I config
+```
+Only fix `AC_PREREQ` if the system's `autoconf --version` is older than what
+`configure.ac` demands (check first, don't blindly downgrade).
+
+## `--with-hdf5` takes yes/no, not a path (2026-07-24)
+
+IOR's `configure.ac` HDF5 stanza is `AC_ARG_WITH([hdf5], ...)` with no
+argument value handling — `AM_CONDITIONAL([USE_HDF5_AIORI], [test x$with_hdf5
+= xyes])`. Passing `--with-hdf5=<path>` silently sets `with_hdf5=<path>`
+which is never `yes`, so `USE_HDF5_AIORI` stays false and `aiori-HDF5.c`
+is never compiled — no build error, the binary just lacks the HDF5 backend.
+
+**Fix:** always pass `--with-hdf5=yes` (or bare `--with-hdf5`) and supply the
+HDF5 install location via `CPPFLAGS="-I<hdf5>/include"` /
+`LDFLAGS="-L<hdf5>/lib -Wl,-rpath,<hdf5>/lib"` instead. Verify with
+`grep USE_HDF5_AIORI config.log` after configuring (`USE_HDF5_AIORI_TRUE=''`
+means enabled; `='#'` means disabled) — same pattern applies to `--with-mpiio`
+and other `--with-*` backends.
+
+## Annotated build needs `LIBS=-ldftracer_core` explicitly — no .pc file (2026-07-24)
+
+dftracer's install ships no `libdftracer.pc` for pkg-config, so
+`PKG_CONFIG_PATH` alone does not add the link flag. Configuring/linking
+without `LIBS="-ldftracer_core"` compiles cleanly but fails at the final
+link step with undefined symbols `initialize_main`, `finalize`,
+`update_metadata_string`, `initialize_region`, `finalize_region`,
+`finalize_region_cleanup` — these are the expansions of the
+`DFTRACER_C_INIT`/`DFTRACER_C_FUNCTION_START`/`_END`/`DFTRACER_C_FINI` macros
+from `<dftracer/dftracer.h>`. Always pass `LIBS="-ldftracer_core"` alongside
+`CPPFLAGS`/`LDFLAGS` pointing at the dftracer install's `include`/`lib64`.
 
 ## Failed Configurations
 

@@ -22,12 +22,15 @@ tools:
 - mcp__dftracer__profile_step_end
 - mcp__dftracer__profile_status
 skills:
+- flux-alloc
 - dftracer-context-economy
 - dftracer-diagnoser
 - dftracer-io-optimization
 - dftracer-trace-utils
 - dftracer-profiling
 sections:
+- title: Use allocated compute resources for large-trace tool calls
+  body: "This agent\u2019s tools (analyze, diagnose, session_analyze_traces, comparator,\nreader, event_count) scan/merge/analyze large .pfw/.pfw.gz trace directories.\nBefore calling any of them on a compact trace directory of non-trivial size:\n1. Check whether this session already has a live Flux allocation (session state,\n   or a JOBID the main thread gave you) \u2014 see the flux-alloc skill.\n2. Pass it explicitly as allocation_id=<jobid> on the tool call. This runs the\n   underlying binary on the allocated compute node via flux proxy/flux run\n   instead of the MCP server\u2019s own host, and avoids ambiguity when more than\n   one allocation might be running under the same user.\n3. If no allocation exists and the trace is large, ask the main thread/user for\n   one rather than silently falling back to running on the MCP server\u2019s host.\n4. Small/quick checks (a single small file, an already-tiny compact trace) do not\n   need to wait on an allocation \u2014 use judgment.\n"
 - title: Load your plan section first (do this before anything else)
   body: "The pipeline planner has written a detailed, self-contained plan into the\nsession at `pipeline_plan.md`. Do NOT replan \u2014 execute what it says.\n1. `session_read_file(run_id=<run_id>, subfolder=\".\", filepath=\"pipeline_plan.md\")`\n   (fall back to `subfolder=\"scripts\"` if the main thread says so).\n2. Find the `## STEP N: <this-agent-name>` section for THIS agent and follow it\n   verbatim: tools, exact inputs, commands, expected artifacts, and gotchas are\n   already resolved there.\n3. If the section is missing or contradicts the inputs you were dispatched with,\n   report that back to the main thread instead of guessing.\n\n\nYou diagnose one session at a time and stop. Do not change source code or\napply optimizations here.\n"
 - title: Tool-First Diagnosis Rule (MANDATORY)

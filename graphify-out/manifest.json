@@ -85,13 +85,13 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/dftracer/dfanalyzer_service.py": {
-    "mtime": 1784579212.469205,
-    "ast_hash": "8af1b749c94d0613bbd1ebdc258f1ee7",
+    "mtime": 1784929074.441152,
+    "ast_hash": "013015cc78cb9dad30d2db182baee4c0",
     "semantic_hash": ""
   },
   "mcp_tools/tools/dftracer/dfdiagnoser_service.py": {
-    "mtime": 1784579543.484147,
-    "ast_hash": "178dcdb8e15256e497ee23e9803cd054",
+    "mtime": 1784925011.660711,
+    "ast_hash": "7f213a02348148e07f583819ee33a5ca",
     "semantic_hash": ""
   },
   "mcp_tools/tools/dftracer/dftracer_plot_service.py": {
@@ -105,8 +105,8 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/dftracer/dftracer_utils_service.py": {
-    "mtime": 1784249979.074308,
-    "ast_hash": "ec81397aa59ca64672447f5a056524e5",
+    "mtime": 1784929147.749081,
+    "ast_hash": "15605ce90ec695562ec8bcc9fd01d8b0",
     "semantic_hash": ""
   },
   "mcp_tools/tools/dftracer/docs_service.py": {
@@ -200,7 +200,7 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/annotation_clang.py": {
-    "mtime": 1784250005.20051,
+    "mtime": 1784850319.543212,
     "ast_hash": "86212d66a7cefba124a64eb8cafbe57c",
     "semantic_hash": ""
   },
@@ -210,7 +210,7 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/annotation_python.py": {
-    "mtime": 1784266785.470271,
+    "mtime": 1784850319.54518,
     "ast_hash": "37f90fe8237785423e1aec42d74abb03",
     "semantic_hash": ""
   },
@@ -235,17 +235,17 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/detection.py": {
-    "mtime": 1783872421.081513,
-    "ast_hash": "88a56ec92b24292914570645a3039745",
+    "mtime": 1784915897.111341,
+    "ast_hash": "1ab63b5bbf25474a0c518435357fabb1",
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/final_report.py": {
-    "mtime": 1784582964.408128,
-    "ast_hash": "e6090d40ded194337fb0cdff76ec9e14",
+    "mtime": 1784850319.548134,
+    "ast_hash": "d2149a53096b8686be64760d6a519321",
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/install.py": {
-    "mtime": 1784569596.586255,
+    "mtime": 1784850319.550218,
     "ast_hash": "14fa970cfc3f2bc9fd9b880653ca7e5a",
     "semantic_hash": ""
   },
@@ -270,8 +270,8 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/privacy_tools.py": {
-    "mtime": 1783645699.690885,
-    "ast_hash": "7cbc7b2ff15b98cc8f4f9640a420bcfa",
+    "mtime": 1784850319.552175,
+    "ast_hash": "9cd41ad624c3d91b739885b9a4948b55",
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/profiling.py": {
@@ -285,12 +285,12 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/session_tools.py": {
-    "mtime": 1784569421.475177,
+    "mtime": 1784850319.556167,
     "ast_hash": "78ee8f0b8371b173491734878527a52a",
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/source_parser.py": {
-    "mtime": 1784250005.214435,
+    "mtime": 1784850319.559201,
     "ast_hash": "733ff5247e4af5c45970cbcd25f805f7",
     "semantic_hash": ""
   },
@@ -305,7 +305,7 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/system/system_service.py": {
-    "mtime": 1784569061.001392,
+    "mtime": 1784850319.562008,
     "ast_hash": "a26074d28c6ccd65336e8b733555708f",
     "semantic_hash": ""
   },
@@ -385,7 +385,7 @@
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-annotate-general/SKILL.md": {
-    "mtime": 1784250005.166354,
+    "mtime": 1784850319.339148,
     "ast_hash": "6c04d8731fdbe4517f19d89e3372e90a",
     "semantic_hash": ""
   },
@@ -420,18 +420,18 @@
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-annotate-python/SKILL.md": {
-    "mtime": 1784267298.53492,
-    "ast_hash": "63bb375a73b4c0686dd4999b03e2038f",
+    "mtime": 1784850319.342954,
+    "ast_hash": "2fbc3e8ef8c12b64f2a96e166e197d26",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-annotation-lessons/LESSONS_LOG.md": {
-    "mtime": 1784250005.176443,
-    "ast_hash": "d09e8f00160770c12a7a0393e003948b",
+    "mtime": 1784850319.345244,
+    "ast_hash": "36ccfaeda116c59ec0b8bfa358dd16b4",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-annotation-lessons/SKILL.md": {
-    "mtime": 1784250005.18148,
-    "ast_hash": "adf5b25079a505e9c8fa4c405883dd8a",
+    "mtime": 1784917753.617202,
+    "ast_hash": "fb4d5df3887a82f4bd5a5f26e5dfbb01",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-build-app/SKILL.md": {
@@ -495,13 +495,13 @@
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-communication-optimization/SKILL.md": {
-    "mtime": 1784580341.229234,
+    "mtime": 1784850319.350722,
     "ast_hash": "28b3b462cc9daffd36aac70983a68c4e",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-compute-optimization/SKILL.md": {
-    "mtime": 1784729412.14034,
-    "ast_hash": "898e583b1f29b4a7fa25a79bb6fec996",
+    "mtime": 1784850319.353162,
+    "ast_hash": "cca3c285baeea0cccb8f4da64f57a236",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-context-economy/SKILL.md": {
@@ -525,12 +525,12 @@
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-diagnoser/pitfalls.md": {
-    "mtime": 1784729569.349405,
+    "mtime": 1784850319.356149,
     "ast_hash": "e24afd17d7e02bd40ac7ee02e5427ba7",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-diagnoser/rules.md": {
-    "mtime": 1784729474.058117,
+    "mtime": 1784850319.363157,
     "ast_hash": "15dc683b102dfb82205295d6c15981e4",
     "semantic_hash": ""
   },
@@ -550,7 +550,7 @@
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-memory-optimization/SKILL.md": {
-    "mtime": 1784580354.819746,
+    "mtime": 1784850319.367151,
     "ast_hash": "93aecd7999be525f61b3041fe861d2eb",
     "semantic_hash": ""
   },
@@ -560,23 +560,28 @@
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-optimization-kb/SKILL.md": {
-    "mtime": 1784731939.540954,
-    "ast_hash": "978bd49e110c3faebb71486b4d0513d9",
+    "mtime": 1784850319.370759,
+    "ast_hash": "7246aaf671b8a43d1e0c08f23fc547b1",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-optimization-kb/software.md": {
-    "mtime": 1784731939.537979,
+    "mtime": 1784736443.969652,
     "ast_hash": "cc0f3a57a7143e3366839c4876e9eec9",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-optimization-kb/system.md": {
-    "mtime": 1784731939.539927,
+    "mtime": 1784850319.373687,
     "ast_hash": "9d72f917de20db1ff9648e865bb3960b",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-optimization-kb/workload.md": {
-    "mtime": 1784731939.536899,
-    "ast_hash": "dd3896665ea99e618824df52e5c4263a",
+    "mtime": 1784850319.375763,
+    "ast_hash": "ea381a8f3ba4c86618b440ef667aec00",
+    "semantic_hash": ""
+  },
+  ".agents/skills/dftracer-overlap-analysis/SKILL.md": {
+    "mtime": 1784850319.382663,
+    "ast_hash": "694c98041e976eb9c6da90e60602d6c9",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-pipeline/SKILL.md": {
@@ -605,7 +610,7 @@
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-privacy-guard/SKILL.md": {
-    "mtime": 1784582815.061203,
+    "mtime": 1784850319.384706,
     "ast_hash": "95636bffd20f72beb32c7355f9443b23",
     "semantic_hash": ""
   },
@@ -680,22 +685,22 @@
     "semantic_hash": ""
   },
   ".agents/skills/flux-alloc/SKILL.md": {
-    "mtime": 1784580444.659503,
-    "ast_hash": "8c574e0af3687899e6b706b6e2d14db6",
+    "mtime": 1784929224.365621,
+    "ast_hash": "4356ceec5b4f979b358ecfe146db802a",
     "semantic_hash": ""
   },
   ".agents/skills/software-autotools/SKILL.md": {
-    "mtime": 1784250000.386101,
+    "mtime": 1784850319.39415,
     "ast_hash": "91b7725dceb2376b04256cc1efda87eb",
     "semantic_hash": ""
   },
   ".agents/skills/software-cmake/SKILL.md": {
-    "mtime": 1784250000.395301,
+    "mtime": 1784850319.400169,
     "ast_hash": "be8bb467601a0f7bedf3d7f013b7fe40",
     "semantic_hash": ""
   },
   ".agents/skills/software-flux-fiction/SKILL.md": {
-    "mtime": 1784267298.700155,
+    "mtime": 1784850319.406142,
     "ast_hash": "dd6682363290eb99e9475d345ce7fc7d",
     "semantic_hash": ""
   },
@@ -705,7 +710,7 @@
     "semantic_hash": ""
   },
   ".agents/skills/software-meson/SKILL.md": {
-    "mtime": 1784250000.412401,
+    "mtime": 1784850319.410233,
     "ast_hash": "40506fa08f6629cc4719b6c0824860ff",
     "semantic_hash": ""
   },
@@ -720,8 +725,8 @@
     "semantic_hash": ""
   },
   ".agents/skills/software-pecan/SKILL.md": {
-    "mtime": 1784735028.107442,
-    "ast_hash": "895668c322e52b376898ce5914192094",
+    "mtime": 1784850319.47597,
+    "ast_hash": "ae0eb589fc5670a08e8c9e0d96f295a1",
     "semantic_hash": ""
   },
   ".agents/skills/software-pegasus/SKILL.md": {
@@ -730,7 +735,7 @@
     "semantic_hash": ""
   },
   ".agents/skills/software-pip/SKILL.md": {
-    "mtime": 1784250000.419416,
+    "mtime": 1784850319.479806,
     "ast_hash": "bb9ebd6efa203315b887ae57df9be652",
     "semantic_hash": ""
   },
@@ -755,27 +760,27 @@
     "semantic_hash": ""
   },
   ".agents/skills/system-tuolumne-spindle/SKILL.md": {
-    "mtime": 1784734177.049707,
+    "mtime": 1784850319.484709,
     "ast_hash": "bc478b8f869cf87309af4f47f7edc646",
     "semantic_hash": ""
   },
   ".agents/skills/system-tuolumne/SKILL.md": {
-    "mtime": 1784658388.431061,
-    "ast_hash": "a4fe2e83b7862e8d1e67c58f28f867d7",
+    "mtime": 1784919674.142086,
+    "ast_hash": "32a5de121632773b8b492f3f477a63b7",
     "semantic_hash": ""
   },
   ".agents/skills/tools-dftracer-utils/SKILL.md": {
-    "mtime": 1784250000.427416,
+    "mtime": 1784850319.491673,
     "ast_hash": "f79fb53adf8628515dec1fe6663009da",
     "semantic_hash": ""
   },
   ".agents/skills/tools-dftracer/SKILL.md": {
-    "mtime": 1784582749.879323,
+    "mtime": 1784850319.494728,
     "ast_hash": "d611031e0d546f4997f60b81cbb98aaf",
     "semantic_hash": ""
   },
   ".agents/skills/tools-pydftracer/SKILL.md": {
-    "mtime": 1784250000.44612,
+    "mtime": 1784850319.499133,
     "ast_hash": "6c9a3d23c2824a1308700c059bf634ab",
     "semantic_hash": ""
   },
@@ -790,8 +795,8 @@
     "semantic_hash": ""
   },
   ".agents/skills/workload-ior/SKILL.md": {
-    "mtime": 1783872420.923563,
-    "ast_hash": "b4adffa3f5f289eb7e4c68544755b58d",
+    "mtime": 1784919659.196101,
+    "ast_hash": "3edacab1f74245874da7f284088ea366",
     "semantic_hash": ""
   },
   ".agents/skills/workload-scaffold/SKILL.md": {
@@ -820,12 +825,12 @@
     "semantic_hash": ""
   },
   ".agents/workspace/memory/MEMORY.md": {
-    "mtime": 1784735908.735447,
-    "ast_hash": "8506111961cd759828081ce6f57b7f48",
+    "mtime": 1784924530.73755,
+    "ast_hash": "76693ac24b52a3cafea3d5c87b8a237f",
     "semantic_hash": ""
   },
   ".agents/workspace/memory/bug-clang-add-braces-multiline-call-corruption.md": {
-    "mtime": 1784582749.942221,
+    "mtime": 1784850319.508793,
     "ast_hash": "a676a6012b003a905beb4c5ec51b2594",
     "semantic_hash": ""
   },
@@ -840,13 +845,18 @@
     "semantic_hash": ""
   },
   ".agents/workspace/memory/bug-dftracer-service-stop-state-path.md": {
-    "mtime": 1784650284.289491,
+    "mtime": 1784850319.510736,
     "ast_hash": "814cc9596504d3306227a0981ae9abbd",
     "semantic_hash": ""
   },
   ".agents/workspace/memory/bug-diagnoser-zero-observations-checkpoint.md": {
-    "mtime": 1784675295.583854,
+    "mtime": 1784850319.512829,
     "ast_hash": "9b7e26da85210026b00abc8db5f71300",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/bug-privacy-scan-final-report-gitignore-blindspot.md": {
+    "mtime": 1784850319.514781,
+    "ast_hash": "ee03236ba437f9301105f7b3aff61c6f",
     "semantic_hash": ""
   },
   ".agents/workspace/memory/bug_analyze_timeout_bytes.md": {
@@ -880,17 +890,17 @@
     "semantic_hash": ""
   },
   ".agents/workspace/memory/feedback-dftracer-analyzer-generic-preset.md": {
-    "mtime": 1784582727.742356,
+    "mtime": 1784850319.517784,
     "ast_hash": "d38ac876766cb679f9c12a2fb540f9c3",
     "semantic_hash": ""
   },
   ".agents/workspace/memory/feedback-dftracer-service-node-counters.md": {
-    "mtime": 1784650252.329224,
-    "ast_hash": "2cbdf8e89f652295a6bef0d4172658ca",
+    "mtime": 1784850319.520684,
+    "ast_hash": "f04e5f1f294699c36220c623c9587363",
     "semantic_hash": ""
   },
   ".agents/workspace/memory/feedback-flux-alloc-verify-scale.md": {
-    "mtime": 1784582742.833173,
+    "mtime": 1784850319.522665,
     "ast_hash": "04db1ee2526cfa196c20bd040de32d89",
     "semantic_hash": ""
   },
@@ -900,7 +910,7 @@
     "semantic_hash": ""
   },
   ".agents/workspace/memory/feedback-shared-source-tree-race.md": {
-    "mtime": 1784726717.735522,
+    "mtime": 1784850319.524696,
     "ast_hash": "839ad5b603d5d9e49f52c40e96843264",
     "semantic_hash": ""
   },
@@ -970,7 +980,7 @@
     "semantic_hash": ""
   },
   ".agents/workspace/memory/feedback_never_manual_when_restart_needed.md": {
-    "mtime": 1784582750.015166,
+    "mtime": 1784850319.525747,
     "ast_hash": "315125baf367f08c708f7c556ded257f",
     "semantic_hash": ""
   },
@@ -995,7 +1005,7 @@
     "semantic_hash": ""
   },
   ".agents/workspace/memory/feedback_software_vs_workload_naming.md": {
-    "mtime": 1784582750.029166,
+    "mtime": 1784850319.527843,
     "ast_hash": "f0152285da2ef73a0dc8698d773c2ac1",
     "semantic_hash": ""
   },
@@ -1025,8 +1035,8 @@
     "semantic_hash": ""
   },
   ".agents/workspace/memory/project-pecan-milan-dftracer-pipeline.md": {
-    "mtime": 1784735908.730454,
-    "ast_hash": "ac898ef70a5da0cee2d5fb1a7d50d9e5",
+    "mtime": 1784850319.530735,
+    "ast_hash": "6668592413929b97d8fe7817b0db1915",
     "semantic_hash": ""
   },
   ".agents/workspace/memory/project-vpic-kokkos-8node-validation.md": {
@@ -1069,9 +1079,19 @@
     "ast_hash": "d0ffaea0cc14412e5961e9dbbb2b29a1",
     "semantic_hash": ""
   },
-  ".agents/skills/dftracer-overlap-analysis/SKILL.md": {
-    "mtime": 1784735003.063851,
-    "ast_hash": "59ce5fe30b44d4575d86fedbce39e637",
+  "mcp_tools/tools/dftracer/_flux_exec.py": {
+    "mtime": 1784928442.477248,
+    "ast_hash": "236458f5e4ca1d2c1e05617f1314bc1e",
+    "semantic_hash": ""
+  },
+  ".agents/skills/software-molformer/SKILL.md": {
+    "mtime": 1784924354.197065,
+    "ast_hash": "e1db6da0524efa1696524ff9cb917606",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/project-molformer-optimization.md": {
+    "mtime": 1784924530.734054,
+    "ast_hash": "cac9ea743ae4766b7077c2d6d80976bf",
     "semantic_hash": ""
   }
 }

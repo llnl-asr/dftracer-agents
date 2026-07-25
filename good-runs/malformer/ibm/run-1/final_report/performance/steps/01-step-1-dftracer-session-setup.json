@@ -1,0 +1,43 @@
+{
+  "run_id": "molformer/20260723_235016",
+  "key": "STEP 1: dftracer-session-setup",
+  "index": 1,
+  "agent": "dftracer-session-setup",
+  "notes": "molformer/20260723_235016 on tuolumne; resolve venv layout, run session_detect, load modules",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 376.331,
+  "wall_s": 376.331,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 376.331,
+      "error": "",
+      "start_ns": 1784850834495209088,
+      "end_ns": 1784851210826144543
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}
