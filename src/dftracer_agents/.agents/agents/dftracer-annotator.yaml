@@ -70,6 +70,9 @@ sections:
        functions annotated/skipped, any PENDING reverted files.
     5. Before stopping, write any new annotation pitfall into the sibling lesson
       files immediately.
+    6. Module-level (script-scope) I/O code that sits OUTSIDE any `def` is not reachable
+       by the python_* decorator annotation tools — it needs a manual
+       `with DFTracerFn(...):` wrap instead. See `dftracer-annotation-lessons` PP9.
 - include: self-learning-feed-lessons-back-into-skills
 - include: self-learning-confirmation-gate
 - include: never-manual-when-a-restart-is-needed

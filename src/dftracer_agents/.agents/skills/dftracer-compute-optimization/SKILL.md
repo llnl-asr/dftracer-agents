@@ -241,3 +241,17 @@ dftracer worker-finalize trace-completeness fix still intact (0 empty trace file
 Before citing -3.5%/-9.0% as final, run ≥5 replicates each side — same standing caveat as the
 `torch.compile` numbers above. This closes out the last open proposal from the original
 4-dimension optimizer pass.
+
+**General rule, confirmed on 1000genome-workflow `individuals.py` (2026-07-26):** when a
+dftracer trace shows `comp="io"`-tagged span time vastly exceeding the underlying raw POSIX
+syscall time inside those same spans (here: 1,861.8s io-tagged vs only 401.9s actual POSIX,
+i.e. ~78% of "I/O" time was Python-level loop/parse overhead, not syscall latency), look for
+loop-invariant work being recomputed per-iteration (per-individual, per-row, etc.) BEFORE
+reaching for a compiled-library/vectorization rewrite -- hoisting the invariant work out of
+the loop (`precompute_rows()`-style single pass) captured -93.4% standalone here, an order of
+magnitude larger than the paired I/O fix. Also: **re-measure a previously-measured I/O fix
+after a compute fix lands** -- its relative share of remaining wall time can GROW even though
+its absolute savings stay flat, because the denominator (total time) shrank faster than the
+I/O fix's own cost did (tar-streaming here: -13.2% of the ORIGINAL total standalone, but
+removed 5.5s of the remaining 6.0s once parse cost collapsed -- i.e. it became relatively far
+more important after the compute fix, not less).

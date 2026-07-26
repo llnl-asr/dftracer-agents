@@ -438,7 +438,7 @@ def _run(
     cmd: List[str],
     cwd: Optional[Path] = None,
     env: Optional[Dict[str, str]] = None,
-    timeout: int = 600,
+    timeout: Optional[int] = 600,
 ) -> Dict[str, Any]:
     """Execute a subprocess and return a normalised result dict.
 
@@ -462,6 +462,9 @@ def _run(
         timeout: Maximum number of seconds to wait for the process to finish.
             Defaults to 600 (10 minutes).  Processes that exceed this limit
             are killed and a ``"Command timed out"`` stderr is returned.
+            Pass ``None`` for no limit (e.g. analyze/diagnose calls on large
+            trace sets, where a fixed bound would kill legitimate long-running
+            work) — ``subprocess.run`` then waits indefinitely.
 
     Returns:
         Dict[str, Any]: A dict with the following keys:

@@ -84,7 +84,12 @@ def _ensure_analyzable_path(trace_path: str) -> str:
             [split_bin, "-d", str(p), "--output", str(split_dir),
              "--index-dir", str(split_dir / "idx"), "--compress",
              "--app-name", "analyze"],
-            capture_output=True, text=True, timeout=600,
+            # No timeout: splitting a large (26M+ event) raw trace set into
+            # analyzable chunks can legitimately take longer than any fixed
+            # bound; a short timeout here silently degrades analyze() back
+            # to the truncated single-chunk read this function exists to
+            # avoid. Let it run to completion.
+            capture_output=True, text=True, timeout=None,
         )
         if r.returncode == 0 and glob.glob(str(split_dir / "*.pfw.gz")):
             _build_index_single_threaded(str(split_dir))
@@ -120,9 +125,14 @@ def _build_index_single_threaded(directory: str) -> None:
     if not index_bin:
         return
     try:
+        # No timeout: indexing a large trace set can legitimately take a
+        # long time; a fixed bound would kill valid indexing work on big
+        # (26M+ event) trace sets. Best-effort call — any failure/exception
+        # is already swallowed below, so removing the timeout only removes
+        # a premature-kill failure mode, not error handling.
         run_on_allocation(
             [index_bin, "-d", directory, "-f", "--executor-threads", "1"],
-            capture_output=True, text=True, timeout=600,
+            capture_output=True, text=True, timeout=None,
         )
     except Exception:
         pass
@@ -429,15 +439,19 @@ class DFAnalyzerService(MCPService):
             # dfanalyzer's dask LocalCluster is known to hang on teardown
             # after it has already printed all real output (confirmed: the
             # process sits at high CPU post-"Cluster teardown" and never
-            # exits on its own). subprocess.run() without a timeout blocks
-            # forever waiting for the process to fully exit, not just for
-            # output to stop, so a hung teardown looks like a stuck MCP
-            # tool call even though the actual analysis already finished.
-            # Give it a generous timeout, then treat a timeout as success
-            # if it already produced console output — SIGKILL the hung
-            # process and return whatever was captured before the kill.
+            # exits on its own). This USED to be bounded by a 300s timeout
+            # (treating a timeout as success if output had already been
+            # produced), but a fixed bound cannot distinguish "still hung on
+            # teardown after finishing" from "still legitimately crunching a
+            # large (26M+ event) trace set" — it was killing real analyses
+            # before they produced any output. Per explicit request, no
+            # timeout is applied here at all: analyze() now runs to
+            # completion no matter how long the trace set takes. The
+            # TimeoutExpired handling below is kept only as a defensive
+            # fallback (e.g. if a future caller reintroduces a timeout
+            # kwarg upstream); with timeout=None it will not fire.
             try:
-                result = run_on_allocation(cmd, allocation_id=allocation_id, capture_output=True, text=True, timeout=300)
+                result = run_on_allocation(cmd, allocation_id=allocation_id, capture_output=True, text=True, timeout=None)
                 stdout, stderr, returncode = result.stdout, result.stderr, result.returncode
             except subprocess.TimeoutExpired as exc:
                 # NOTE: even with text=True, TimeoutExpired.stdout/stderr are

@@ -75,6 +75,9 @@ sections:
     - VALIDATE every applied optimization by re-running and comparing: identical op
       count / data volume with better bandwidth/time = a real, safe win. On LLNL
       systems verify you are ACTUALLY on the filesystem you think you're on.
+    - Before reaching for filesystem-layer optimizations, check for a `tarfile.add(dir)`/
+      similar bulk-archive call sitting immediately after a many-small-file producer loop —
+      see the `dftracer-io-optimization` skill.
 - include: shared-source-tree-parallel-dispatch
 - include: optimizer-never-do-less
 - include: optimizer-never-change-the-pattern

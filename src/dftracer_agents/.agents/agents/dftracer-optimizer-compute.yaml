@@ -65,6 +65,11 @@ sections:
       before/after. Prefer compiler-flag/threading tuning (lower risk) first.
     - VALIDATE every applied optimization by re-running and comparing: identical
       output/op count with better compute time = a real, safe win.
+    - When io-tagged span time vastly exceeds raw POSIX syscall time in an interpreted
+      (Python) app, look for loop-invariant work hoisting before reaching for a compiled-
+      library rewrite. Re-measure a previously-measured I/O fix after a compute fix
+      lands — its relative time share can grow rather than shrink. See the
+      `dftracer-compute-optimization` skill.
 - include: shared-source-tree-parallel-dispatch
 - include: optimizer-never-do-less
 - include: optimizer-never-change-the-pattern

@@ -779,12 +779,20 @@ def _session_final_report_impl(
     alloc_hint: str = "",
     validated: bool = False,
     validation_notes: str = "",
+    overwrite: bool = False,
 ) -> str:
     """Standalone implementation of ``session_final_report`` (see module docstring).
 
     The three narrative documents are supplied by the caller (the agent knows
     what happened; the tool does not invent findings). Everything else —
     patches, scripts, plan, logs — is derived mechanically from the workspace.
+
+    When *report_md*/*conversation_md*/*readme_md* is omitted or blank, any
+    existing file at that path is PRESERVED (write skipped) rather than
+    overwritten with a placeholder — a previous call may already have written
+    real content there, and silently wiping it is destructive. Pass
+    ``overwrite=True`` to force writing the placeholder/blank content anyway
+    (explicit regenerate-from-scratch opt-in).
     """
     ws = _ws(run_id)
     if not ws.is_dir():
@@ -927,11 +935,31 @@ def _session_final_report_impl(
         "run scripts/run_all.sh <alloc-id> end to end — then re-call "
         "session_final_report with validated=True.\n\n"
     )
-    (final / "REPORT.md").write_text(hdr + val_line + (report_md or "# Report\n\n(not supplied)\n"))
-    (final / "CONVERSATION.md").write_text(
-        hdr + (conversation_md or "# Conversational report\n\n(not supplied)\n"))
-    (final / "README.md").write_text(
-        hdr + (readme_md or "# Reproducing this session\n\n(not supplied)\n"))
+    def _write_narrative(path: Path, content: str, body_if_blank: str) -> None:
+        """Write *hdr* + *content* (or *body_if_blank* when *content* is
+        blank) to *path* — UNLESS *content* is blank and *path* already holds
+        real content, in which case the existing file is left untouched.
+
+        This is what prevents a caller that omits/blanks report_md/
+        conversation_md/readme_md (e.g. an accidental placeholder re-call)
+        from silently wiping previously-assembled content. Pass
+        ``overwrite=True`` to force the write anyway (explicit
+        regenerate-from-scratch opt-in).
+        """
+        if not content.strip() and not overwrite and path.exists() and path.stat().st_size > 0:
+            return
+        path.write_text(hdr + (content if content.strip() else body_if_blank))
+
+    _write_narrative(final / "REPORT.md", report_md, val_line + "# Report\n\n(not supplied)\n")
+    if report_md.strip():
+        # The validation banner always prefixes real content, even when an
+        # existing REPORT.md was preserved by an earlier call and this call
+        # supplies real report_md for the first time.
+        text = (final / "REPORT.md").read_text()
+        if not text.startswith(hdr + val_line):
+            (final / "REPORT.md").write_text(hdr + val_line + report_md)
+    _write_narrative(final / "CONVERSATION.md", conversation_md, "# Conversational report\n\n(not supplied)\n")
+    _write_narrative(final / "README.md", readme_md, "# Reproducing this session\n\n(not supplied)\n")
 
     # ---- PDF rendering (MANDATORY, deterministic — not left to agent recipe) --
     pdf_result = _render_pdf(final)
@@ -1280,6 +1308,7 @@ def register_final_report_tools(mcp: FastMCP) -> None:
         alloc_hint: str = "",
         validated: bool = False,
         validation_notes: str = "",
+        overwrite: bool = False,
     ) -> str:
         """Assemble a self-contained, reproducible ``final_report/`` folder.
 
@@ -1350,6 +1379,12 @@ def register_final_report_tools(mcp: FastMCP) -> None:
                 has actually been run and passed.
             validation_notes: One-line summary of what the validation run
                 measured (e.g. "124.2s vs 124.0-124.6s expected band").
+            overwrite: When False (default), omitting or blanking
+                report_md/conversation_md/readme_md PRESERVES any existing
+                REPORT.md/CONVERSATION.md/README.md content instead of
+                overwriting it with a placeholder. Set True to force a
+                from-scratch regeneration (placeholder included) even when
+                a real file already exists.
 
         Returns:
             JSON with ``status``, ``final_report_dir``, the ``runs`` discovered,
@@ -1370,4 +1405,5 @@ def register_final_report_tools(mcp: FastMCP) -> None:
             alloc_hint=alloc_hint,
             validated=validated,
             validation_notes=validation_notes,
+            overwrite=overwrite,
         )

@@ -378,6 +378,18 @@ PP8  Wrong DFTRACER_INIT value when calling DFTracer.initialize_log()
      initialize. Leaving DFTRACER_INIT unset while using explicit initialize_log()
      can produce duplicate or empty traces.
 
+PP9  Module-level (script-scope) I/O code is unreachable by decorator tools
+     Code executed at import time — outside any `def` — such as a top-level
+     `tarfile.open(...).extractall(); ...close()` block, cannot be annotated by
+     any python_* decorator tool (they only attach to function definitions).
+     Symptom: real I/O happens but no trace event covers it, and the annotation
+     tool reports the file as "clean" with nothing to fix.
+     Fix: manually wrap the block in a `with DFTracerFn("<cat>", name="<name>"):`
+     context manager. This is a legitimate scoped manual fixup, not a bypass of
+     the Tool-First Rule, because no MCP annotation tool can express edits to
+     non-`def` code. Seen in `mutation_overlap.py` / `frequency.py` in the
+     1000genome-workflow session (see [[workload-1000genome]]).
+
 ---
 
 ## Core Annotation Rules

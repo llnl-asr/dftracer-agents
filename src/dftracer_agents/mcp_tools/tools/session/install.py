@@ -609,6 +609,43 @@ def _discover_app_module_loads(source_dir: Optional[Path]) -> List[str]:
     return list(seen.keys())
 
 
+def _modules_available(modules: List[str]) -> List[str]:
+    """Return the subset of *modules* that ``module avail`` finds on THIS system.
+
+    App-discovered modules (see ``_discover_app_module_loads``) may come from
+    a checked-in script written for a different/older system than the one
+    this session is actually running on (e.g. 1000genome-workflow's
+    ``env.sh``) -- loading a stale/incompatible module name lets Lmod
+    auto-replace it with an unrelated default, silently changing the
+    compiler/MPI combination the rest of the session assumes. Validate before
+    using rather than trusting the app script blindly.
+
+    Best-effort: if the ``module`` command/subprocess itself is unavailable
+    or fails, fail OPEN (return *modules* unchanged) rather than blocking a
+    build on a broken probe -- this is a guard against a bad *module name*,
+    not a general module-command health check.
+    """
+    if not modules:
+        return modules
+    try:
+        import subprocess as _sp
+        cmd = "module avail -t " + " ".join(shlex.quote(m) for m in modules) + " 2>&1"
+        proc = _sp.run(["bash", "-lc", cmd], capture_output=True, text=True, timeout=30)
+        out = (proc.stdout or "") + (proc.stderr or "")
+    except Exception:
+        return modules
+    if not out.strip():
+        # `module` command produced nothing at all (e.g. not installed on
+        # this system) -- can't verify either way, fail open.
+        return modules
+    ok = []
+    for m in modules:
+        base = m.split("/")[0]
+        if m in out or base in out:
+            ok.append(m)
+    return ok
+
+
 def _ensure_session_env_script(ws: Path, source_dir: Optional[Path] = None) -> Path:
     """Create (once) and return the session's canonical ``env.sh``.
 
@@ -642,6 +679,13 @@ def _ensure_session_env_script(ws: Path, source_dir: Optional[Path] = None) -> P
         return env_script
 
     modules = _discover_app_module_loads(source_dir)
+    if modules:
+        # Guard against a stale/incompatible module list checked into the
+        # app's own scripts (written for a different system) -- validate
+        # each token exists on THIS system before trusting it, or Lmod will
+        # silently auto-replace an unavailable module with an unrelated
+        # default (root cause of the 1000genome-workflow env.sh incident).
+        modules = _modules_available(modules)
     module_source = "app install scripts" if modules else "system default (systems.yaml)"
     if not modules:
         try:
@@ -1003,6 +1047,12 @@ def _install_dftracer_pip_direct(
             ):
                 _cur = pip_env.get(_var, _os.environ.get(_var, ""))
                 pip_env[_var] = _val + (_os.pathsep + _cur if _cur else "")
+    elif features.get("hdf5") is False:
+        # Explicit off (either "not detected" or a caller override via
+        # session_install_dftracer(hdf5=False)) — force it rather than
+        # relying on the dftracer build's own default, so a system HDF5
+        # cannot get silently re-enabled by auto-detection.
+        pip_env.setdefault("DFTRACER_ENABLE_HDF5", "OFF")
     if features.get("hip"):
         pip_env.setdefault("DFTRACER_ENABLE_HIP_TRACING", "ON")
     if features.get("hwloc"):
