@@ -1,0 +1,26 @@
+diff -ruN --no-dereference $WS/baseline_4node/record/meta.json $WS/opt1/record/meta.json
+--- $WS/baseline_4node/record/meta.json	2026-07-25 20:33:34.840086000 -0700
++++ $WS/opt1/record/meta.json	2026-07-26 09:27:17.885665000 -0700
+@@ -1,9 +1,9 @@
+ {
+-  "run_name": "baseline_4node",
+-  "prev_run_name": "annotated_smoke",
+-  "captured_at": "2026-07-26T03:33:34.839125+00:00",
++  "run_name": "opt1",
++  "prev_run_name": "baseline_4node",
++  "captured_at": "2026-07-26T16:27:17.884873+00:00",
+   "source_path": "$WS/annotated/source",
+-  "notes": "4-node baseline retry with -N4 -n32 (rank-count fix); 5.27 min wall time, 26.2M trace events, all 46 tasks succeeded.",
++  "notes": "OPT1 validation run: IND_ROW_PRECOMPUTE=1 IND_TAR_STREAM=1. Wall time 244.7s (29.3% speedup vs baseline 316.5s). Same 4-node/32-rank DAG configuration, 4000 VCF rows. Events: 25.78M (-1.62% vs baseline 26.21M). All 46 tasks completed successfully.\"",
+   "captured": {
+     "build_config": [],
+     "params": [],
+@@ -11,7 +11,7 @@
+       "run.sh"
+     ],
+     "logs": [
+-      "baseline_4node_run.log"
++      "opt1_run.log"
+     ]
+   }
+ }
