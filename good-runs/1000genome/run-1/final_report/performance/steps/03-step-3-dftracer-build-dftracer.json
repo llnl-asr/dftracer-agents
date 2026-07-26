@@ -1,0 +1,59 @@
+{
+  "run_id": "1000genome_workflow/20260725_203603",
+  "key": "STEP 3: dftracer-build-dftracer",
+  "index": 3,
+  "agent": "dftracer-build-dftracer",
+  "notes": "Reinstall from GitHub develop branch instead of PyPI 2.1.0 into existing venv; HDF5 OFF, MPI ON (Cray MPICH 9.0.1), Python ON; watch for typing_extensions, LD_LIBRARY_PATH, module clash pitfalls",
+  "status": "ok",
+  "tries": 3,
+  "retries": 2,
+  "failed_attempts": 0,
+  "successful_attempts": 2,
+  "exec_s": 1052.344,
+  "wall_s": 6795.973,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 48.316,
+      "error": "",
+      "start_ns": 1785012628683256695,
+      "end_ns": 1785012676999577674
+    },
+    {
+      "number": 2,
+      "status": "ok",
+      "duration_s": 485.289,
+      "error": "",
+      "start_ns": 1785012676999593234,
+      "end_ns": 1785013162288900063
+    },
+    {
+      "number": 3,
+      "status": "ok",
+      "duration_s": 518.739,
+      "error": "",
+      "start_ns": 1785018905917848718,
+      "end_ns": 1785019424656570772
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}
