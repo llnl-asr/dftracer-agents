@@ -120,3 +120,16 @@ guaranteed no-op on this system's glibc (not page-aligned malloc) — confirmed 
 re-tested. A workload with no measured HBM-bandwidth pressure (data-loading-bound instead,
 per the diagnosed trace profile) should get a documented "not memory-bound" verdict rather
 than forcing memory-layer changes that have no headroom to improve.
+
+**`gc.disable()` is the wrong lever for acyclic object graphs -- measured regression
+(1000genome-workflow `individuals.py`, 2026-07-26):** `gc.disable()+gc.freeze()` was tried as
+a memory/GC-pressure optimization for a Python VCF-parsing loop generating thousands of
+short-lived per-individual buffer objects. Measured **+1.7% REGRESSION**, not a win -- do NOT
+apply. Root cause: the generational cyclic collector's cost is proportional to reference-cycle
+scanning, and this workload's per-individual objects (strings, lists, dicts with no
+back-references) are acyclic and already collected cheaply via refcounting; disabling the
+cyclic GC just defers memory reclamation (larger working set, more page faults) without
+removing any real collection cost. Before proposing `gc.disable()` as a fix, confirm the
+object graph actually contains reference cycles (e.g. via `gc.get_stats()` collection counts
+or object graph inspection) -- for interpreter-heavy workloads with no cycles, this lever has
+negative expected value.

@@ -598,7 +598,7 @@ class DFDiagnoserService(MCPService):
             analyzer_preset: str = "posix",
             view_types: Optional[str] = "time_range",
             metric_boundaries: Optional[str] = None,
-            timeout: int = 600,
+            timeout: Optional[int] = None,
         ) -> str:
             """Diagnose I/O bottlenecks by running DFAnalyzer + DFDiagnoser on session traces.
 
@@ -641,7 +641,11 @@ class DFDiagnoserService(MCPService):
                     to hardware peak values for bandwidth/IOPS normalisation.
                     Defaults to ``None``.
                 timeout: Seconds before each subprocess phase is killed.
-                    Defaults to ``600``.
+                    Defaults to ``None`` (no timeout) — large (26M+ event)
+                    trace sets can legitimately take much longer to
+                    analyze/diagnose than smaller ones, and a fixed bound
+                    would kill a legitimate long-running diagnosis. Pass an
+                    explicit value only if you deliberately want a bound.
 
             Returns:
                 JSON string with keys:

@@ -1153,7 +1153,7 @@ _SOURCE_EXTS = {'.c', '.h', '.cpp', '.cxx', '.cc', '.hpp', '.hxx', '.py'}
 
 
 def _count_counterparts(source_dir: Path, ann_root: Path) -> int:
-    """Count recognised source files under ``ann_root`` that have a counterpart in ``source_dir``.
+    """Count recognised source files under ``ann_root`` that were actually modified.
 
     Used to auto-detect the correct annotated root when some pipelines nest the
     annotated tree one directory deeper than ``ws/annotated`` (e.g. Flash-X
@@ -1161,13 +1161,28 @@ def _count_counterparts(source_dir: Path, ann_root: Path) -> int:
     live at ``ws/annotated/source/...`` while their originals live at
     ``ws/source/...``).  A rel-path computed against the wrong root never
     resolves, yielding a false 0/0 coverage report.
+
+    A candidate root is only useful if it holds the *edited* copies, so this
+    counts files whose content actually differs from the ``source_dir``
+    counterpart — not merely files that exist at the same relative path.
+    Some pipelines (e.g. 1000genome-workflow) keep an unmodified full clone
+    at ``annotated/source/`` alongside the real annotated files at
+    ``annotated/<subdir>/``; that clone has far more path matches than the
+    small annotated subset, so a plain existence count picks the wrong root
+    and silently reports 0/0 coverage against an identical-content "diff".
     """
     count = 0
     for f in ann_root.rglob("*"):
         if not f.is_file() or f.suffix.lower() not in _SOURCE_EXTS:
             continue
-        if (source_dir / f.relative_to(ann_root)).exists():
-            count += 1
+        src_f = source_dir / f.relative_to(ann_root)
+        if not src_f.exists():
+            continue
+        try:
+            if f.read_text(errors="ignore") != src_f.read_text(errors="ignore"):
+                count += 1
+        except OSError:
+            continue
     return count
 
 

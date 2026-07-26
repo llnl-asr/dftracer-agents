@@ -162,6 +162,7 @@ comparator call needed inside the optimization loop.
 | `--group-by` duplicate flags | `dftracer_utils_service.py` now passes `--group-by "cat,name"` as single arg |
 | `no_metadata` parameter ignored in `view` | Fixed — `no_metadata=True` is now the default and is correctly forwarded |
 | Direct gzip parsing shows `?` for filenames | Use `mcp__dftracer__view(no_metadata=False)` to get FH events with filename resolution |
+| `dfanalyzer`'s internal "Trace Count" differs from `event_count`/`dftracer_info`'s "Valid Events" | Not a data-quality bug — two different counting conventions (e.g. 71.8M vs 26.2M on the same trace set, 1000genome-workflow session 2026-07-25). Treat `event_count`/`dftracer_info`'s "Valid Events" as the ground-truth count for trace-quality sanity checks, not dfanalyzer's own "Trace Count". |
 
 ---
 

@@ -724,3 +724,14 @@ fewer epochs is *doing less*, not going faster. Check event and byte counts befo
   back-to-back same-night campaigns on Lustre — larger than most of the optimization effects
   under test. Back-to-back-by-arm ordering biases later arms toward warmer cache/layout state.
   A candidate delta is only claimable when its full range does not overlap the baseline's.
+
+**General rule, confirmed on 1000genome-workflow `individuals.py` (2026-07-26):** before
+reaching for an FS-layer lever (striping, ROMIO), check for a `tarfile.add(dir)` /
+`tarfile.open()...write-then-reopen` pattern following a many-small-file producer loop --
+compressing/archiving a directory that was just written re-touches every file a second
+time (open+stat+read+close per member), doubling the effective op count for no new logical
+data. Streaming members directly into the tar as they're produced (`tarfile.addfile(TarInfo,
+BytesIO)` in-memory, or writing straight into the open `TarFile` instead of scratch files)
+removes the round trip entirely. Measured on this workload: `IND_TAR_STREAM=1` alone was
+-13.2% standalone, and its relative share of the remaining cost GREW (not shrank) once a
+companion compute fix collapsed the parse-time component -- see workload-1000genome.

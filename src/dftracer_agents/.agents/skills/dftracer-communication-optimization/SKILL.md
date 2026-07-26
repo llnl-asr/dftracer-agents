@@ -136,3 +136,27 @@ message-coalescing the per-sample `.to(device)` calls has a real but tiny (<1%) 
 Do not spend optimization budget on communication for small-graph GNN workloads like this
 one where I/O (HDF5 metadata storm) dominates by 2 orders of magnitude — always check the
 diagnosed severity/prevalence ranking before investing in a lower-ranked dimension.
+
+**Scheduler-owned MPI is a structural trace blind spot -- use the scheduler's own summary as
+ground truth (1000genome-workflow / Pegasus PMC, 2026-07-26):** when the workflow scheduler
+itself (here, `pegasus-mpi-cluster`, a C++ MPI binary) is not dftracer-annotated, its
+master-worker dispatch traffic produces **zero MPI events in any trace**, even though real
+MPI communication is happening (task dispatch/result messages). An empty scan for `MPI_*`
+spans in this situation is a coverage gap, not evidence of zero communication -- **never
+report "zero communication" from an unannotated component's absence in the trace.** Instead,
+use the scheduler's own instrumentation/summary line as ground truth: PMC prints a
+`[cluster-summary ... bytes_sent=<N> ...]` line giving the actual byte count (29,956 bytes
+total across a 316.5s/32-rank run here -- a provably negligible ceiling, 0.0002% of run time,
+but PROVEN via the scheduler's own counter, not assumed from empty trace evidence). State
+the coverage gap explicitly in any report that draws a "communication negligible" conclusion
+from a scheduler-owned MPI binary.
+
+**DAG-max-width pre-check before proposing any scheduling/rank-count lever:** before
+proposing a worker-pool/rank-count change for a DAG-scheduled workflow, compute the DAG's
+level-by-level width (parse the `.dag` file's TASK/EDGE structure) and compare it to the
+current worker count. If max width < worker count, the pool is never the binding constraint
+and any "low utilization %" metric is a DAG-shape artifact (parallelism ceiling set by the
+DAG's own structure, e.g. narrow serialization barriers between wide fan-out levels), not a
+schedulable inefficiency -- do not "fix" it by changing rank count. Confirmed on this
+workflow: 8-level DAG, max width 17 (individuals fan-out), vs. 31 workers -- the 19.4%
+utilization figure is expected and correct, not a target for optimization.

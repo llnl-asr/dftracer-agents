@@ -18,7 +18,7 @@ def _session_diagnose_bottlenecks_impl(
     analyzer_preset: str = "posix",
     view_types: Optional[str] = "time_range",
     metric_boundaries: Optional[str] = None,
-    timeout: int = 600,
+    timeout: Optional[int] = None,
     traces_dir: Optional[str] = None,
 ) -> str:
     """Implementation of session_diagnose_bottlenecks (callable without MCP).
@@ -62,7 +62,7 @@ def _session_diagnose_bottlenecks_impl_inner(
     analyzer_preset: str,
     view_types: Optional[str],
     metric_boundaries: Optional[str],
-    timeout: int,
+    timeout: Optional[int],
     traces_dir: Optional[str],
 ) -> str:
     traces_split = Path(traces_dir) if traces_dir else (ws / "traces_split")

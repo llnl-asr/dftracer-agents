@@ -89,6 +89,11 @@ cp pegasus-mpi-cluster <pegasus-install-dir>/bin/pegasus-mpi-cluster   # overwri
 It's a plain Makefile using `mpicxx` directly — no autotools/cmake needed.
 Builds cleanly against Cray MPICH 9.0.1 with `crayclang` in ~10 seconds.
 
+Building from only the extracted `packages/pegasus-mpi-cluster` subtree (not
+a full monorepo checkout) prints a harmless
+`release-tools/getversion: No such file or directory` warning as `make` falls
+back on `version.h` generation — the build still succeeds; ignore it.
+
 ### Pitfall: runtime LD_LIBRARY_PATH for the rebuilt PMC binary
 
 The rebuilt binary needs every Cray PE lib dir at runtime — `flux run` /
@@ -109,6 +114,9 @@ LD="/opt/cray/pe/lib64:/opt/cray/lib64:/opt/cray/pe/papi/<ver>/lib64:\
 `/opt/cray/pe/pmi/<ver>/lib` (libpmi.so.0, libpmi2.so.0) is the one people
 forget — it's not under the MPICH tree, it's a separate `cray-pmi` product dir.
 Find it with `find /opt/cray/pe/pmi -iname libpmi.so.0` if the version differs.
+On Tuolumne specifically, `libpmi.so.0`/`libpmi2.so.0` resolve directly from
+`/opt/cray/pe/lib64` — no separate `cray-pmi` dir needed there; the generic
+template above is still correct for sites where it isn't bundled that way.
 
 ## Step 3 — Compile Montage (or reuse an already-annotated build)
 
@@ -262,6 +270,47 @@ pegasus-plan \
 
 This just plans (no `--submit` — PMC execution is manual, see Step 7).
 
+### Pitfall: omitting `--conf` silently produces a DAGMan DAG, not a PMC DAG
+
+If `pegasus-plan` is invoked WITHOUT `--conf <properties-file>` (e.g. by a
+wrapper script or agent that re-derives its own `pegasus-plan` command line
+and forgets the flag), `pegasus.code.generator = PMC` never takes effect —
+there is no error, no warning. The planner silently falls back to its
+default Condor DAGMan code generator and emits a `.dag` file full of
+`JOB`/`SCRIPT`/`RETRY`/`VARS`/`MAXJOBS` lines instead of `TASK`/`EDGE`.
+`pegasus-mpi-cluster` then aborts on the very first non-`TASK`/`EDGE`/`#`
+line it sees:
+```
+ABORT: failure.cpp(22): Invalid DAG record: MAXJOBS registration 1
+```
+(or `Invalid DAG record: JOB ...` if MAXJOBS lines were stripped first —
+stripping MAXJOBS is NOT a real fix, it's treating a symptom of the same
+missing-`--conf` root cause). **Fix: always pass `--conf <path-to-your-
+pegasus.properties>` explicitly to every `pegasus-plan` invocation** — never
+rely on a `pegasus.properties`/`pegasus.xml` file being auto-discovered in
+the CWD. Verify a successful PMC plan before ever launching PMC:
+```bash
+grep -c '^TASK\|^EDGE' <name>-0.dag   # should be large (one per job)
+grep -c '^JOB\|^MAXJOBS' <name>-0.dag # must be 0
+```
+
+### Pitfall: replica-catalog input paths from a wrong daxgen `-D`/dataset dir
+
+If the workflow generator script (`daxgen.py`/`montage-workflow.py`-style)
+is invoked with a dataset/data directory argument that doesn't match where
+the actual input files live in the session workspace, the replica catalog
+(`site_label: local, url: file://...`) will point stage-in transfers at a
+path that doesn't exist. Symptom: `stage_in_remote_*`/`stage_in_local_*`
+tasks hang for several minutes (pegasus-transfer's retry/poll loop against
+a missing local `file://` source) then fail with exit status 256, all
+*before* any real workflow task ever runs. Fix: verify every `file://` URL
+referenced in the generated `catalogs/replicas.yml` (or a task's `.in`
+Kickstart input file) resolves with `ls -la <path>` BEFORE launching PMC —
+catching this pre-flight is much cheaper than waiting out the transfer
+timeout. A symlink from the wrong-but-expected path to the real data
+directory is a valid quick fix if the generator's dataset-dir argument
+can't easily be corrected.
+
 ## Step 7 — Run the DAG via PMC under a Flux allocation
 
 ```bash
@@ -294,6 +343,26 @@ task each at a time). `-n8` → 1 master + 7 concurrent task slots.
 `-v` (verbose) is worth keeping on for the first run of any new workflow —
 it logs every task submission/exit inline, which is the fastest way to spot
 a stuck or silently-failing stage.
+
+### Pitfall: MPI rank count must match DAG task parallelism, not just fill cores
+
+PMC's rank count (`-n<workers+1>`) should scale with the DAG's actual
+concurrent-task parallelism, not with how many cores an allocation has to
+offer. Requesting far more workers than the DAG can ever run concurrently
+(e.g. `-N4 -n380` — one rank per core across 4 nodes — for a DAG with only
+~46 total tasks and a handful of ever-runnable-at-once tasks) can cause
+PMC's own MPI_Init/worker-registration handshake to hang indefinitely: every
+rank logs its startup env dump and "Running PMC cluster with DAG", then
+total silence — no `Master starting with N workers`, no task-start/finish
+lines, no trace output, seemingly forever. A right-sized rank count for the
+same DAG (`-N4 -n32`, ~8 workers/node) completes `MPI_Init` and starts
+scheduling tasks within ~10 seconds. Rule of thumb: pick `-n` around
+2-4× the number of tasks that can realistically run concurrently in the
+DAG (fan-out width of the widest parallel stage), not `cores_per_node ×
+N_nodes`. If a PMC run shows only startup-env-dump lines and zero task
+activity for more than ~2-3 minutes, don't wait it out — cancel
+(`flux cancel <jobid>`) and retry at a smaller `-n` before assuming
+anything else is wrong.
 
 ### Pitfall: `pegasus-plan` output is confusingly still Condor-flavored
 

@@ -4,6 +4,8 @@ description: Always run dfanalyzer/analysis with a multi-worker cluster; analysi
 metadata: 
   node_type: memory
   type: feedback
+  
+  modified: 2026-07-26T03:59:48.615Z
 ---
 
 Trace analysis (dfanalyzer via `mcp__dftracer__analyze`) must complete within a
@@ -24,3 +26,10 @@ wrong counts and can crash with "Failed to open RocksDB ... .dftindex/*.log").
 `cluster_cores` — invalid ClusterConfig key (valid: n_workers, processes,
 memory, memory_limit, type). Correct baseline = 64 procs / 8 nodes / 71,275
 POSIX ops / 64 GiB. Related: [[feedback_optimization_pipeline_traces]]
+
+**Additional data point (2026-07-25, 1000genome-workflow session):** on a
+26M-event/32-rank trace set on a shared Tuolumne node, `cluster_n_workers=32`
+crashed with `DFTUtilsError: Resource temporarily unavailable` (32 workers ×
+~192 io-threads over-subscribed the node); `cluster_n_workers=8` completed
+successfully. Reinforces staying low — don't scale workers up to "match"
+rank count on a shared/login-adjacent node.

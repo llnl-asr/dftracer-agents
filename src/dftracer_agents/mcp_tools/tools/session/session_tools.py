@@ -2356,6 +2356,7 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         dftracer_ref: str = "develop",
         jobs: int = 4,
         venv_path: str = "",
+        hdf5: Optional[bool] = None,
     ) -> str:
         """Install dftracer via pip for all project types, then locate dirs in site-packages.
 
@@ -2399,6 +2400,16 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 this explicitly when a later step (e.g. ``dftracer-build-app``)
                 already created the app's venv at a non-default path — dftracer
                 MUST land in that same venv, never a second parallel one.
+            hdf5: Explicit override for HDF5 support, bypassing auto-detection.
+                Defaults to ``None``, which preserves the existing behavior of
+                trusting whatever ``session_detect`` finds on the system (auto
+                re-detected fresh on every call). Pass ``False`` to force
+                ``DFTRACER_ENABLE_HDF5=OFF`` and skip HDF5 auto-detection
+                entirely — e.g. for a pure-Python/no-HDF5 app where the system
+                happens to have an HDF5 module that would otherwise be
+                auto-enabled. Pass ``True`` to force HDF5 on even if detection
+                did not find it in the app source (still requires a usable
+                system HDF5 to build against).
 
         Returns:
             JSON string with keys:
@@ -2440,6 +2451,19 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         features = info.get("features", {})
         bt = info.get("build_tool", state.get("build_tool", "unknown"))
 
+        # Explicit hdf5 override (caller-specified) short-circuits
+        # auto-detection instead of being re-discovered/overridden by it —
+        # e.g. a pure-Python app with no HDF5 usage on a system where HDF5
+        # happens to be present/auto-detected. `hdf5=None` (default)
+        # preserves exact prior auto-detect behavior.
+        if hdf5 is not None:
+            features = dict(features)
+            features["hdf5"] = bool(hdf5)
+            if not hdf5:
+                features["hdf5_system"] = {}
+
+        hdf5_override_applied = hdf5 is not None
+
         features_enabled = []
         compat_warnings: list = []
 
@@ -2476,6 +2500,9 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 )
 
         # --- HDF5 version check ---
+        # (features["hdf5"] is already forced False above when the caller
+        # passed hdf5=False, so this naturally skips probing/reporting on a
+        # feature that was just hard-disabled.)
         if features.get("hdf5"):
             hdf5_sys = features.get("hdf5_system") or _detect_system_hdf5()
             hdf5_ver = hdf5_sys.get("version", "")
@@ -3278,6 +3305,10 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             index_dir: Absolute path to the index directory.  Defaults to
                 ``<compact>/idx/``.
             extra_flags: Additional space-separated flags for ``dftracer_info``.
+            (No timeout is applied to the ``dftracer_info`` subprocess — large
+            (26M+ event) trace sets can legitimately take much longer to
+            analyze than smaller ones, and a fixed bound would kill a
+            legitimate long-running analysis.)
             subpath: Optional relative path appended under ``<compact>/`` before
                 scanning, e.g. ``"write/rep1"`` for sessions whose split traces
                 are folder-segregated by workload/replicate
@@ -3336,7 +3367,10 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 "--query", query_type,
                 "--index-dir", str(idx),
             ] + flags,
-            timeout=600,
+            # No timeout: analysis of large (26M+ event) trace sets can
+            # legitimately run far longer than a fixed bound; killing it
+            # early just produces a spurious failure instead of a result.
+            timeout=None,
         )
         _save_state(run_id, {f"step_analyzed_{run_name}": True, "analysis_result": r})
         _write_artifact_log(_ws(run_id), 13, "session_analyze_traces", {"run_name": run_name, **r}, run_id)
