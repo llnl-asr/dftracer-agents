@@ -97,14 +97,29 @@ def _discover_runs(ws: Path) -> List[str]:
     opts = [n for n in names if n.startswith("opt") and n[3:].isdigit()]
     ordered += sorted(opts, key=lambda n: int(n[3:]))
 
-    tmp = ws / "tmp"
-    if tmp.is_dir():
-        fixed_and_opt = set(ordered)
-        seen: set = set()
-        variant_scripts = sorted(
-            (p for p in tmp.glob("*.sh") if p.is_file()),
-            key=lambda p: p.stat().st_mtime,
-        )
+    # Free-form optimization run dirs (opt_zero1, opt_nccl, opt_bf16, ...). The numeric
+    # ladder above only matches `opt<digits>`, so descriptively-named variants — which is
+    # how most real sessions label them — were silently dropped from the report.
+    freeform_opts = sorted(
+        (n for n in names
+         if n.startswith("opt") and n not in ordered and not n[3:].isdigit()),
+        key=lambda n: (ws / n).stat().st_mtime,
+    )
+    ordered += freeform_opts
+
+    # Variant wrapper scripts live in tmp/ (scratch) AND scripts/ (the durable location
+    # run scripts are normally written to). Globbing only tmp/ missed every top-level
+    # scripts/run_opt_*.sh / optimizer_*.sh, which Pipeline Policy rule 15 requires the
+    # deliverable to contain.
+    fixed_and_opt = set(ordered)
+    seen: set = set()
+    variant_scripts: List[Path] = []
+    for sub in ("tmp", "scripts"):
+        d = ws / sub
+        if d.is_dir():
+            variant_scripts += [p for p in d.glob("*.sh") if p.is_file()]
+    if variant_scripts:
+        variant_scripts.sort(key=lambda p: p.stat().st_mtime)
         for script in variant_scripts:
             stem = script.stem
             # Skip anything that's just a fixed-ladder name in disguise

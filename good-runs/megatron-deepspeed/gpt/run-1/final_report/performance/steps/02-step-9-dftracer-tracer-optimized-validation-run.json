@@ -1,0 +1,43 @@
+{
+  "run_id": "megatron_deepspeed/20260726_185517",
+  "key": "STEP 9: dftracer-tracer (optimized validation run)",
+  "index": 2,
+  "agent": "dftracer-tracer",
+  "notes": "4-node optimized DAG run with IND_ROW_PRECOMPUTE=1 IND_TAR_STREAM=1, using flux alloc f3NXj3jCbhtK, 4000-VCF-row sizing from baseline, new trace output path",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 508.377,
+  "wall_s": 508.377,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 508.377,
+      "error": "",
+      "start_ns": 1785082761062987477,
+      "end_ns": 1785083269439898619
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

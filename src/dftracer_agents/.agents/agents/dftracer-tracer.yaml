@@ -142,4 +142,25 @@ sections:
     once it has served its purpose — don't let it accumulate.
     See `workload-h5bench` skill's "Failed Configurations" section (2026-07-10 entries) for a
     concrete case where an unmodified sample config was ~16x oversized for this budget.
+- title: Distributed-run preflight for multi-rank DL workloads (MANDATORY)
+  body: |
+    Before crediting ANY multi-rank run as a valid baseline, verify all four. Each of these
+    has silently produced an invalid "baseline" that wasted multiple allocations:
+
+    1. **One process group, not N solo ranks.** grep the run log for `using world size:` —
+       it must appear ONCE with the correct N. Once-per-rank with `world size: 1` means the
+       launcher spawned N independent single-rank jobs (usual companion symptom: all but one
+       rank dies with `EADDRINUSE` on the master port).
+    2. **Per-rank trace coverage.** Count NON-EMPTY trace files. If only 1-2 of N ranks
+       produced data, do NOT rationalize it as "normal for distributed training" — usual
+       cause is `initialize_log(process_id=-1)` (all ranks contend on one path) or ranks
+       crashing before flush. dftracer buffers and only flushes on finalize.
+    3. **The transport actually in use.** grep for `distributed_backend`. A `gloo` backend on
+       a GPU cluster is a first-order finding no trace category will reveal, because its cost
+       is fused inside `backward()`.
+    4. **Scale and clean completion.** Confirm the job reached the intended rank count AND
+       exited cleanly before crediting any wall-time delta.
+
+    If a check fails, the run is NOT a baseline. Report it as invalid and fix the cause —
+    never substitute a smoke test or a smaller/single-GPU run and label it "baseline".
 

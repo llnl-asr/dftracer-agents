@@ -737,6 +737,12 @@ def register_iteration_tools(mcp: FastMCP) -> None:
                     "<ws>/baseline/analysis/diagnosis.json."
                 )
             bottlenecks, literature = fallback, []
+            # There is no history entry to point at on the external-run path, but `idx`
+            # is still referenced further down (proposal provenance + the returned
+            # `iteration` field). Leaving it unset raised
+            # `UnboundLocalError: cannot access local variable 'idx'` and made
+            # bottlenecks_json unusable — the very case this fallback exists to serve.
+            idx = -1
         else:
             idx = iteration if iteration >= 0 else len(history) - 1
             if idx >= len(history):

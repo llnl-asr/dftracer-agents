@@ -100,3 +100,32 @@ sections:
 - include: run-length-make-the-run-long-enough-to-measure
 - include: dl-run-length-ask-for-a-time-budget-then-fix-the-epoch-count
 - include: optimizer-replicate-count
+- title: Baseline capability probe BEFORE proposing kernel/precision levers (MANDATORY)
+  body: |
+    A fully-tuned baseline is a common and easily-missed outcome that invalidates most of the
+    proposal set. Before proposing anything, establish what is ALREADY active:
+
+    1. Dump the app's own fusion/precision/parallelism arguments from the run log.
+    2. Probe the actual kernel modules by IMPORT on a compute node. Do NOT infer availability
+       from a framework's own status table — e.g. DeepSpeed's op-builder table prints
+       `[NO] ... [OKAY]` meaning "not pre-built / JIT-capable", which is the NORMAL state and
+       says nothing about apex. Misreading it as a missing-kernel gap has produced a
+       confidently-stated false conclusion that was then used to explain an unrelated result.
+    3. Confirm optional accelerated paths actually engaged rather than silently no-opping
+       when a dependency is absent (flash-attention flags are the canonical example: the
+       framework leaves the feature off WITHOUT erroring).
+
+    Report "already applied in the baseline" as a legitimate, valuable verdict.
+- title: Test inert-looking knobs in BOTH directions
+  body: |
+    When a tuning knob measures as no-change, also measure the OPPOSITE setting as a control.
+    Inert in both directions proves the knob is genuinely dead on this stack; inert in one
+    direction only means the default was already optimal. These are different findings and
+    the distinction matters to whoever inherits the KB entry.
+- title: Do not credit an unverified mechanism
+  body: |
+    When reporting a measured regression or win, separate the MEASUREMENT from the
+    MECHANISM. State the mechanism as an explicit hypothesis unless it was independently
+    verified, and say which it is. A plausible-sounding cause recorded as fact propagates
+    into the KB and misleads later sessions.
+

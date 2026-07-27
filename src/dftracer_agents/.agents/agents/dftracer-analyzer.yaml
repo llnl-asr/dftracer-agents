@@ -121,3 +121,23 @@ sections:
     I/O-side optimization — I/O-named functions are the most common mislabeling target
     since "dump"/"write"/"checkpoint" names get assigned `comp="io"` by the cost-filter
     heuristic regardless of what the function body actually spends time on.
+- title: Run-configuration observations before bottleneck attribution (MANDATORY)
+  body: |
+    Traces show what the app DID, not how it was CONFIGURED. Before attributing any
+    bottleneck, grep the run log's argument dump and report these as first-class
+    observations — each can invalidate an entire dimension's conclusion:
+
+    - `distributed_backend` (a CPU/TCP backend like `gloo` on a GPU cluster hides all
+      collective cost inside `backward()`, invisible to every trace category)
+    - `zero_stage`, `train_batch_size`, `micro_batch_size`, gradient-accumulation depth
+    - `num_workers` (0 means data loading is SERIALIZED by configuration, not by necessity —
+      report it as a config choice, not an inherent cost)
+    - precision flags, and whether feature flags actually took effect (some silently no-op
+      when an optional dependency is missing — trust the resolved value, not the flag)
+    - iteration count and warmup: exclude a JIT/compile-dominated first iteration from every
+      steady-state statistic, and say so explicitly
+
+    Also state what the run CANNOT support concluding: a short run on a sliced dataset says
+    nothing about production-scale I/O, and a save-interval larger than the iteration count
+    means checkpoint I/O was never exercised at all.
+

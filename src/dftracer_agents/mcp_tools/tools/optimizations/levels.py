@@ -13,6 +13,7 @@ from ..session.workspace import (
     _ws, _load_state, _save_state, _write_artifact_log, _ok, _err, _run, _workspaces_root,
 )
 from ..session.install import _dftracer_utils_split, _dftracer_info_uncompressed_bytes
+from .iteration import _load_external_bottlenecks
 from .strategies import (
     _fetch_arxiv_papers,
     _BUILTIN_REFS,
@@ -34,6 +35,7 @@ def register_level_tools(mcp: FastMCP) -> None:
         iteration: int = -1,
         metric: str = "time",
         max_proposals: int = 5,
+        bottlenecks_json: Optional[str] = None,
     ) -> str:
         """Generate citation-backed application-code optimization proposals (Level 1).
 
@@ -59,11 +61,22 @@ def register_level_tools(mcp: FastMCP) -> None:
         state   = _load_state(run_id)
         history = state.get("optimization_history", [])
         if not history:
-            return _err("No optimization iterations — run session_optimization_iteration first.")
-
-        idx  = iteration if iteration >= 0 else len(history) - 1
-        iter_e = history[idx]
-        bottlenecks = iter_e.get("bottlenecks", [])
+            # Externally-launched runs (e.g. a `flux batch`/`flux run` job) never populate
+            # optimization_history, but they do have a real diagnosis. Dead-ending here
+            # locked every proposal-only / externally-measured pass out of these tools.
+            _fallback = _load_external_bottlenecks(run_id, bottlenecks_json)
+            if _fallback is None:
+                return _err(
+                    "No optimization iterations — run session_optimization_iteration "
+                    "first, or pass bottlenecks_json (a JSON list of "
+                    "{bottleneck, severity, category, ...}), or write "
+                    "<ws>/<run>/analysis/diagnosis.json."
+                )
+            iter_e, bottlenecks = {}, _fallback
+        else:
+            idx  = iteration if iteration >= 0 else len(history) - 1
+            iter_e = history[idx]
+            bottlenecks = iter_e.get("bottlenecks", [])
 
         # ── Targeted arXiv searches per unique bottleneck ────────────────────
         _SEV = {"trivial": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
@@ -137,6 +150,7 @@ def register_level_tools(mcp: FastMCP) -> None:
         iteration: int = -1,
         metric: str = "time",
         max_proposals: int = 5,
+        bottlenecks_json: Optional[str] = None,
     ) -> str:
         """Generate citation-backed software/middleware optimization proposals (Level 2).
 
@@ -162,11 +176,21 @@ def register_level_tools(mcp: FastMCP) -> None:
         state   = _load_state(run_id)
         history = state.get("optimization_history", [])
         if not history:
-            return _err("No optimization iterations — run session_optimization_iteration first.")
-
-        idx    = iteration if iteration >= 0 else len(history) - 1
-        iter_e = history[idx]
-        bottlenecks = iter_e.get("bottlenecks", [])
+            # Externally-launched runs never populate optimization_history but do have a
+            # real diagnosis; dead-ending here locked proposal-only passes out entirely.
+            _fallback = _load_external_bottlenecks(run_id, bottlenecks_json)
+            if _fallback is None:
+                return _err(
+                    "No optimization iterations — run session_optimization_iteration "
+                    "first, or pass bottlenecks_json (a JSON list of "
+                    "{bottleneck, severity, category, ...}), or write "
+                    "<ws>/<run>/analysis/diagnosis.json."
+                )
+            iter_e, bottlenecks = {}, _fallback
+        else:
+            idx    = iteration if iteration >= 0 else len(history) - 1
+            iter_e = history[idx]
+            bottlenecks = iter_e.get("bottlenecks", [])
 
         _SEV = {"trivial": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
         high_bns = [b for b in bottlenecks if _SEV.get(b.get("severity","trivial"),0) >= 2]
@@ -235,6 +259,7 @@ def register_level_tools(mcp: FastMCP) -> None:
         iteration: int = -1,
         metric: str = "time",
         max_proposals: int = 5,
+        bottlenecks_json: Optional[str] = None,
     ) -> str:
         """Generate citation-backed filesystem/OS optimization proposals (Level 3).
 
@@ -263,11 +288,21 @@ def register_level_tools(mcp: FastMCP) -> None:
         state   = _load_state(run_id)
         history = state.get("optimization_history", [])
         if not history:
-            return _err("No optimization iterations — run session_optimization_iteration first.")
-
-        idx    = iteration if iteration >= 0 else len(history) - 1
-        iter_e = history[idx]
-        bottlenecks = iter_e.get("bottlenecks", [])
+            # Externally-launched runs never populate optimization_history but do have a
+            # real diagnosis; dead-ending here locked proposal-only passes out entirely.
+            _fallback = _load_external_bottlenecks(run_id, bottlenecks_json)
+            if _fallback is None:
+                return _err(
+                    "No optimization iterations — run session_optimization_iteration "
+                    "first, or pass bottlenecks_json (a JSON list of "
+                    "{bottleneck, severity, category, ...}), or write "
+                    "<ws>/<run>/analysis/diagnosis.json."
+                )
+            iter_e, bottlenecks = {}, _fallback
+        else:
+            idx    = iteration if iteration >= 0 else len(history) - 1
+            iter_e = history[idx]
+            bottlenecks = iter_e.get("bottlenecks", [])
 
         _SEV = {"trivial": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
         high_bns = [b for b in bottlenecks if _SEV.get(b.get("severity","trivial"),0) >= 2]

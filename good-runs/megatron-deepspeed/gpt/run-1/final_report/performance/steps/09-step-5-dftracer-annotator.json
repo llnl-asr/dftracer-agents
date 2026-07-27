@@ -1,0 +1,51 @@
+{
+  "run_id": "megatron_deepspeed/20260726_185517",
+  "key": "STEP 5: dftracer-annotator",
+  "index": 9,
+  "agent": "dftracer-annotator",
+  "notes": "Scope+annotate Megatron-DeepSpeed Python training path for GPT 350M example",
+  "status": "superseded",
+  "tries": 2,
+  "retries": 1,
+  "failed_attempts": 1,
+  "successful_attempts": 0,
+  "exec_s": 63.232,
+  "wall_s": 119.882,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "failed",
+      "duration_s": 9.778,
+      "error": "No Task/subagent dispatch tool or stage-specific MCP tools (annotate, build_smoke, run_with_dftracer, analyze, diagnose, optimize, final_report, privacy_scan) exposed to this router invocation",
+      "start_ns": 1785093489982109214,
+      "end_ns": 1785093499760593469
+    },
+    {
+      "number": 2,
+      "status": "superseded",
+      "duration_s": 53.454,
+      "error": "",
+      "start_ns": 1785093556410684572,
+      "end_ns": 1785093609864534627
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

@@ -1,0 +1,43 @@
+{
+  "run_id": "megatron_deepspeed/20260726_185517",
+  "key": "STEP N: dftracer-privacy-guard",
+  "index": 5,
+  "agent": "dftracer-privacy-guard",
+  "notes": "Final privacy scan of git-tracked trees + final_report/ carve-out; 1000genome-workflow session",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 631.617,
+  "wall_s": 631.617,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 631.617,
+      "error": "",
+      "start_ns": 1785089985948670061,
+      "end_ns": 1785090617565554504
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

@@ -1,0 +1,43 @@
+{
+  "run_id": "megatron_deepspeed/20260726_185517",
+  "key": "STEP 11: dftracer-privacy-guard",
+  "index": 4,
+  "agent": "dftracer-privacy-guard",
+  "notes": "",
+  "status": "superseded",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 24.486,
+  "wall_s": 24.486,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 24.486,
+      "error": "",
+      "start_ns": 1785089961462853985,
+      "end_ns": 1785089985948642251
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

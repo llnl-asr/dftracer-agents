@@ -1,0 +1,43 @@
+{
+  "run_id": "megatron_deepspeed/20260726_185517",
+  "key": "STEP 10: dftracer-report",
+  "index": 1,
+  "agent": "dftracer-report",
+  "notes": "",
+  "status": "running",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 9.688,
+  "wall_s": 9.688,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "running",
+      "duration_s": 9.688,
+      "error": "",
+      "start_ns": 1785167902804081059,
+      "end_ns": null
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

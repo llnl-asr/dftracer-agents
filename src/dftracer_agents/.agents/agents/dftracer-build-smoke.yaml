@@ -50,3 +50,22 @@ sections:
 - include: use-the-knowledge-graph-before-reading-files
 - include: redact-before-you-persist
 - include: environment-consistency
+- title: DL-stack preflight before blaming the annotation (MANDATORY for ML workloads)
+  body: |
+    When a smoke test of an instrumented ML app fails, verify the runtime stack BEFORE
+    concluding the annotation broke something. Load [[software-dl-stack]] and check its
+    gates in order. Most "the annotation broke the app" reports are really a stack fault:
+
+    - Wrong torch wheel (CUDA wheel on an AMD box) -> framework silently takes CPU-fallback
+      paths and raises confusing errors deep in model construction. Check `torch.version.hip`.
+    - Accelerator root not exported (`ROCM_HOME`/`ROCM_PATH`) -> `MissingCUDAException`.
+    - Vendor tool (`rocminfo`) not on PATH -> unstable JIT build hash -> N ranks recompile
+      concurrently and DEADLOCK on the shared build lock (hangs with no error at all).
+    - `torch/lib` missing from `LD_LIBRARY_PATH` -> `dlopen: libcaffe2_nvrtc.so` failure.
+    - A torch-adjacent PyPI wheel (torchvision etc.) that is ABI-incompatible with a custom
+      torch build -> imports fine, fails at first use.
+
+    A prior smoke attempt succeeding does NOT prove the whole dependency chain is resolved —
+    each attempt can surface a DIFFERENT import-time failure. Treat each new error on its own
+    merits instead of assuming it is the one you were told to expect.
+

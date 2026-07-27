@@ -1,0 +1,59 @@
+{
+  "run_id": "megatron_deepspeed/20260726_185517",
+  "key": "STEP 6: dftracer-build-smoke",
+  "index": 11,
+  "agent": "dftracer-build-smoke",
+  "notes": "Third attempt: fixing CUDA-vs-ROCm torch mismatch in shared venv, allocation f3NZBnkpoprB at ~57min/60min limit",
+  "status": "running",
+  "tries": 3,
+  "retries": 2,
+  "failed_attempts": 2,
+  "successful_attempts": 0,
+  "exec_s": 2418.798,
+  "wall_s": 2696.683,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "partial",
+      "duration_s": 2161.983,
+      "error": "Build succeeded and annotated code executes deep into model construction with dftracer instrumentation firing, but smoke run did not reach a successful iteration/trace flush within the allocation window: hit a pre-existing (non-annotation) CPU-fallback bug -- torch.nn.LayerNorm called with sequence_parallel kwarg only accepted by apex's fused LayerNorm, which is not installed. 7 trace files were created but are 0 bytes (crash occurred before dftracer initialize_log()/finalize).",
+      "start_ns": 1785094346217682674,
+      "end_ns": 1785096508200443192
+    },
+    {
+      "number": 2,
+      "status": "failed",
+      "duration_s": 175.582,
+      "error": "torch installed in venv is a CUDA build (2.13.0+cu130, torch.version.hip=None) not ROCm \u2014 torch.cuda.is_available()=False even on MI300A GPU node, so apex-based fused LayerNorm path (device_name()=='cuda') is never taken and the CPU-fallback torch.nn.LayerNorm(sequence_parallel=...) bug reproduces identically on GPU. Not an annotation bug; requires ROCm torch reinstall.",
+      "start_ns": 1785096668913864272,
+      "end_ns": 1785096844495550624
+    },
+    {
+      "number": 3,
+      "status": "running",
+      "duration_s": 81.234,
+      "error": "",
+      "start_ns": 1785096961666581107,
+      "end_ns": null
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

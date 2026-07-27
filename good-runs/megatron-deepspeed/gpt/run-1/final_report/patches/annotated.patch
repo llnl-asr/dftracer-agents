@@ -1,0 +1,4051 @@
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/arguments.py $WS/annotated/source/megatron/arguments.py
+--- $WS/baseline/source/megatron/arguments.py	2026-07-26 11:55:19.945137000 -0700
++++ $WS/annotated/source/megatron/arguments.py	2026-07-26 12:26:20.853814000 -0700
+@@ -17,8 +17,11 @@
+ from tools.retro.utils import get_args_path as get_retro_args_path
+ 
+ from megatron.core.transformer import TransformerConfig
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("arguments")
+ 
+ 
++@_dft.log
+ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
+     """Parse all arguments."""
+     parser = argparse.ArgumentParser(
+@@ -71,6 +74,7 @@
+     return args
+ 
+ 
++@_dft.log
+ def validate_args(args, defaults={}):
+     # Tensor model parallel size.
+     args.tensor_model_parallel_size = min(
+@@ -539,6 +543,7 @@
+     return args
+ 
+ 
++@_dft.log
+ def _print_args(title, args):
+     """Print arguments."""
+     if args.rank == 0:
+@@ -556,6 +561,7 @@
+     assert getattr(args, arg) is not None, "{} argument is None".format(arg)
+ 
+ 
++@_dft.log
+ def core_transformer_config_from_args(args):
+     # Translate args to core transformer configuration
+     kw_args = {}
+@@ -578,6 +584,7 @@
+     return TransformerConfig(**kw_args)
+ 
+ 
++@_dft.log
+ def _add_transformer_engine_args(parser):
+     group = parser.add_argument_group(title="Transformer-Engine")
+ 
+@@ -635,6 +642,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_inference_args(parser):
+     group = parser.add_argument_group(title="inference")
+ 
+@@ -671,6 +679,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_retro_args(parser):
+     group = parser.add_argument_group(title="retro")
+ 
+@@ -743,6 +752,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_network_size_args(parser):
+     group = parser.add_argument_group(title="network size")
+ 
+@@ -941,6 +951,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_logging_args(parser):
+     group = parser.add_argument_group(title="logging")
+ 
+@@ -1067,6 +1078,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_regularization_args(parser):
+     group = parser.add_argument_group(title="regularization")
+ 
+@@ -1214,6 +1226,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_training_args(parser):
+     group = parser.add_argument_group(title="training")
+ 
+@@ -1624,6 +1637,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_initialization_args(parser):
+     group = parser.add_argument_group(title="initialization")
+ 
+@@ -1668,6 +1682,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_learning_rate_args(parser):
+     group = parser.add_argument_group(title="learning rate")
+ 
+@@ -1834,6 +1849,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_checkpointing_args(parser):
+     group = parser.add_argument_group(title="checkpointing")
+ 
+@@ -1925,6 +1941,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_mixed_precision_args(parser):
+     group = parser.add_argument_group(title="mixed precision")
+ 
+@@ -1993,6 +2010,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_distributed_args(parser):
+     group = parser.add_argument_group(title="distributed")
+ 
+@@ -2159,6 +2177,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_data_args(parser):
+     group = parser.add_argument_group(title="data and dataloader")
+ 
+@@ -2431,6 +2450,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_biencoder_args(parser):
+     group = parser.add_argument_group(title="biencoder")
+ 
+@@ -2538,6 +2558,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_vision_args(parser):
+     group = parser.add_argument_group(title="vision")
+ 
+@@ -2687,6 +2708,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_zero_args(parser):
+     """Text generate arguments."""
+ 
+@@ -2720,6 +2742,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_memoryopt_args(parser):
+     """Memory optimization arguments."""
+ 
+@@ -2755,6 +2778,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_activation_checkpoint_args(parser):
+     group = parser.add_argument_group(
+         "Activation Checkpointing", "Checkpointing Configurations"
+@@ -2792,6 +2816,7 @@
+     return parser
+ 
+ 
++@_dft.log
+ def _add_distillation_args(parser):
+     group = parser.add_argument_group(
+         "Knowledge distillation", "Distillation Configurations"
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/checkpointing.py $WS/annotated/source/megatron/checkpointing.py
+--- $WS/baseline/source/megatron/checkpointing.py	2026-07-26 11:55:19.947168000 -0700
++++ $WS/annotated/source/megatron/checkpointing.py	2026-07-26 12:27:50.169620000 -0700
+@@ -21,6 +21,9 @@
+ from .utils import (unwrap_model, print_rank_0, is_rank_0)
+ from .utils import PerfTrace, Profile
+ 
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("checkpointing")
++
+ from deepspeed.checkpoint import (
+     ORIGINAL_VOCAB_SIZE,
+     PADDED_VOCAB_SIZE,
+@@ -40,6 +43,7 @@
+ dlp = Profile("CHECKPOINT")
+ 
+ 
++@_dft.log
+ def set_checkpoint_version(value):
+     global _CHECKPOINT_VERSION
+     if _CHECKPOINT_VERSION is not None:
+@@ -47,16 +51,19 @@
+     _CHECKPOINT_VERSION = value
+ 
+ 
++@_dft.log
+ def get_checkpoint_version():
+     global _CHECKPOINT_VERSION
+     return _CHECKPOINT_VERSION
+ 
+ 
++@_dft.log
+ def check_checkpoint_args(checkpoint_args):
+     """Ensure fixed arguments for a model are the same for the input
+     arguments and the one retrieved from checkpoint."""
+     args = get_args()
+ 
++    @_dft.log
+     def _compare(arg_name, old_arg_name=None, default=None):
+         if old_arg_name is not None:
+             ckpt_arg_name = old_arg_name
+@@ -94,12 +101,14 @@
+         _compare("pipeline_model_parallel_size")
+ 
+ 
++@_dft.log
+ def ensure_directory_exists(filename):
+     """Build filename's path if it does not already exists."""
+     dirname = os.path.dirname(filename)
+     os.makedirs(dirname, exist_ok=True)
+ 
+ 
++@_dft.log
+ def get_checkpoint_name(
+     checkpoints_path,
+     iteration,
+@@ -139,10 +148,12 @@
+     return os.path.join(common_path, "model_optim_rng.pt")
+ 
+ 
++@_dft.log
+ def get_distributed_optimizer_checkpoint_name(model_checkpoint_name):
+     return os.path.join(os.path.dirname(model_checkpoint_name), "distrib_optim.pt")
+ 
+ 
++@_dft.log
+ def find_checkpoint_rank_0(checkpoints_path, iteration, release=False):
+     """Finds the checkpoint for rank 0 without knowing if we are using
+     pipeline parallelism or not.
+@@ -179,12 +190,14 @@
+     return None, None
+ 
+ 
++@_dft.log
+ def get_checkpoint_tracker_filename(checkpoints_path):
+     """Tracker file rescords the latest chckpoint during
+     training to restart from."""
+     return os.path.join(checkpoints_path, "latest_checkpointed_iteration.txt")
+ 
+ 
++@_dft.log
+ @dlp.log
+ def read_metadata(tracker_filename):
+     # Read the tracker file and either set the iteration or
+@@ -232,6 +245,7 @@
+     return max_iter, release
+ 
+ 
++@_dft.log
+ @dlp.log
+ def get_rng_state():
+     """collect rng state across data parallel ranks"""
+@@ -260,6 +274,7 @@
+     return rng_state_list
+ 
+ 
++@_dft.log
+ @dlp.log
+ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
+     """Save a model checkpoint."""
+@@ -341,6 +356,7 @@
+         if args.no_pipeline_parallel:
+             original_state_dict = model[0].module.state_dict
+ 
++            @_dft.log
+             def state_dict_for_save_checkpoint_deepspeed(
+                 destination=None, prefix="", keep_vars=False
+             ):
+@@ -387,6 +403,7 @@
+         torch.distributed.barrier()
+ 
+ 
++@_dft.log
+ @dlp.log
+ def _transpose_first_dim(t, num_splits, num_splits_first, model):
+     input_shape = t.size()
+@@ -433,6 +450,7 @@
+     return t
+ 
+ 
++@_dft.log
+ def fix_query_key_value_ordering(model, checkpoint_version):
+     """Fix up query/key/value matrix ordering if checkpoint
+     version is smaller than 2.0
+@@ -466,6 +484,7 @@
+         )
+ 
+ 
++@_dft.log
+ @dlp.log
+ def _load_base_checkpoint(load_dir, rank0=False):
+     """Load the base state_dict from the given directory
+@@ -528,6 +547,7 @@
+     return state_dict, release
+ 
+ 
++@_dft.log
+ @dlp.log
+ def load_args_from_checkpoint(args, load_arg="load"):
+     """Set required arguments from the checkpoint specified in the
+@@ -575,6 +595,7 @@
+             not getattr(checkpoint_args, "disable_bias_linear"),
+         )
+ 
++    @_dft.log
+     def _set_arg(arg_name, old_arg_name=None, force=False):
+         if not force and getattr(args, arg_name, None) is not None:
+             return
+@@ -617,6 +638,7 @@
+     return args, checkpoint_args
+ 
+ 
++@_dft.log
+ @dlp.log
+ def load_lr_state_dict(strict: bool = False) -> dict:
+     """Load {iteration, lr} from .yaml file when restoring from checkpoint."""
+@@ -640,6 +662,7 @@
+     return lr_state_dict
+ 
+ 
++@_dft.log
+ @dlp.log
+ def save_lr_state_dict() -> None:
+     """Save {iteration, lr} to .yaml file for safe-keeping.
+@@ -659,6 +682,7 @@
+         yaml.dump({"iteration": args.iteration, "lr": args.lr}, f)
+ 
+ 
++@_dft.log
+ @dlp.log
+ def load_checkpoint(
+     model,
+@@ -910,6 +934,7 @@
+     return iteration
+ 
+ 
++@_dft.log
+ @dlp.log
+ def load_biencoder_checkpoint(
+     model, only_query_model=False, only_context_model=False, custom_load_path=None
+@@ -958,6 +983,7 @@
+     return model
+ 
+ 
++@_dft.log
+ def _universal_checkpoint_info(model):
+     args = get_args()
+     tokenizer = get_tokenizer()
+Binary files $WS/baseline/source/megatron/core/fusions/__pycache__/fused_softmax.cpython-313.pyc and $WS/annotated/source/megatron/core/fusions/__pycache__/fused_softmax.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/fusions/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/megatron/core/fusions/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/pipeline_parallel/__pycache__/deepspeed_zbh1_engine.cpython-313.pyc and $WS/annotated/source/megatron/core/pipeline_parallel/__pycache__/deepspeed_zbh1_engine.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/pipeline_parallel/__pycache__/deepspeed_zbh1_schedule.cpython-313.pyc and $WS/annotated/source/megatron/core/pipeline_parallel/__pycache__/deepspeed_zbh1_schedule.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/pipeline_parallel/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/megatron/core/pipeline_parallel/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/pipeline_parallel/__pycache__/p2p_communication.cpython-313.pyc and $WS/annotated/source/megatron/core/pipeline_parallel/__pycache__/p2p_communication.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/pipeline_parallel/__pycache__/schedules.cpython-313.pyc and $WS/annotated/source/megatron/core/pipeline_parallel/__pycache__/schedules.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/__pycache__/enums.cpython-313.pyc and $WS/annotated/source/megatron/core/__pycache__/enums.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/megatron/core/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/__pycache__/model_parallel_config.cpython-313.pyc and $WS/annotated/source/megatron/core/__pycache__/model_parallel_config.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/__pycache__/package_info.cpython-313.pyc and $WS/annotated/source/megatron/core/__pycache__/package_info.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/__pycache__/parallel_state.cpython-313.pyc and $WS/annotated/source/megatron/core/__pycache__/parallel_state.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/__pycache__/utils.cpython-313.pyc and $WS/annotated/source/megatron/core/__pycache__/utils.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/sequence_parallel/__pycache__/cross_entropy.cpython-313.pyc and $WS/annotated/source/megatron/core/sequence_parallel/__pycache__/cross_entropy.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/sequence_parallel/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/megatron/core/sequence_parallel/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/tensor_parallel/__pycache__/cross_entropy.cpython-313.pyc and $WS/annotated/source/megatron/core/tensor_parallel/__pycache__/cross_entropy.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/tensor_parallel/__pycache__/data.cpython-313.pyc and $WS/annotated/source/megatron/core/tensor_parallel/__pycache__/data.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/tensor_parallel/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/megatron/core/tensor_parallel/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/tensor_parallel/__pycache__/layers.cpython-313.pyc and $WS/annotated/source/megatron/core/tensor_parallel/__pycache__/layers.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/tensor_parallel/__pycache__/mappings.cpython-313.pyc and $WS/annotated/source/megatron/core/tensor_parallel/__pycache__/mappings.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/tensor_parallel/__pycache__/random.cpython-313.pyc and $WS/annotated/source/megatron/core/tensor_parallel/__pycache__/random.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/tensor_parallel/__pycache__/utils.cpython-313.pyc and $WS/annotated/source/megatron/core/tensor_parallel/__pycache__/utils.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/tensor_parallel/__pycache__/weight_grad_store.cpython-313.pyc and $WS/annotated/source/megatron/core/tensor_parallel/__pycache__/weight_grad_store.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/transformer/__pycache__/core_attention.cpython-313.pyc and $WS/annotated/source/megatron/core/transformer/__pycache__/core_attention.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/transformer/__pycache__/enums.cpython-313.pyc and $WS/annotated/source/megatron/core/transformer/__pycache__/enums.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/transformer/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/megatron/core/transformer/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/transformer/__pycache__/module.cpython-313.pyc and $WS/annotated/source/megatron/core/transformer/__pycache__/module.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/transformer/__pycache__/transformer_config.cpython-313.pyc and $WS/annotated/source/megatron/core/transformer/__pycache__/transformer_config.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/core/transformer/__pycache__/utils.cpython-313.pyc and $WS/annotated/source/megatron/core/transformer/__pycache__/utils.cpython-313.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/data/blendable_dataset.py $WS/annotated/source/megatron/data/blendable_dataset.py
+--- $WS/baseline/source/megatron/data/blendable_dataset.py	2026-07-26 11:55:20.056476000 -0700
++++ $WS/annotated/source/megatron/data/blendable_dataset.py	2026-07-26 12:22:40.639180000 -0700
+@@ -17,6 +17,8 @@
+ from mpi4py import MPI
+ 
+ from megatron.utils import get_logger
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("data")
+ 
+ log = get_logger(__name__, rank_zero_only=True)
+ 
+@@ -25,6 +27,7 @@
+ 
+ class BlendableDataset(torch.utils.data.Dataset):
+ 
++    @_dft.log_init
+     @dlp.log
+     def __init__(self, datasets, weights, size, *, data_cache_path=None):
+ 
+@@ -41,6 +44,7 @@
+         weights /= sum_weights
+ 
+         # Build indicies.
++        @_dft.log
+         @dlp.log
+         def _build_indices():
+             start_time = time.perf_counter()
+@@ -154,9 +158,11 @@
+             pass
+         log.info("> size of blendable dataset: " "{} samples".format(self.size))
+ 
++    @_dft.log
+     def __len__(self):
+         return self.size
+ 
++    @_dft.log
+     @dlp.log
+     def __getitem__(self, idx):
+         dataset_idx = self.dataset_index[idx]
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/data/data_samplers.py $WS/annotated/source/megatron/data/data_samplers.py
+--- $WS/baseline/source/megatron/data/data_samplers.py	2026-07-26 11:55:20.058474000 -0700
++++ $WS/annotated/source/megatron/data/data_samplers.py	2026-07-26 12:22:23.175326000 -0700
+@@ -9,8 +9,11 @@
+ from megatron import get_args
+ from megatron.core import mpu
+ from deepspeed.runtime.dataloader import RepeatingLoader
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("data")
+ 
+ 
++@_dft.log
+ def build_pretraining_data_loader(dataset, consumed_samples):
+     """Buld dataloader given an input dataset."""
+ 
+@@ -59,6 +62,7 @@
+ 
+ class MegatronPretrainingSampler:
+ 
++    @_dft.log_init
+     def __init__(
+         self,
+         total_samples,
+@@ -91,14 +95,17 @@
+             f"{self.data_parallel_rank}, {data_parallel_size}"
+         )
+ 
++    @_dft.log
+     def __len__(self):
+         return self.total_samples
+ 
++    @_dft.log
+     def get_start_end_idx(self):
+         start_idx = self.data_parallel_rank * self.micro_batch_size
+         end_idx = start_idx + self.micro_batch_size
+         return start_idx, end_idx
+ 
++    @_dft.log
+     def __iter__(self):
+         batch = []
+         # Last batch will be dropped if drop_last is not set False
+@@ -117,18 +124,22 @@
+ 
+ class RandomSeedDataset(Dataset):
+ 
++    @_dft.log_init
+     def __init__(self, dataset):
+         args = get_args()
+         self.base_seed = args.seed
+         self.curr_seed = args.seed
+         self.dataset = dataset
+ 
++    @_dft.log
+     def __len__(self):
+         return len(self.dataset)
+ 
++    @_dft.log
+     def set_epoch(self, epoch):
+         self.curr_seed = self.base_seed + epoch
+ 
++    @_dft.log
+     def __getitem__(self, idx):
+         seed = idx + self.curr_seed
+         torch.manual_seed(seed)
+@@ -139,6 +150,7 @@
+ 
+ class MegatronPretrainingRandomSampler:
+ 
++    @_dft.log_init
+     def __init__(
+         self,
+         dataset,
+@@ -173,9 +185,11 @@
+             f"{self.data_parallel_rank}, {data_parallel_size}"
+         )
+ 
++    @_dft.log
+     def __len__(self):
+         return self.total_samples
+ 
++    @_dft.log
+     def __iter__(self):
+         active_total_samples = self.total_samples - self.last_batch_size
+         self.epoch = self.consumed_samples // active_total_samples
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/data/gpt_dataset.py $WS/annotated/source/megatron/data/gpt_dataset.py
+--- $WS/baseline/source/megatron/data/gpt_dataset.py	2026-07-26 11:55:20.062477000 -0700
++++ $WS/annotated/source/megatron/data/gpt_dataset.py	2026-07-26 12:21:49.920943000 -0700
+@@ -22,12 +22,15 @@
+ 
+ from megatron.utils import PerfTrace, Profile, get_logger
+ from mpi4py import MPI
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("data")
+ 
+ dlp = Profile("DATASET")
+ 
+ log = get_logger(__name__, rank_zero_only=True)
+ 
+ 
++@_dft.log
+ @dlp.log
+ def build_train_valid_test_datasets(
+     data_prefix,
+@@ -78,6 +81,7 @@
+             This is for building individual dataset from each dataset file
+             """
+ 
++            @_dft.log_init
+             @dlp.log
+             def __init__(
+                 self,
+@@ -114,6 +118,7 @@
+                 self.build = False
+                 self.corpus = corpus
+ 
++            @_dft.log
+             @dlp.log
+             def Build(self):
+                 self.dataset = _build_train_valid_test_datasets_single(
+@@ -133,6 +138,7 @@
+ 
+         class BuildCorpusDataset(torch.utils.data.Dataset):
+ 
++            @_dft.log_init
+             @dlp.log
+             def __init__(self, dataset_builders):
+                 self.dataset_builders = dataset_builders
+@@ -145,6 +151,7 @@
+                 self.num_samples = np.sum(num_samples_list)
+                 args = get_args()
+ 
++                @_dft.log
+                 @dlp.log
+                 def _build_indices_blended():
+                     start_time = time.time()
+@@ -165,6 +172,7 @@
+                     )
+                     return dataset_index, dataset_sample_index
+ 
++                @_dft.log
+                 @dlp.log
+                 def _build_indices_concat():
+                     start_time = time.time()
+@@ -183,12 +191,14 @@
+                     )
+                     return dataset_index, dataset_sample_index
+             
++                @_dft.log
+                 def _build_indices():
+                     if args.blend_sample_in_corpus:
+                         return _build_indices_blended()
+                     else:
+                         return _build_indices_concat()
+ 
++                @_dft.log
+                 def _cache_indices():
+                     desc = self.dataset_builders[0].corpus
+                     desc += f"\n {self.num_samples}"
+@@ -257,9 +267,11 @@
+                     + f"{dataset_builders[0].seed}"
+                 )
+ 
++            @_dft.log
+             def __len__(self):
+                 return self.num_samples
+ 
++            @_dft.log
+             @dlp.log
+             def __getitem__(self, idx):
+                 id_shuffle = self.shuffle_index[idx]
+@@ -282,6 +294,7 @@
+         # Build individual datasets.
+         args = get_args()
+ 
++        @_dft.log
+         @dlp.log
+         def build_corpus_datasets(dataset_type="train"):
+             start_time = time.time()
+@@ -448,6 +461,7 @@
+         return (train_dataset, valid_dataset, test_dataset)
+ 
+ 
++@_dft.log
+ @dlp.log
+ def _build_train_valid_test_datasets(
+     data_prefix,
+@@ -472,6 +486,7 @@
+     # Print stats about the splits.
+     log.debug(" > dataset split:")
+ 
++    @_dft.log
+     def print_split_stats(name, index):
+         log.debug("    {}:".format(name))
+         log.debug(
+@@ -485,6 +500,7 @@
+     print_split_stats("validation", 1)
+     print_split_stats("test", 2)
+ 
++    @_dft.log
+     def build_dataset(index, name):
+         dataset = None
+         if splits[index + 1] > splits[index]:
+@@ -512,6 +528,7 @@
+     return (train_dataset, valid_dataset, test_dataset)
+ 
+ 
++@_dft.log
+ @dlp.log
+ def _build_train_valid_test_datasets_single(
+     data_prefix,
+@@ -539,6 +556,7 @@
+     # Print stats about the splits.
+     log.debug(" > dataset split:")
+ 
++    @_dft.log
+     def print_split_stats(name, index):
+         log.debug("    {}:".format(name))
+         log.debug(
+@@ -552,6 +570,7 @@
+     print_split_stats("validation", 1)
+     print_split_stats("test", 2)
+ 
++    @_dft.log
+     def build_dataset(index, name):
+         dataset = None
+         if splits[index + 1] > splits[index]:
+@@ -580,6 +599,7 @@
+         return build_dataset(2, "test")
+ 
+ 
++@_dft.log
+ @dlp.log
+ def build_dataset(
+     dataset_name,
+@@ -638,6 +658,7 @@
+     return dataset
+ 
+ 
++@_dft.log
+ @dlp.log
+ def _build_dataset(
+     dataset_name,
+@@ -684,6 +705,7 @@
+     return dataset
+ 
+ 
++@_dft.log
+ @dlp.log
+ def get_indexed_dataset_(data_prefix, data_impl, skip_warmup):
+     """Build indexed dataset."""
+@@ -702,6 +724,7 @@
+ 
+ class GPTDataset(torch.utils.data.Dataset):
+ 
++    @_dft.log_init
+     @dlp.log
+     def __init__(
+         self,
+@@ -740,11 +763,13 @@
+             )
+         )
+ 
++    @_dft.log
+     def __len__(self):
+         # -1 is due to data structure used to retieve the index:
+         #    sample i --> [sample_idx[i], sample_idx[i+1])
+         return self.sample_idx.shape[0] - 1
+ 
++    @_dft.log
+     @dlp.log
+     def __getitem__(self, idx):
+         args = get_args()
+@@ -826,6 +851,7 @@
+         return sample_dict
+ 
+ 
++@_dft.log
+ @dlp.log
+ def _build_index_mappings(
+     name,
+@@ -1048,11 +1074,13 @@
+     return doc_idx, sample_idx, shuffle_idx, desc, desc_hash
+ 
+ 
++@_dft.log
+ def _num_tokens(documents, sizes):
+     """Total number of tokens in the dataset."""
+     return np.sum(sizes[documents])
+ 
+ 
++@_dft.log
+ def _num_epochs(tokens_per_epoch, seq_length, num_samples):
+     """Based on number of samples and sequence lenght, calculate how many
+     epochs will be needed."""
+@@ -1068,6 +1096,7 @@
+             return num_epochs
+ 
+ 
++@_dft.log
+ @dlp.log
+ def _build_doc_idx(documents, num_epochs, np_rng, separate_last_epoch):
+     """Build an array with length = number-of-epochs * number-of-dcuments.
+@@ -1085,6 +1114,7 @@
+     return np.concatenate((doc_idx_first, doc_idx_last))
+ 
+ 
++@_dft.log
+ @dlp.log
+ def _build_sample_idx(sizes, doc_idx, seq_length, num_epochs, tokens_per_epoch):
+     """Sample index mapping is a 2D array with sizes
+@@ -1134,6 +1164,7 @@
+     return sample_idx
+ 
+ 
++@_dft.log
+ @dlp.log
+ def _build_shuffle_idx(num_samples, total_size, np_rng):
+     """Build the range [0, size) and shuffle."""
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/data/indexed_dataset.py $WS/annotated/source/megatron/data/indexed_dataset.py
+--- $WS/baseline/source/megatron/data/indexed_dataset.py	2026-07-26 11:55:20.070478000 -0700
++++ $WS/annotated/source/megatron/data/indexed_dataset.py	2026-07-26 16:03:39.321387000 -0700
+@@ -25,12 +25,15 @@
+ 
+ # from megatron import print_rank_0
+ from megatron.utils import Profile, get_logger
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("data")
+ 
+ log = get_logger(__name__)
+ 
+ dlp = Profile("DATASET")
+ 
+ 
++@_dft.log
+ def __best_fitting_dtype(vocab_size=None):
+     if vocab_size is not None and vocab_size < 65500:
+         return np.uint16
+@@ -38,10 +41,12 @@
+         return np.int32
+ 
+ 
++@_dft.log
+ def get_available_dataset_impl():
+     return ["lazy", "cached", "mmap"]
+ 
+ 
++@_dft.log
+ def infer_dataset_impl(path):
+     if IndexedDataset.exists(path):
+         with open(index_file_path(path), "rb") as f:
+@@ -60,6 +65,7 @@
+         return None
+ 
+ 
++@_dft.log
+ def make_builder(out_file, impl, vocab_size=None):
+     if impl == "mmap":
+         return MMapIndexedDatasetBuilder(
+@@ -69,6 +75,7 @@
+         return IndexedDatasetBuilder(out_file)
+ 
+ 
++@_dft.log
+ def make_dataset(path, impl, skip_warmup=False):
+     if not IndexedDataset.exists(path):
+         print(f"Dataset does not exist: {path}")
+@@ -88,6 +95,7 @@
+     return None
+ 
+ 
++@_dft.log
+ def dataset_exists(path, impl):
+     if impl == "mmap":
+         return MMapIndexedDataset.exists(path)
+@@ -95,12 +103,14 @@
+         return IndexedDataset.exists(path)
+ 
+ 
++@_dft.log
+ def read_longs(f, n):
+     a = np.empty(n, dtype=np.int64)
+     f.readinto(a)
+     return a
+ 
+ 
++@_dft.log
+ def write_longs(f, a):
+     f.write(np.array(a, dtype=np.int64))
+ 
+@@ -117,6 +127,7 @@
+ }
+ 
+ 
++@_dft.log
+ def code(dtype):
+     for k in dtypes.keys():
+         if dtypes[k] == dtype:
+@@ -124,14 +135,17 @@
+     raise ValueError(dtype)
+ 
+ 
++@_dft.log
+ def index_file_path(prefix_path):
+     return prefix_path + ".idx"
+ 
+ 
++@_dft.log
+ def data_file_path(prefix_path):
+     return prefix_path + ".bin"
+ 
+ 
++@_dft.log
+ def create_doc_idx(sizes):
+     doc_idx = [0]
+     for i, s in enumerate(sizes):
+@@ -145,12 +159,14 @@
+ 
+     _HDR_MAGIC = b"TNTIDX\x00\x00"
+ 
++    @_dft.log_init
+     def __init__(self, path):
+         super().__init__()
+         self.path = path
+         self.data_file = None
+         self.read_index(path)
+ 
++    @_dft.log
+     @dlp.log
+     def read_index(self, path):
+         with open(index_file_path(path), "rb") as f:
+@@ -170,19 +186,23 @@
+             self.sizes = read_longs(f, self.s)
+             self.doc_idx = read_longs(f, self.doc_count)
+ 
++    @_dft.log
+     @dlp.log
+     def read_data(self, path):
+         self.data_file = open(data_file_path(path), "rb", buffering=0)
+ 
++    @_dft.log
+     def check_index(self, i):
+         if i < 0 or i >= self._len:
+             raise IndexError("index out of range")
+ 
++    @_dft.log
+     def __del__(self):
+         if self.data_file:
+             self.data_file.close()
+ 
+     # @lru_cache(maxsize=8)
++    @_dft.log
+     @dlp.log
+     def __getitem__(self, idx):
+         if not self.data_file:
+@@ -208,28 +228,34 @@
+             sents = np.split(a, offsets[:-1])
+             return sents
+ 
++    @_dft.log
+     def __len__(self):
+         return self._len
+ 
++    @_dft.log
+     def num_tokens(self, index):
+         return self.sizes[index]
+ 
++    @_dft.log
+     def size(self, index):
+         return self.sizes[index]
+ 
+     @staticmethod
+     def exists(path):
+-        return os.path.exists(index_file_path(path)) and os.path.exists(
+-            data_file_path(path)
+-        )
++        with DFTracerFn("data", name="exists"):
++            return os.path.exists(index_file_path(path)) and os.path.exists(
++                data_file_path(path)
++            )
+ 
+     @property
+     def supports_prefetch(self):
+-        return False  # avoid prefetching to save memory
++        with DFTracerFn("data", name="supports_prefetch"):
++            return False  # avoid prefetching to save memory
+ 
+ 
+ class IndexedCachedDataset(IndexedDataset):
+ 
++    @_dft.log_init
+     def __init__(self, path):
+         super().__init__(path)
+         self.cache = None
+@@ -237,8 +263,10 @@
+ 
+     @property
+     def supports_prefetch(self):
+-        return True
++        with DFTracerFn("data", name="supports_prefetch"):
++            return True
+ 
++    @_dft.log
+     @dlp.log
+     def prefetch(self, indices):
+         if all(i in self.cache_index for i in indices):
+@@ -265,6 +293,7 @@
+             self.data_file = None
+ 
+     # @lru_cache(maxsize=8)
++    @_dft.log
+     @dlp.log
+     def __getitem__(self, idx):
+         if isinstance(idx, int):
+@@ -294,6 +323,7 @@
+         np.float64: 8,
+     }
+ 
++    @_dft.log_init
+     @dlp.log
+     def __init__(self, out_file, dtype=np.int32):
+         self.out_file = open(out_file, "wb")
+@@ -304,6 +334,7 @@
+         self.element_size = self.element_sizes[self.dtype]
+         self.doc_idx = [0]
+ 
++    @_dft.log
+     @dlp.log
+     def add_item(self, tensor):
+         bytes = self.out_file.write(np.array(tensor.numpy(), dtype=self.dtype))
+@@ -312,9 +343,11 @@
+             self.sizes.append(s)
+         self.dim_offsets.append(self.dim_offsets[-1] + len(tensor.size()))
+ 
++    @_dft.log
+     def end_document(self):
+         self.doc_idx.append(len(self.sizes))
+ 
++    @_dft.log
+     @dlp.log
+     def merge_file_(self, another_file):
+         index = IndexedDataset(another_file)
+@@ -341,6 +374,7 @@
+                 else:
+                     break
+ 
++    @_dft.log
+     def finalize(self, index_file):
+         self.out_file.close()
+         index = open(index_file, "wb")
+@@ -356,6 +390,7 @@
+         index.close()
+ 
+ 
++@_dft.log
+ @dlp.log
+ def _warmup_mmap_file(path):
+     with open(path, "rb") as stream:
+@@ -363,6 +398,7 @@
+             pass
+ 
+ 
++@_dft.log
+ def exscan_from_cumsum_(arr):
+     # given an array holding the result of an inclusive scan (cumsum),
+     # convert to an exclusive scan (shift to the right)
+@@ -373,6 +409,7 @@
+         arr[0] = 0
+ 
+ 
++@_dft.log
+ def get_pointers_with_total(sizes, elemsize, dtype):
+     """Return a numpy array of type np.dtype giving the byte offsets.
+ 
+@@ -401,9 +438,11 @@
+         _HDR_MAGIC = b"MMIDIDX\x00\x00"
+ 
+         @classmethod
++        @_dft.log
+         def writer(cls, path, dtype):
+             class _Writer(object):
+ 
++                @_dft.log
+                 def __enter__(self):
+                     self._file = open(path, "wb")
+ 
+@@ -427,6 +466,7 @@
+                     )
+                     return pointers
+ 
++                @_dft.log
+                 @dlp.log
+                 def write(self, sizes, doc_idx):
+                     self._file.write(struct.pack("<Q", len(sizes)))
+@@ -444,11 +484,13 @@
+                     doc_idx = np.array(doc_idx, dtype=np.int64)
+                     self._file.write(doc_idx.tobytes(order="C"))
+ 
++                @_dft.log
+                 def __exit__(self, exc_type, exc_val, exc_tb):
+                     self._file.close()
+ 
+             return _Writer()
+ 
++        @_dft.log_init
+         @dlp.log
+         def __init__(self, path, skip_warmup=False):
+             with open(path, "rb") as stream:
+@@ -493,29 +535,41 @@
+                 offset=offset + self._sizes.nbytes + self._pointers.nbytes,
+             )
+ 
++        @_dft.log
+         def __del__(self):
+             self._bin_buffer_mmap._mmap.close()
+             del self._bin_buffer_mmap
+ 
+         @property
+         def dtype(self):
+-            return self._dtype
++            with DFTracerFn("data", name="dtype"):
++                return self._dtype
+ 
+         @property
+         def sizes(self):
+-            return self._sizes
++            with DFTracerFn("data", name="sizes"):
++                return self._sizes
+ 
+         @property
+         def doc_idx(self):
+-            return self._doc_idx
++            with DFTracerFn("data", name="doc_idx"):
++                return self._doc_idx
+ 
++        # NOTE: @_dft.log removed here (STEP 6 build-smoke fix) -- dft_fn.log
++        # uses inspect.getfullargspec() to introspect the wrapped callable,
++        # which raises TypeError('unsupported callable') on a
++        # functools.lru_cache wrapper object (a builtin, not introspectable).
++        # __getitem__ here is a trivial pointer/size lookup, not a hot I/O
++        # call worth tracing, so it is intentionally left unannotated.
+         @lru_cache(maxsize=8)
+         def __getitem__(self, i):
+             return self._pointers[i], self._sizes[i]
+ 
++        @_dft.log
+         def __len__(self):
+             return self._len
+ 
++    @_dft.log_init
+     def __init__(self, path, skip_warmup=False):
+         super().__init__()
+ 
+@@ -525,12 +579,15 @@
+ 
+         self._do_init(path, skip_warmup)
+ 
++    @_dft.log
+     def __getstate__(self):
+         return self._path
+ 
++    @_dft.log
+     def __setstate__(self, state):
+         self._do_init(state, skip_warmup=True)
+ 
++    @_dft.log
+     @dlp.log
+     def _do_init(self, path, skip_warmup):
+         self._path = path
+@@ -547,15 +604,18 @@
+         log.debug("    creating memory view of numpy buffer...")
+         self._bin_buffer = memoryview(self._bin_buffer_mmap)
+ 
++    @_dft.log
+     def __del__(self):
+         self._bin_buffer_mmap._mmap.close()
+         del self._bin_buffer_mmap
+         del self._index
+ 
++    @_dft.log
+     def __len__(self):
+         return len(self._index)
+ 
+     # @lru_cache(maxsize=8)
++    @_dft.log
+     @dlp.log
+     def __getitem__(self, idx):
+         if isinstance(idx, (int, np.integer)):
+@@ -580,6 +640,7 @@
+         else:
+             raise TypeError("Unexpected type received for idx: {}".format(type(idx)))
+ 
++    @_dft.log
+     @dlp.log
+     def get(self, idx, offset=0, length=None):
+         """Retrieves a single item from the dataset with the option to only
+@@ -598,50 +659,61 @@
+ 
+     @property
+     def sizes(self):
+-        return self._index.sizes
++        with DFTracerFn("data", name="sizes"):
++            return self._index.sizes
+ 
++    @_dft.log
+     def size(self, index):
+         return self._index.sizes[index]
+ 
+     @property
+     def doc_idx(self):
+-        return self._index.doc_idx
++        with DFTracerFn("data", name="doc_idx"):
++            return self._index.doc_idx
+ 
++    @_dft.log
+     def get_doc_idx(self):
+         return self._index._doc_idx
+ 
++    @_dft.log
+     def set_doc_idx(self, doc_idx_):
+         self._index._doc_idx = doc_idx_
+ 
+     @property
+     def supports_prefetch(self):
+-        return False
++        with DFTracerFn("data", name="supports_prefetch"):
++            return False
+ 
+     @staticmethod
+     def exists(path):
+-        return os.path.exists(index_file_path(path)) and os.path.exists(
+-            data_file_path(path)
+-        )
++        with DFTracerFn("data", name="exists"):
++            return os.path.exists(index_file_path(path)) and os.path.exists(
++                data_file_path(path)
++            )
+ 
+     @property
+     def dtype(self):
+-        return self._index.dtype
++        with DFTracerFn("data", name="dtype"):
++            return self._index.dtype
+ 
+ 
+ class MMapIndexedDatasetBuilder(object):
+ 
++    @_dft.log_init
+     def __init__(self, out_file, dtype=np.int64):
+         self._data_file = open(out_file, "wb")
+         self._dtype = dtype
+         self._sizes = []
+         self._doc_idx = [0]
+ 
++    @_dft.log
+     @dlp.log
+     def add_item(self, tensor):
+         np_array = np.array(tensor.numpy(), dtype=self._dtype)
+         self._data_file.write(np_array.tobytes(order="C"))
+         self._sizes.append(np_array.size)
+ 
++    @_dft.log
+     @dlp.log
+     def add_doc(self, tensor, sizes):
+         np_array = np.array(tensor, dtype=self._dtype)
+@@ -649,9 +721,11 @@
+         self._sizes.extend(sizes)
+         self._doc_idx.append(len(self._sizes))
+ 
++    @_dft.log
+     def end_document(self):
+         self._doc_idx.append(len(self._sizes))
+ 
++    @_dft.log
+     @dlp.log
+     def merge_file_(self, another_file):
+         # Concatenate index
+@@ -666,6 +740,7 @@
+         with open(data_file_path(another_file), "rb") as f:
+             shutil.copyfileobj(f, self._data_file)
+ 
++    @_dft.log
+     def finalize(self, index_file):
+         self._data_file.close()
+ 
+Binary files $WS/baseline/source/megatron/data/__pycache__/autoaugment.cpython-313.pyc and $WS/annotated/source/megatron/data/__pycache__/autoaugment.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/data/__pycache__/blendable_dataset.cpython-313.pyc and $WS/annotated/source/megatron/data/__pycache__/blendable_dataset.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/data/__pycache__/data_samplers.cpython-313.pyc and $WS/annotated/source/megatron/data/__pycache__/data_samplers.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/data/__pycache__/dataset_utils.cpython-313.pyc and $WS/annotated/source/megatron/data/__pycache__/dataset_utils.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/data/__pycache__/gpt_dataset.cpython-313.pyc and $WS/annotated/source/megatron/data/__pycache__/gpt_dataset.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/data/__pycache__/image_folder.cpython-313.pyc and $WS/annotated/source/megatron/data/__pycache__/image_folder.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/data/__pycache__/indexed_dataset.cpython-313.pyc and $WS/annotated/source/megatron/data/__pycache__/indexed_dataset.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/data/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/megatron/data/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/data/__pycache__/vit_dataset.cpython-313.pyc and $WS/annotated/source/megatron/data/__pycache__/vit_dataset.cpython-313.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/fused_kernels/build/build.ninja $WS/annotated/source/megatron/fused_kernels/build/build.ninja
+--- $WS/baseline/source/megatron/fused_kernels/build/build.ninja	1969-12-31 16:00:00.000000000 -0800
++++ $WS/annotated/source/megatron/fused_kernels/build/build.ninja	2026-07-27 09:03:29.043023000 -0700
+@@ -0,0 +1,37 @@
++ninja_required_version = 1.3
++cxx = /opt/cray/pe/mpich/9.0.1/ofi/crayclang/20.0/bin/mpicxx
++nvcc = /opt/rocm-6.4.3/bin/hipcc
++
++cflags = -DTORCH_EXTENSION_NAME=scaled_softmax_cuda -DTORCH_API_INCLUDE_EXTENSION_H -I$WS/annotated/source/megatron/fused_kernels -isystem $WS/install/venv/lib/python3.13/site-packages/torch/include -isystem $WS/install/venv/lib/python3.13/site-packages/torch/include/torch/csrc/api/include -isystem $WS/install/venv/lib/python3.13/site-packages/torch/include/THH -isystem /opt/rocm-6.4.3/include -isystem /collab/usr/gapps/python/toss_4_x86_64_ib/anaconda3-2025.3.1/include/python3.13 -fPIC -std=c++17 -O3
++post_cflags = -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC
++cuda_cflags = -DWITH_HIP -DTORCH_EXTENSION_NAME=scaled_softmax_cuda -DTORCH_API_INCLUDE_EXTENSION_H -I$WS/annotated/source/megatron/fused_kernels -isystem $WS/install/venv/lib/python3.13/site-packages/torch/include -isystem $WS/install/venv/lib/python3.13/site-packages/torch/include/torch/csrc/api/include -isystem $WS/install/venv/lib/python3.13/site-packages/torch/include/THH -isystem /opt/rocm-6.4.3/include -isystem /collab/usr/gapps/python/toss_4_x86_64_ib/anaconda3-2025.3.1/include/python3.13 -fPIC -std=c++17 -O3 -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 --offload-arch=gfx942 -fno-gpu-rdc -O3 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1
++cuda_post_cflags = 
++cuda_dlink_post_cflags = 
++sycl_dlink_post_cflags = 
++ldflags = -shared -L$WS/install/venv/lib/python3.13/site-packages/torch/lib -lc10 -lc10_hip -ltorch_cpu -ltorch_hip -ltorch -ltorch_python -L/opt/rocm-6.4.3/lib -lamdhip64
++
++rule compile
++  command = $cxx -MMD -MF $out.d $cflags -c $in -o $out $post_cflags
++  depfile = $out.d
++  deps = gcc
++
++rule cuda_compile
++  command = $nvcc  $cuda_cflags -c $in -o $out $cuda_post_cflags
++
++
++
++
++
++rule link
++  command = $cxx $in $ldflags -o $out
++
++build scaled_softmax_hip.cuda.o: cuda_compile $WS/annotated/source/megatron/fused_kernels/scaled_softmax_hip.hip
++build scaled_softmax_hip.o: compile $WS/annotated/source/megatron/fused_kernels/scaled_softmax_hip.cpp
++
++
++
++
++
++build scaled_softmax_cuda.so: link scaled_softmax_hip.cuda.o scaled_softmax_hip.o
++
++default scaled_softmax_cuda.so
+Binary files $WS/baseline/source/megatron/fused_kernels/build/.ninja_deps and $WS/annotated/source/megatron/fused_kernels/build/.ninja_deps differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/fused_kernels/build/.ninja_log $WS/annotated/source/megatron/fused_kernels/build/.ninja_log
+--- $WS/baseline/source/megatron/fused_kernels/build/.ninja_log	1969-12-31 16:00:00.000000000 -0800
++++ $WS/annotated/source/megatron/fused_kernels/build/.ninja_log	2026-07-27 09:03:29.382923000 -0700
+@@ -0,0 +1,86 @@
++# ninja log v7
++2	48243	1785104337828332000	scaled_upper_triang_masked_softmax_hip.o	c83755c7f05ec3a1
++5	39057	1785132820299108000	scaled_upper_triang_masked_softmax_hip.cuda.o	5f07f167fe6d3c06
++1	260	1785136886610139000	scaled_upper_triang_masked_softmax_cuda.so	2911abba170db8e
++3	42179	1785104702479406000	scaled_masked_softmax_hip.o	ce53c6641ac27b43
++2	33848	1785132860098201000	scaled_masked_softmax_hip.cuda.o	6bbf96070f6acf9e
++1	261	1785136913144063000	scaled_masked_softmax_cuda.so	8ad4c49f861bea7
++4	42367	1785105068604965000	scaled_softmax_hip.o	c04b1a1366f848af
++2	33733	1785132894704472000	scaled_softmax_hip.cuda.o	f2d8e07a53b7ccaa
++2	262	1785136912284955000	scaled_softmax_cuda.so	a56d0895c439fb7a
++3	257	1785136913947012000	scaled_softmax_cuda.so	2f6a448953360b44
++3	270	1785136917840956000	scaled_masked_softmax_cuda.so	fcd018a66059a2c7
++1	237	1785136920328873000	scaled_masked_softmax_cuda.so	8ad4c49f861bea7
++2	267	1785136926177878000	scaled_softmax_cuda.so	a56d0895c439fb7a
++1	256	1785136927075889000	scaled_softmax_cuda.so	2f6a448953360b44
++1	256	1785137282368050000	scaled_upper_triang_masked_softmax_cuda.so	913cc7d04cdda92d
++1	251	1785137283768046000	scaled_softmax_cuda.so	a56d0895c439fb7a
++1	229	1785137285484000000	scaled_softmax_cuda.so	2f6a448953360b44
++2	230	1785137286628953000	scaled_masked_softmax_cuda.so	fcd018a66059a2c7
++1	230	1785137287516944000	scaled_softmax_cuda.so	a56d0895c439fb7a
++2	259	1785137288272995000	scaled_upper_triang_masked_softmax_cuda.so	2911abba170db8e
++2	257	1785137289025050000	scaled_masked_softmax_cuda.so	8ad4c49f861bea7
++1	246	1785137290469010000	scaled_masked_softmax_cuda.so	fcd018a66059a2c7
++2	249	1785137291999985000	scaled_softmax_cuda.so	2f6a448953360b44
++1	256	1785137293511928000	scaled_softmax_cuda.so	a56d0895c439fb7a
++1	242	1785137295037895000	scaled_softmax_cuda.so	2f6a448953360b44
++1	262	1785137295804948000	scaled_masked_softmax_cuda.so	8ad4c49f861bea7
++1	248	1785137297123947000	scaled_softmax_cuda.so	a56d0895c439fb7a
++2	241	1785137301783861000	scaled_softmax_cuda.so	2f6a448953360b44
++1	256	1785137302653862000	scaled_softmax_cuda.so	a56d0895c439fb7a
++3	468	1785137306394842000	scaled_masked_softmax_cuda.so	fcd018a66059a2c7
++2	260	1785137307404844000	scaled_softmax_cuda.so	2f6a448953360b44
++2	249	1785137308820765000	scaled_softmax_cuda.so	a56d0895c439fb7a
++2	256	1785137309672745000	scaled_softmax_cuda.so	2f6a448953360b44
++2	274	1785137312450786000	scaled_softmax_cuda.so	a56d0895c439fb7a
++1	273	1785137319063699000	scaled_softmax_cuda.so	2f6a448953360b44
++1	251	1785137319887695000	scaled_softmax_cuda.so	a56d0895c439fb7a
++2	294	1785137321526737000	scaled_softmax_cuda.so	2f6a448953360b44
++2	251	1785137323683655000	scaled_softmax_cuda.so	a56d0895c439fb7a
++2	267	1785137324510683000	scaled_softmax_cuda.so	2f6a448953360b44
++2	270	1785137327529621000	scaled_softmax_cuda.so	a56d0895c439fb7a
++2	232	1785137795414962000	scaled_masked_softmax_cuda.so	8ad4c49f861bea7
++2	228	1785137796151920000	scaled_softmax_cuda.so	2f6a448953360b44
++1	253	1785137796985901000	scaled_upper_triang_masked_softmax_cuda.so	913cc7d04cdda92d
++1	250	1785137797811868000	scaled_masked_softmax_cuda.so	fcd018a66059a2c7
++2	287	1785137800361875000	scaled_softmax_cuda.so	a56d0895c439fb7a
++1	257	1785137804017863000	scaled_masked_softmax_cuda.so	8ad4c49f861bea7
++1	260	1785137804766820000	scaled_softmax_cuda.so	2f6a448953360b44
++2	251	1785137805525827000	scaled_softmax_cuda.so	a56d0895c439fb7a
++1	263	1785137809545760000	scaled_masked_softmax_cuda.so	fcd018a66059a2c7
++1	261	1785137810339888000	scaled_softmax_cuda.so	2f6a448953360b44
++2	259	1785137813140818000	scaled_softmax_cuda.so	a56d0895c439fb7a
++3	307	1785137814404842000	scaled_masked_softmax_cuda.so	8ad4c49f861bea7
++1	276	1785137815769741000	scaled_upper_triang_masked_softmax_cuda.so	2911abba170db8e
++2	266	1785137817088718000	scaled_softmax_cuda.so	2f6a448953360b44
++1	249	1785137818059705000	scaled_masked_softmax_cuda.so	fcd018a66059a2c7
++1	250	1785137818929769000	scaled_softmax_cuda.so	a56d0895c439fb7a
++1	244	1785137819797688000	scaled_softmax_cuda.so	2f6a448953360b44
++2	399	1785137821852736000	scaled_masked_softmax_cuda.so	8ad4c49f861bea7
++2	246	1785137823377702000	scaled_softmax_cuda.so	a56d0895c439fb7a
++3	437	1785137824860658000	scaled_softmax_cuda.so	2f6a448953360b44
++1	250	1785137825893644000	scaled_masked_softmax_cuda.so	fcd018a66059a2c7
++1	245	1785137826686659000	scaled_softmax_cuda.so	a56d0895c439fb7a
++1	273	1785137827495701000	scaled_softmax_cuda.so	2f6a448953360b44
++3	323	1785137830031652000	scaled_masked_softmax_cuda.so	8ad4c49f861bea7
++2	262	1785137831972651000	scaled_masked_softmax_cuda.so	fcd018a66059a2c7
++1	274	1785137832748646000	scaled_softmax_cuda.so	a56d0895c439fb7a
++2	257	1785137833591571000	scaled_masked_softmax_cuda.so	8ad4c49f861bea7
++1	259	1785137834365078000	scaled_softmax_cuda.so	2f6a448953360b44
++3	447	1785137837691077000	scaled_masked_softmax_cuda.so	fcd018a66059a2c7
++2	258	1785137838777031000	scaled_softmax_cuda.so	a56d0895c439fb7a
++1	255	1785137839625071000	scaled_masked_softmax_cuda.so	8ad4c49f861bea7
++2	261	1785137841123153000	scaled_softmax_cuda.so	2f6a448953360b44
++3	449	1785137843640996000	scaled_softmax_cuda.so	a56d0895c439fb7a
++1	278	1785137844654057000	scaled_masked_softmax_cuda.so	fcd018a66059a2c7
++2	260	1785137846464964000	scaled_softmax_cuda.so	2f6a448953360b44
++2	319	1785168196027002000	scaled_masked_softmax_cuda.so	8ad4c49f861bea7
++1	282	1785168197471010000	scaled_upper_triang_masked_softmax_cuda.so	913cc7d04cdda92d
++1	253	1785168198901002000	scaled_softmax_cuda.so	a56d0895c439fb7a
++2	258	1785168200213020000	scaled_masked_softmax_cuda.so	fcd018a66059a2c7
++1	462	1785168203977905000	scaled_softmax_cuda.so	2f6a448953360b44
++1	261	1785168205038957000	scaled_softmax_cuda.so	a56d0895c439fb7a
++3	441	1785168206508954000	scaled_softmax_cuda.so	2f6a448953360b44
++1	254	1785168207558940000	scaled_masked_softmax_cuda.so	8ad4c49f861bea7
++1	245	1785168208362979000	scaled_softmax_cuda.so	a56d0895c439fb7a
++1	252	1785168209130906000	scaled_softmax_cuda.so	2f6a448953360b44
+Binary files $WS/baseline/source/megatron/fused_kernels/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/megatron/fused_kernels/__pycache__/__init__.cpython-313.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/fused_kernels/scaled_masked_softmax_hip.cpp $WS/annotated/source/megatron/fused_kernels/scaled_masked_softmax_hip.cpp
+--- $WS/baseline/source/megatron/fused_kernels/scaled_masked_softmax_hip.cpp	1969-12-31 16:00:00.000000000 -0800
++++ $WS/annotated/source/megatron/fused_kernels/scaled_masked_softmax_hip.cpp	2026-07-26 15:25:01.984508000 -0700
+@@ -0,0 +1,84 @@
++// !!! This is a file automatically generated by hipify!!!
++/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved. */
++
++#include <hip/hip_fp16.h>
++#include <torch/extension.h>
++#include <vector>
++
++namespace multihead_attn {
++namespace fused_softmax {
++namespace scaled_masked_softmax {
++
++torch::Tensor fwd_cuda(
++    torch::Tensor const& input, 
++    torch::Tensor const& mask,
++    float scale_factor);
++
++torch::Tensor bwd_cuda(
++    torch::Tensor const& output_grads, 
++    torch::Tensor const& softmax_results,
++    float scale_factor);
++
++int get_batch_per_block_cuda(
++    int query_seq_len,
++    int key_seq_len,
++    int batches,
++    int attn_heads);
++
++torch::Tensor fwd(
++    torch::Tensor const& input,
++    torch::Tensor const& mask,
++    float scale_factor) {
++  AT_ASSERTM(input.dim() == 4, "expected 4D tensor");
++  AT_ASSERTM((input.scalar_type() == at::ScalarType::Half) ||
++	     (input.scalar_type() == at::ScalarType::BFloat16), 
++      "Only fp16 and bf16 are supported");
++  AT_ASSERTM(mask.dim() == 4, "expected 4D tensor");
++
++  return fwd_cuda(input, mask, scale_factor);
++}
++
++torch::Tensor bwd(
++    torch::Tensor const& output_grads, 
++    torch::Tensor const& softmax_results,
++    float scale_factor) {
++
++  AT_ASSERTM(output_grads.dim() == 4, "expected 3D tensor");
++  AT_ASSERTM(softmax_results.dim() == 4, "expected 3D tensor");
++
++  AT_ASSERTM((output_grads.scalar_type() == at::ScalarType::Half) ||
++	     (output_grads.scalar_type() == at::ScalarType::BFloat16), 
++      "Only fp16 and bf16 are supported");
++  AT_ASSERTM((softmax_results.scalar_type() == at::ScalarType::Half) ||
++	     (softmax_results.scalar_type() == at::ScalarType::BFloat16), 
++      "Only fp16 and bf16 are supported");
++
++  return bwd_cuda(output_grads, softmax_results, scale_factor);
++}
++
++int get_batch_per_block(
++    int query_seq_len,
++    int key_seq_len,
++    int batches,
++    int attn_heads) {
++    return get_batch_per_block_cuda(query_seq_len, key_seq_len, batches, attn_heads);
++}
++
++} // end namespace scaled_masked_softmax
++} // end namespace fused_softmax
++} // end namespace multihead_attn
++
++PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
++  m.def("forward", 
++        &multihead_attn::fused_softmax::scaled_masked_softmax::fwd, 
++	"Self Multihead Attention scaled, time masked softmax -- Forward.");
++
++  m.def("backward",
++        &multihead_attn::fused_softmax::scaled_masked_softmax::bwd,
++	"Self Multihead Attention scaled, time masked softmax -- Backward.");
++
++  m.def("get_batch_per_block",
++        &multihead_attn::fused_softmax::scaled_masked_softmax::get_batch_per_block,
++        "Return Batch per block size."
++  );
++}
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/fused_kernels/scaled_masked_softmax_hip.h $WS/annotated/source/megatron/fused_kernels/scaled_masked_softmax_hip.h
+--- $WS/baseline/source/megatron/fused_kernels/scaled_masked_softmax_hip.h	1969-12-31 16:00:00.000000000 -0800
++++ $WS/annotated/source/megatron/fused_kernels/scaled_masked_softmax_hip.h	2026-07-26 15:18:57.462454000 -0700
+@@ -0,0 +1,712 @@
++// !!! This is a file automatically generated by hipify!!!
++#include "hip/hip_runtime.h"
++/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved. */
++
++#pragma once
++
++#include <assert.h>
++#include <hip/hip_fp16.h>
++#include <cfloat>
++#include <limits>
++#include <stdint.h>
++#include <hip/hip_fp16.h>
++#include <c10/macros/Macros.h>
++
++namespace {
++
++template <typename Datatype, int ELEMENTS_PER_LDG>
++__device__ __inline__ void copy_vector(Datatype *dst, const Datatype *src);
++
++template <>
++__device__ __inline__ void copy_vector<c10::BFloat16, 1>(c10::BFloat16 *dst, const c10::BFloat16 *src) { *dst = *src; }
++
++template <>
++__device__ __inline__ void copy_vector<c10::BFloat16, 4>(c10::BFloat16 *dst, const c10::BFloat16 *src) { *((float2*) dst) = *((float2*) src); }
++
++template <>
++__device__ __inline__ void copy_vector<c10::Half, 1>(c10::Half *dst, const c10::Half *src) { *dst = *src; }
++
++template <>
++__device__ __inline__ void copy_vector<c10::Half, 4>(c10::Half *dst, const c10::Half *src) { *((float2*) dst) = *((float2*) src); }
++
++template <>
++__device__ __inline__ void copy_vector<uint8_t, 1>(uint8_t *dst, const uint8_t *src) { *dst = *src; }
++
++template <>
++__device__ __inline__ void copy_vector<uint8_t, 4>(uint8_t *dst, const uint8_t *src) {*((half2*) dst) = *((half2*) src); }
++
++int log2_ceil(int value) {
++    int log2_value = 0;
++    while ((1 << log2_value) < value) ++log2_value;
++    return log2_value;
++}
++
++template<typename T>
++struct Add {
++  __device__ __forceinline__ T operator()(T a, T b) const {
++    return a + b;
++  }
++};
++
++template<typename T>
++struct Max {
++  __device__ __forceinline__ T operator()(T a, T b) const {
++    return a < b ? b : a;
++  }
++};
++
++template <typename T>
++__device__ __forceinline__ T WARP_SHFL_XOR_NATIVE(T value, int laneMask, int width = warpSize, unsigned int mask = 0xffffffff)
++{
++#if TORCH_HIP_VERSION >= 9000
++    return __shfl_xor_sync(mask, value, laneMask, width);
++#else
++    return __shfl_xor(value, laneMask, width);
++#endif
++}
++
++template <typename acc_t, int WARP_BATCH, int WARP_SIZE, template<typename> class ReduceOp>
++__device__ __forceinline__ void warp_reduce(acc_t* sum) {
++    ReduceOp<acc_t> r;
++    #pragma unroll
++    for (int offset = WARP_SIZE / 2; offset > 0; offset /= 2) {
++        #pragma unroll
++        for (int i = 0;  i < WARP_BATCH;  ++i) {
++            acc_t b = WARP_SHFL_XOR_NATIVE(sum[i], offset, WARP_SIZE);
++            sum[i] = r(sum[i], b);
++        }
++    }
++}
++
++
++/*
++ * Extended softmax (from native aten pytorch) with following additional features
++ * 1) input scaling
++ */	
++template <typename input_t, typename output_t, typename acc_t, int log2_elements>
++__global__ void scaled_softmax_warp_forward(
++    output_t *dst, 
++    const input_t *src,
++    const acc_t scale, 
++    int micro_batch_size, 
++    int element_count)
++{
++    // WARP_SIZE and WARP_BATCH must match the return values batches_per_warp and 
++    // warp_size of method warp_softmax_forward_kernel.
++    constexpr int next_power_of_two = 1 << log2_elements;
++    constexpr int WARP_SIZE = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
++    constexpr int WARP_ITERATIONS = next_power_of_two / WARP_SIZE;
++    constexpr int WARP_BATCH = (next_power_of_two <= 128) ? 2 : 1;
++    constexpr int ELEMENTS_PER_LDG_STG = (WARP_ITERATIONS < 4) ? 1 : 4;
++
++    // blockDim/threadIdx = (WARP_SIZE, WARPS_PER_BLOCK, )
++    // gridDim/blockIdx = (seq_len, attn_heads, batches) 
++    int first_batch = (blockDim.y * (blockIdx.x + gridDim.x * (blockIdx.y + gridDim.y * blockIdx.z))+ threadIdx.y) * WARP_BATCH;
++
++    // micro_batch_size might not be a multiple of WARP_BATCH. Check how
++    // many batches have to computed within this WARP.
++    int local_batches = micro_batch_size - first_batch;
++    if (local_batches > WARP_BATCH)
++        local_batches = WARP_BATCH;
++
++    // there might be multiple batches per warp. compute the index within the batch
++    int local_idx = threadIdx.x;
++
++    src += first_batch * element_count + ELEMENTS_PER_LDG_STG * local_idx;
++    dst += first_batch * element_count + ELEMENTS_PER_LDG_STG * local_idx;
++
++    // load data from global memory
++    acc_t elements[WARP_BATCH][WARP_ITERATIONS];
++    input_t temp_data[ELEMENTS_PER_LDG_STG];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        int batch_element_count = (i >= local_batches) ? 0 : element_count;
++
++        #pragma unroll
++        for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
++            int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
++
++            if (element_index < batch_element_count) {
++                int itr_idx = i*element_count+it*WARP_SIZE;
++                copy_vector<input_t, ELEMENTS_PER_LDG_STG>(temp_data, src + itr_idx);
++
++                #pragma unroll
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    elements[i][it + element] = (acc_t)temp_data[element] * scale;
++                }
++            } else {
++                #pragma unroll
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    elements[i][it + element] = -std::numeric_limits<acc_t>::infinity();
++                }
++            }
++        }
++    }
++
++    // compute max_value
++    acc_t max_value[WARP_BATCH];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        max_value[i] = elements[i][0];
++        #pragma unroll
++        for (int it = 1;  it < WARP_ITERATIONS;  ++it) {
++            max_value[i] = (max_value[i] > elements[i][it]) ? max_value[i] : elements[i][it];
++        }
++    }
++    warp_reduce<acc_t, WARP_BATCH, WARP_SIZE, Max>(max_value);
++
++    acc_t sum[WARP_BATCH] { 0.0f };
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        #pragma unroll
++        for (int it = 0;  it < WARP_ITERATIONS;  ++it) {
++            elements[i][it] = std::exp((elements[i][it] - max_value[i]));
++            sum[i] += elements[i][it];
++        }
++    }
++    warp_reduce<acc_t, WARP_BATCH, WARP_SIZE, Add>(sum);
++
++    // store result
++    output_t out[ELEMENTS_PER_LDG_STG];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        if (i >= local_batches)
++            break;
++        #pragma unroll
++        for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
++            int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
++            if (element_index < element_count) {
++                #pragma unroll
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    out[element] = elements[i][it + element] / sum[i];
++                }
++                copy_vector<output_t, ELEMENTS_PER_LDG_STG>(dst + i * element_count + it * WARP_SIZE, out);  
++            } else {
++                break;
++            } 
++        }
++    }
++}
++
++
++/*
++ * Extended softmax (from native aten pytorch) with following additional features
++ * 1) input scaling
++ * 2) Explicit masking
++ */	
++template <typename input_t, typename output_t, typename acc_t, int log2_elements>
++__global__ void scaled_masked_softmax_warp_forward(
++    output_t *dst, 
++    const input_t *src,
++    const uint8_t *mask, 
++    const acc_t scale, 
++    int micro_batch_size, 
++    int element_count,
++    int pad_batches) 
++{
++    // WARP_SIZE and WARP_BATCH must match the return values batches_per_warp and 
++    // warp_size of method warp_softmax_forward_kernel.
++    constexpr int next_power_of_two = 1 << log2_elements;
++    constexpr int WARP_SIZE = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
++    constexpr int WARP_ITERATIONS = next_power_of_two / WARP_SIZE;
++    constexpr int WARP_BATCH = (next_power_of_two <= 128) ? 2 : 1;
++    constexpr int ELEMENTS_PER_LDG_STG = (WARP_ITERATIONS < 4) ? 1 : 4;
++
++    // blockDim/threadIdx = (WARP_SIZE, WARPS_PER_BLOCK, )
++    // gridDim/blockIdx = (seq_len, attn_heads, batches) 
++    int first_batch = (blockDim.y * (blockIdx.x + gridDim.x * (blockIdx.y + gridDim.y * blockIdx.z))+ threadIdx.y) * WARP_BATCH;
++    int pad_first_batch = 0;
++    if (pad_batches != 1) { // bert style
++        pad_first_batch = (blockDim.y * (blockIdx.x + gridDim.x * blockIdx.z) + threadIdx.y) * WARP_BATCH;
++    } else { // gpt2 style
++        pad_first_batch = (blockDim.y * blockIdx.x + threadIdx.y) * WARP_BATCH;
++    }
++
++    // micro_batch_size might not be a multiple of WARP_BATCH. Check how
++    // many batches have to computed within this WARP.
++    int local_batches = micro_batch_size - first_batch;
++    if (local_batches > WARP_BATCH)
++        local_batches = WARP_BATCH;
++
++    // there might be multiple batches per warp. compute the index within the batch
++    int local_idx = threadIdx.x;
++
++    src += first_batch * element_count + ELEMENTS_PER_LDG_STG * local_idx;
++    dst += first_batch * element_count + ELEMENTS_PER_LDG_STG * local_idx;
++    mask += pad_first_batch * element_count + ELEMENTS_PER_LDG_STG * local_idx;
++
++    // load data from global memory
++    acc_t elements[WARP_BATCH][WARP_ITERATIONS];
++    input_t temp_data[ELEMENTS_PER_LDG_STG];
++    uint8_t temp_mask[ELEMENTS_PER_LDG_STG];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        int batch_element_count = (i >= local_batches) ? 0 : element_count;
++
++        #pragma unroll
++        for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
++            int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
++
++            if (element_index < batch_element_count) {
++                int itr_idx = i*element_count+it*WARP_SIZE;
++                copy_vector<input_t, ELEMENTS_PER_LDG_STG>(temp_data, src + itr_idx);
++                copy_vector<uint8_t, ELEMENTS_PER_LDG_STG>(temp_mask, mask + itr_idx);
++
++                #pragma unroll
++                  for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                      if (temp_mask[element] != 1) {
++                          elements[i][it + element] = (acc_t)temp_data[element] * scale;
++                      } else {
++                          elements[i][it + element] = -10000.0;
++                      }
++                  }
++            } else {
++                #pragma unroll
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    elements[i][it + element] = -std::numeric_limits<acc_t>::infinity();
++                }
++            }
++        }
++    }
++
++    // compute max_value
++    acc_t max_value[WARP_BATCH];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        max_value[i] = elements[i][0];
++        #pragma unroll
++        for (int it = 1;  it < WARP_ITERATIONS;  ++it) {
++            max_value[i] = (max_value[i] > elements[i][it]) ? max_value[i] : elements[i][it];
++        }
++    }
++    warp_reduce<acc_t, WARP_BATCH, WARP_SIZE, Max>(max_value);
++
++    // compute scale value to account for full mask
++    acc_t scale_value[WARP_BATCH];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        scale_value[i] = (max_value[i] == -10000.0) ? 0.0 : 1.0;
++    }
++
++    acc_t sum[WARP_BATCH] { 0.0f };
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        #pragma unroll
++        for (int it = 0;  it < WARP_ITERATIONS;  ++it) {
++            elements[i][it] = std::exp((elements[i][it] - max_value[i]));
++            sum[i] += elements[i][it];
++        }
++    }
++    warp_reduce<acc_t, WARP_BATCH, WARP_SIZE, Add>(sum);
++
++    // store result
++    output_t out[ELEMENTS_PER_LDG_STG];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        if (i >= local_batches)
++            break;
++        #pragma unroll
++        for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
++            int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
++            if (element_index < element_count) {
++                #pragma unroll
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    out[element] = elements[i][it + element] * scale_value[i] / sum[i];
++                }
++                copy_vector<output_t, ELEMENTS_PER_LDG_STG>(dst + i * element_count + it * WARP_SIZE, out);  
++            } else {
++                break;
++            } 
++        }
++    }
++}
++
++template <typename input_t, typename output_t, typename acc_t, int log2_elements>
++__global__ void scaled_masked_softmax_warp_backward(
++    output_t *gradInput, 
++    input_t *grad, 
++    const input_t *output,
++    acc_t scale, 
++    int micro_batch_size, 
++    int element_count)
++{
++    // WARP_SIZE and WARP_BATCH must match the return values batches_per_warp and 
++    // warp_size of method warp_softmax_backward_kernel.
++    constexpr int next_power_of_two = 1 << log2_elements;
++    constexpr int WARP_SIZE = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
++    constexpr int WARP_ITERATIONS = next_power_of_two / WARP_SIZE;
++    constexpr int WARP_BATCH = (next_power_of_two <= 128) ? 2 : 1;
++    constexpr int ELEMENTS_PER_LDG_STG = (WARP_ITERATIONS < 4) ? 1 : 4;
++
++    // blockDim/threadIdx = (WARP_SIZE, WARPS_PER_BLOCK, )
++    // gridDim/blockIdx = (seq_len, attn_heads, batches) 
++    int first_batch = (blockDim.y * blockIdx.x + threadIdx.y) * WARP_BATCH;
++    
++    // micro_batch_size might not be a multiple of WARP_BATCH. Check how
++    // many batches have to computed within this WARP.
++    int local_batches = micro_batch_size - first_batch;
++    if (local_batches > WARP_BATCH)
++        local_batches = WARP_BATCH;
++
++    // there might be multiple batches per warp. compute the index within the batch
++    int local_idx = threadIdx.x;
++
++    // the first element to process by the current thread
++    int thread_offset = first_batch * element_count + ELEMENTS_PER_LDG_STG * local_idx;
++    grad += thread_offset;
++    output += thread_offset;
++    gradInput += thread_offset;
++
++    // load data from global memory
++    acc_t grad_reg[WARP_BATCH][WARP_ITERATIONS] { 0.0f };
++    acc_t output_reg[WARP_BATCH][WARP_ITERATIONS] { 0.0f };
++    input_t temp_grad[ELEMENTS_PER_LDG_STG];
++    input_t temp_output[ELEMENTS_PER_LDG_STG];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        int batch_element_count = (i >= local_batches) ? 0 : element_count;
++
++        #pragma unroll
++        for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
++            int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
++            if (element_index < batch_element_count) {
++                copy_vector<input_t, ELEMENTS_PER_LDG_STG>(temp_grad, grad + i * element_count + it * WARP_SIZE);
++                copy_vector<input_t, ELEMENTS_PER_LDG_STG>(temp_output, output + i * element_count + it * WARP_SIZE);
++
++                #pragma unroll
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    output_reg[i][it + element] = (acc_t)temp_output[element];
++                }
++                #pragma unroll
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    grad_reg[i][it + element] = (acc_t)temp_grad[element] * output_reg[i][it + element];
++                }
++            } 
++        }
++    }
++   
++    acc_t sum[WARP_BATCH];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        sum[i] = grad_reg[i][0];
++        #pragma unroll
++        for (int it = 1;  it < WARP_ITERATIONS;  ++it) {
++            sum[i] += grad_reg[i][it];
++        }
++    }
++    warp_reduce<acc_t, WARP_BATCH, WARP_SIZE, Add>(sum);
++
++    // store result
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        if (i >= local_batches)
++            break;
++        #pragma unroll
++        for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
++            int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
++            if (element_index < element_count) {
++                // compute gradients
++                output_t out[ELEMENTS_PER_LDG_STG];
++                #pragma unroll
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    out[element] = (output_t)(scale * (grad_reg[i][it + element] - output_reg[i][it + element] * sum[i]));
++                }
++                copy_vector<output_t, ELEMENTS_PER_LDG_STG>(gradInput + i * element_count + it * WARP_SIZE, out);
++            } 
++        }
++    }
++}
++} // end of anonymous namespace
++
++int get_batch_per_block(int query_seq_len, int key_seq_len, int batches, int attn_heads){
++    int log2_elements = log2_ceil(key_seq_len);
++    const int next_power_of_two = 1 << log2_elements;
++
++    int warp_size = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
++    int batches_per_warp = (next_power_of_two <= 128) ? 2 : 1;
++
++    constexpr int threads_per_block = 128;
++    int warps_per_block = (threads_per_block / warp_size);
++    int batches_per_block = warps_per_block * batches_per_warp;
++
++    return batches_per_block;
++}
++
++template<typename input_t, typename output_t, typename acc_t>
++void dispatch_scaled_softmax_forward(
++    output_t *dst, 
++    const input_t *src, 
++    const input_t scale, 
++    int query_seq_len, 
++    int key_seq_len, 
++    int batches,
++    int attn_heads)
++{
++    TORCH_INTERNAL_ASSERT(key_seq_len >= 0 && key_seq_len <= 4096 );
++    if (key_seq_len == 0) {
++        return;
++    } else {
++        int log2_elements = log2_ceil(key_seq_len);
++        const int next_power_of_two = 1 << log2_elements;
++        int batch_count = batches * attn_heads * query_seq_len;
++
++        // This value must match the WARP_SIZE constexpr value computed inside softmax_warp_forward.
++        int warp_size = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
++
++        // This value must match the WARP_BATCH constexpr value computed inside softmax_warp_forward.
++        int batches_per_warp = (next_power_of_two <= 128) ? 2 : 1;
++
++        // use 128 threads per block to maximimize gpu utilization
++        constexpr int threads_per_block = 128;
++
++        int warps_per_block = (threads_per_block / warp_size);
++        int batches_per_block = warps_per_block * batches_per_warp;
++        TORCH_INTERNAL_ASSERT(query_seq_len%batches_per_block == 0);
++        dim3 blocks(query_seq_len/batches_per_block, attn_heads, batches);
++        dim3 threads(warp_size, warps_per_block, 1);
++        // Launch code would be more elegant if C++ supported FOR CONSTEXPR
++        switch (log2_elements) {
++            case 0: // 1
++               hipLaunchKernelGGL(( scaled_softmax_warp_forward<input_t, output_t, acc_t, 0>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, key_seq_len);
++                break;
++            case 1: // 2
++               hipLaunchKernelGGL(( scaled_softmax_warp_forward<input_t, output_t, acc_t, 1>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, key_seq_len);
++                break;
++            case 2: // 4
++               hipLaunchKernelGGL(( scaled_softmax_warp_forward<input_t, output_t, acc_t, 2>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, key_seq_len);
++                break;
++            case 3: // 8
++               hipLaunchKernelGGL(( scaled_softmax_warp_forward<input_t, output_t, acc_t, 3>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, key_seq_len);
++                break;
++            case 4: // 16
++               hipLaunchKernelGGL(( scaled_softmax_warp_forward<input_t, output_t, acc_t, 4>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, key_seq_len);
++                break;
++            case 5: // 32
++               hipLaunchKernelGGL(( scaled_softmax_warp_forward<input_t, output_t, acc_t, 5>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, key_seq_len);
++                break;
++            case 6: // 64
++               hipLaunchKernelGGL(( scaled_softmax_warp_forward<input_t, output_t, acc_t, 6>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, key_seq_len);
++                break;
++            case 7: // 128
++               hipLaunchKernelGGL(( scaled_softmax_warp_forward<input_t, output_t, acc_t, 7>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, key_seq_len);
++                break;
++            case 8: // 256
++               hipLaunchKernelGGL(( scaled_softmax_warp_forward<input_t, output_t, acc_t, 8>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, key_seq_len);
++                break;
++            case 9: // 512
++               hipLaunchKernelGGL(( scaled_softmax_warp_forward<input_t, output_t, acc_t, 9>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, key_seq_len);
++                break;
++            case 10: // 1024
++               hipLaunchKernelGGL(( scaled_softmax_warp_forward<input_t, output_t, acc_t, 10>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, key_seq_len);
++                break;
++            case 11: // 2048
++               hipLaunchKernelGGL(( scaled_softmax_warp_forward<input_t, output_t, acc_t, 11>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, key_seq_len);
++                break;
++            case 12: // 4096
++               hipLaunchKernelGGL(( scaled_softmax_warp_forward<input_t, output_t, acc_t, 12>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, key_seq_len);
++                break;
++            default:
++                break;
++        }
++    }
++}
++
++template<typename input_t, typename output_t, typename acc_t>
++void dispatch_scaled_masked_softmax_forward(
++    output_t *dst, 
++    const input_t *src, 
++    const uint8_t *mask,
++    const input_t scale, 
++    int query_seq_len, 
++    int key_seq_len, 
++    int batches,
++    int attn_heads,
++    int pad_batches)
++{
++    TORCH_INTERNAL_ASSERT(key_seq_len >= 0 && key_seq_len <= 4096 );
++    if (key_seq_len == 0) {
++        return;
++    } else {
++        int log2_elements = log2_ceil(key_seq_len);
++        const int next_power_of_two = 1 << log2_elements;
++        int batch_count = batches * attn_heads * query_seq_len;
++
++        // This value must match the WARP_SIZE constexpr value computed inside softmax_warp_forward.
++        int warp_size = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
++
++        // This value must match the WARP_BATCH constexpr value computed inside softmax_warp_forward.
++        int batches_per_warp = (next_power_of_two <= 128) ? 2 : 1;
++
++        // use 128 threads per block to maximimize gpu utilization
++        constexpr int threads_per_block = 128;
++
++        int warps_per_block = (threads_per_block / warp_size);
++        int batches_per_block = warps_per_block * batches_per_warp;
++        TORCH_INTERNAL_ASSERT(query_seq_len%batches_per_block == 0);
++        dim3 blocks(query_seq_len/batches_per_block, attn_heads, batches);
++        dim3 threads(warp_size, warps_per_block, 1);
++        // Launch code would be more elegant if C++ supported FOR CONSTEXPR
++        switch (log2_elements) {
++            case 0: // 1
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 0>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
++                break;
++            case 1: // 2
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 1>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
++                break;
++            case 2: // 4
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 2>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
++                break;
++            case 3: // 8
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 3>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
++                break;
++            case 4: // 16
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 4>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
++                break;
++            case 5: // 32
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 5>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
++                break;
++            case 6: // 64
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 6>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
++                break;
++            case 7: // 128
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 7>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
++                break;
++            case 8: // 256
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 8>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
++                break;
++            case 9: // 512
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 9>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
++                break;
++            case 10: // 1024
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 10>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
++                break;
++            case 11: // 2048
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 11>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
++                break;
++            case 12: // 4096
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 12>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
++                break;
++            default:
++                break;
++        }
++    }
++}
++
++template<typename input_t, typename output_t, typename acc_t>
++void dispatch_scaled_masked_softmax_backward(
++    output_t *grad_input, 
++    input_t *grad, 
++    const input_t *output, 
++    const acc_t scale, 
++    int query_seq_len, 
++    int key_seq_len, 
++    int batches,
++    int attn_heads)
++{
++    TORCH_INTERNAL_ASSERT( key_seq_len >= 0 && key_seq_len <= 4096 );
++    if (key_seq_len == 0) {
++       return;
++    } else {
++        int log2_elements = log2_ceil(key_seq_len);
++        const int next_power_of_two = 1 << log2_elements;
++        int batch_count = batches *  attn_heads * query_seq_len;
++
++        // This value must match the WARP_SIZE constexpr value computed inside softmax_warp_backward.
++        int warp_size = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
++
++        // This value must match the WARP_BATCH constexpr value computed inside softmax_warp_backward.
++        int batches_per_warp = (next_power_of_two <= 128) ? 2 : 1;
++
++        // use 128 threads per block to maximimize gpu utilization
++        constexpr int threads_per_block = 128;
++
++        int warps_per_block = (threads_per_block / warp_size);
++        int batches_per_block = warps_per_block * batches_per_warp;
++        int blocks = batch_count/batches_per_block;
++        dim3 threads(warp_size, warps_per_block, 1);
++        // Launch code would be more elegant if C++ supported FOR CONSTEXPR
++        switch (log2_elements) {
++            case 0: // 1
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 0>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, key_seq_len);
++                break;
++            case 1: // 2
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 1>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, key_seq_len);
++                break;
++            case 2: // 4
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 2>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, key_seq_len);
++                break;
++            case 3: // 8
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 3>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, key_seq_len);
++                break;
++            case 4: // 16
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 4>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, key_seq_len);
++                break;
++            case 5: // 32
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 5>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, key_seq_len);
++                break;
++            case 6: // 64
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 6>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, key_seq_len);
++                break;
++            case 7: // 128
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 7>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, key_seq_len);
++                break;
++            case 8: // 256
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 8>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, key_seq_len);
++                break;
++            case 9: // 512
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 9>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, key_seq_len);
++                break;
++            case 10: // 1024
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 10>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, key_seq_len);
++                break;
++            case 11: // 2048
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 11>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, key_seq_len);
++                break;
++			case 12: // 4096
++               hipLaunchKernelGGL(( scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 12>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, key_seq_len);
++                break;
++
++            default:
++                break;
++        }
++    }
++}
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/fused_kernels/scaled_masked_softmax_hip.hip $WS/annotated/source/megatron/fused_kernels/scaled_masked_softmax_hip.hip
+--- $WS/baseline/source/megatron/fused_kernels/scaled_masked_softmax_hip.hip	1969-12-31 16:00:00.000000000 -0800
++++ $WS/annotated/source/megatron/fused_kernels/scaled_masked_softmax_hip.hip	2026-07-26 15:25:01.987415000 -0700
+@@ -0,0 +1,110 @@
++// !!! This is a file automatically generated by hipify!!!
++/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved. */
++
++#include <ATen/ATen.h>
++#include <hip/hip_runtime.h>
++#include <hip/hip_runtime.h>
++#include <hip/hip_fp16.h>
++#ifndef __HIP_PLATFORM_HCC__
++#include <hip/hip_runtime_api.h>
++#endif
++#include <ATen/hip/HIPContext.h>
++#include <torch/extension.h>
++#include "scaled_masked_softmax_hip.h"
++#include "type_shim.h"
++
++namespace multihead_attn {
++namespace fused_softmax {
++namespace scaled_masked_softmax {
++
++int get_batch_per_block_cuda(int query_seq_len, int key_seq_len, int batches, int attn_heads){
++    return get_batch_per_block(query_seq_len, key_seq_len, batches, attn_heads);
++}
++
++
++torch::Tensor fwd_cuda(
++    torch::Tensor const& input,
++    torch::Tensor const& mask,
++    float scale_factor)
++{
++  // input is a 4d tensor with dimensions [batches, attn_heads, seq_len, seq_len]
++  const int batches = input.size(0);
++  const int pad_batches = mask.size(0);
++  const int attn_heads = input.size(1);
++  const int query_seq_len = input.size(2);
++  const int key_seq_len = input.size(3);
++  TORCH_INTERNAL_ASSERT(key_seq_len <= 4096);
++  TORCH_INTERNAL_ASSERT(query_seq_len > 1);
++  TORCH_INTERNAL_ASSERT(pad_batches == 1 || pad_batches == batches);
++  TORCH_INTERNAL_ASSERT(mask.size(1) == 1);
++  TORCH_INTERNAL_ASSERT(mask.size(2) == query_seq_len);
++  TORCH_INTERNAL_ASSERT(mask.size(3) == key_seq_len);
++
++  // Output 
++  auto act_options = input.options().requires_grad(false);
++  torch::Tensor softmax_results = 
++      torch::empty({batches, attn_heads, query_seq_len, key_seq_len}, act_options);
++
++  // Softmax Intermediate Result Ptr
++  void* input_ptr = static_cast<void*>(input.data_ptr());
++  void* mask_ptr = static_cast<void*>(mask.data_ptr());
++  void* softmax_results_ptr = static_cast<void*>(softmax_results.data_ptr());
++
++  DISPATCH_HALF_AND_BFLOAT(
++      input.scalar_type(),
++      "dispatch_scaled_masked_softmax_forward",
++      dispatch_scaled_masked_softmax_forward<scalar_t, scalar_t, float>(
++      reinterpret_cast<scalar_t*>(softmax_results_ptr),
++	  reinterpret_cast<const scalar_t*>(input_ptr),
++	  reinterpret_cast<const uint8_t*>(mask_ptr),
++	  scale_factor,
++	  query_seq_len,
++	  key_seq_len,
++	  batches,
++	  attn_heads,
++	  pad_batches);
++      );
++  return softmax_results;
++}
++
++torch::Tensor bwd_cuda(
++    torch::Tensor const& output_grads_, 
++    torch::Tensor const& softmax_results_, 
++    float scale_factor)  {
++	
++  auto output_grads = output_grads_.contiguous();
++  auto softmax_results = softmax_results_.contiguous();
++
++  //output grads is a 4d tensor with dimensions [batches, attn_heads, seq_len, seq_len]
++  const int batches = output_grads.size(0);
++  const int attn_heads = output_grads.size(1);
++  const int query_seq_len = output_grads.size(2);
++  const int key_seq_len = output_grads.size(3);
++
++  auto act_options = output_grads.options().requires_grad(false);
++  torch::Tensor input_grads = 
++            torch::empty({batches, attn_heads, query_seq_len, key_seq_len}, act_options);  
++
++  void* output_grads_ptr = static_cast<void*>(output_grads.data_ptr());
++  void* input_grads_ptr = static_cast<void*>(input_grads.data_ptr());
++
++  //Softmax Grad
++  DISPATCH_HALF_AND_BFLOAT(
++      output_grads_.scalar_type(),
++      "dispatch_scaled_masked_softmax_backward",
++      dispatch_scaled_masked_softmax_backward<scalar_t, scalar_t, float>(
++      reinterpret_cast<scalar_t*>(input_grads_ptr), 
++	  reinterpret_cast<scalar_t*>(output_grads_ptr), 
++	  reinterpret_cast<scalar_t const*>(softmax_results.data_ptr()),
++	  scale_factor,
++	  query_seq_len,
++	  key_seq_len,
++	  batches,
++	  attn_heads);
++      );
++  
++  return input_grads;
++}
++}
++}
++}
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/fused_kernels/scaled_softmax_hip.cpp $WS/annotated/source/megatron/fused_kernels/scaled_softmax_hip.cpp
+--- $WS/baseline/source/megatron/fused_kernels/scaled_softmax_hip.cpp	1969-12-31 16:00:00.000000000 -0800
++++ $WS/annotated/source/megatron/fused_kernels/scaled_softmax_hip.cpp	2026-07-26 15:31:08.245958000 -0700
+@@ -0,0 +1,62 @@
++// !!! This is a file automatically generated by hipify!!!
++/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved. */
++
++#include <hip/hip_fp16.h>
++#include <torch/extension.h>
++#include <vector>
++
++namespace multihead_attn {
++namespace fused_softmax {
++namespace scaled_softmax {
++
++torch::Tensor fwd_cuda(
++    torch::Tensor const& input, 
++    float scale_factor);
++
++torch::Tensor bwd_cuda(
++    torch::Tensor const& output_grads, 
++    torch::Tensor const& softmax_results,
++    float scale_factor);
++
++torch::Tensor fwd(
++    torch::Tensor const& input,
++    float scale_factor) {
++  AT_ASSERTM(input.dim() == 4, "expected 4D tensor");
++  AT_ASSERTM((input.scalar_type() == at::ScalarType::Half) ||
++	     (input.scalar_type() == at::ScalarType::BFloat16), 
++      "Only fp16 and bf16 are supported");
++
++  return fwd_cuda(input, scale_factor);
++}
++
++torch::Tensor bwd(
++    torch::Tensor const& output_grads, 
++    torch::Tensor const& softmax_results,
++    float scale_factor) {
++
++  AT_ASSERTM(output_grads.dim() == 4, "expected 3D tensor");
++  AT_ASSERTM(softmax_results.dim() == 4, "expected 3D tensor");
++
++  AT_ASSERTM((output_grads.scalar_type() == at::ScalarType::Half) ||
++	     (output_grads.scalar_type() == at::ScalarType::BFloat16), 
++      "Only fp16 and bf16 are supported");
++  AT_ASSERTM((softmax_results.scalar_type() == at::ScalarType::Half) ||
++	     (softmax_results.scalar_type() == at::ScalarType::BFloat16), 
++      "Only fp16 and bf16 are supported");
++
++  return bwd_cuda(output_grads, softmax_results, scale_factor);
++}
++
++} // end namespace scaled_softmax
++} // end namespace fused_softmax
++} // end namespace multihead_attn
++
++PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
++  m.def("forward", 
++        &multihead_attn::fused_softmax::scaled_softmax::fwd, 
++	"Self Multihead Attention scaled, softmax -- Forward.");
++  m.def("backward", 
++        &multihead_attn::fused_softmax::scaled_softmax::bwd,
++	"Self Multihead Attention scaled, softmax -- Backward.");
++}
++
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/fused_kernels/scaled_softmax_hip.hip $WS/annotated/source/megatron/fused_kernels/scaled_softmax_hip.hip
+--- $WS/baseline/source/megatron/fused_kernels/scaled_softmax_hip.hip	1969-12-31 16:00:00.000000000 -0800
++++ $WS/annotated/source/megatron/fused_kernels/scaled_softmax_hip.hip	2026-07-26 15:31:08.248011000 -0700
+@@ -0,0 +1,93 @@
++// !!! This is a file automatically generated by hipify!!!
++/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved. */
++
++#include <ATen/ATen.h>
++#include <hip/hip_runtime.h>
++#include <hip/hip_runtime.h>
++#include <hip/hip_fp16.h>
++#ifndef __HIP_PLATFORM_HCC__
++#include <hip/hip_runtime_api.h>
++#endif
++#include <ATen/hip/HIPContext.h>
++#include <torch/extension.h>
++#include "scaled_masked_softmax_hip.h"
++#include "type_shim.h"
++
++namespace multihead_attn {
++namespace fused_softmax {
++namespace scaled_softmax {
++
++torch::Tensor fwd_cuda(
++    torch::Tensor const& input,
++    float scale_factor)
++{
++  // input is a 4d tensor with dimensions [batches, attn_heads, seq_len, seq_len]
++  const int batches = input.size(0);
++  const int attn_heads = input.size(1);
++  const int query_seq_len = input.size(2);
++  const int key_seq_len = input.size(3);
++  TORCH_INTERNAL_ASSERT(key_seq_len <= 4096);
++  TORCH_INTERNAL_ASSERT(query_seq_len > 1);
++
++  // Output 
++  auto act_options = input.options().requires_grad(false);
++  torch::Tensor softmax_results = 
++      torch::empty({batches, attn_heads, query_seq_len, key_seq_len}, act_options);
++
++  // Softmax Intermediate Result Ptr
++  void* input_ptr = static_cast<void*>(input.data_ptr());
++  void* softmax_results_ptr = static_cast<void*>(softmax_results.data_ptr());
++
++  DISPATCH_HALF_AND_BFLOAT(
++      input.scalar_type(),
++      "dispatch_scaled_softmax_forward",
++      dispatch_scaled_softmax_forward<scalar_t, scalar_t, float>(
++          reinterpret_cast<scalar_t*>(softmax_results_ptr),
++	  reinterpret_cast<const scalar_t*>(input_ptr),
++	  scale_factor,
++	  query_seq_len,
++	  key_seq_len,
++	  batches,
++	  attn_heads);
++      );
++  return softmax_results;
++}
++
++torch::Tensor bwd_cuda(
++    torch::Tensor const& output_grads_, 
++    torch::Tensor const& softmax_results_, 
++    float scale_factor)  {
++	
++  auto output_grads = output_grads_.contiguous();
++  auto softmax_results = softmax_results_.contiguous();
++
++  //output grads is a 4d tensor with dimensions [batches, attn_heads, seq_len, seq_len]
++  const int batches = output_grads.size(0);
++  const int attn_heads = output_grads.size(1);
++  const int query_seq_len = output_grads.size(2);
++  const int key_seq_len = output_grads.size(3);
++
++  void* output_grads_ptr = static_cast<void*>(output_grads.data_ptr());
++
++  //Softmax Grad
++  DISPATCH_HALF_AND_BFLOAT(
++      output_grads_.scalar_type(),
++      "dispatch_scaled_masked_softmax_backward",
++      dispatch_scaled_masked_softmax_backward<scalar_t, scalar_t, float>(
++          reinterpret_cast<scalar_t*>(output_grads_ptr), 
++	  reinterpret_cast<scalar_t*>(output_grads_ptr), 
++	  reinterpret_cast<scalar_t const*>(softmax_results.data_ptr()),
++	  scale_factor,
++	  query_seq_len,
++	  key_seq_len,
++	  batches,
++	  attn_heads);
++			   );
++  
++  //backward pass is completely in-place
++  return output_grads;
++}
++}
++}
++}
++
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/fused_kernels/scaled_upper_triang_masked_softmax_hip.cpp $WS/annotated/source/megatron/fused_kernels/scaled_upper_triang_masked_softmax_hip.cpp
+--- $WS/baseline/source/megatron/fused_kernels/scaled_upper_triang_masked_softmax_hip.cpp	1969-12-31 16:00:00.000000000 -0800
++++ $WS/annotated/source/megatron/fused_kernels/scaled_upper_triang_masked_softmax_hip.cpp	2026-07-26 15:18:57.425490000 -0700
+@@ -0,0 +1,59 @@
++// !!! This is a file automatically generated by hipify!!!
++/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved. */
++
++#include <hip/hip_fp16.h>
++#include <torch/extension.h>
++#include <vector>
++
++namespace multihead_attn {
++namespace fused_softmax {
++namespace scaled_upper_triang_masked_softmax {
++
++torch::Tensor fwd_cuda(
++    torch::Tensor const& input, 
++    float scale_factor);
++
++torch::Tensor bwd_cuda(
++    torch::Tensor const& output_grads, 
++    torch::Tensor const& softmax_results,
++    float scale_factor);
++
++torch::Tensor fwd(torch::Tensor const& input, float scale_factor) {
++  AT_ASSERTM(input.dim() == 3, "expected 3D tensor");
++  AT_ASSERTM((input.scalar_type() == at::ScalarType::Half) ||
++	     (input.scalar_type() == at::ScalarType::BFloat16), 
++      "Only fp16 and bf16 are supported");
++
++  return fwd_cuda(input, scale_factor);
++}
++
++torch::Tensor bwd(
++    torch::Tensor const& output_grads, 
++    torch::Tensor const& softmax_results,
++    float scale_factor) {
++
++  AT_ASSERTM(output_grads.dim() == 3, "expected 3D tensor");
++  AT_ASSERTM(softmax_results.dim() == 3, "expected 3D tensor");
++
++  AT_ASSERTM((output_grads.scalar_type() == at::ScalarType::Half) ||
++	     (output_grads.scalar_type() == at::ScalarType::BFloat16), 
++      "Only fp16 and bf16 are supported");
++  AT_ASSERTM((softmax_results.scalar_type() == at::ScalarType::Half) ||
++	     (softmax_results.scalar_type() == at::ScalarType::BFloat16), 
++      "Only fp16 and bf16 are supported");
++
++  return bwd_cuda(output_grads, softmax_results, scale_factor);
++}
++
++} // end namespace scaled_upper_triang_masked_softmax
++} // end namespace fused_softmax
++} // end namespace multihead_attn
++
++PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
++  m.def("forward", 
++        &multihead_attn::fused_softmax::scaled_upper_triang_masked_softmax::fwd,
++	"Self Multihead Attention scaled, time masked softmax -- Forward.");
++  m.def("backward", 
++        &multihead_attn::fused_softmax::scaled_upper_triang_masked_softmax::bwd,
++	"Self Multihead Attention scaled, time masked softmax -- Backward.");
++}
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/fused_kernels/scaled_upper_triang_masked_softmax_hip.h $WS/annotated/source/megatron/fused_kernels/scaled_upper_triang_masked_softmax_hip.h
+--- $WS/baseline/source/megatron/fused_kernels/scaled_upper_triang_masked_softmax_hip.h	1969-12-31 16:00:00.000000000 -0800
++++ $WS/annotated/source/megatron/fused_kernels/scaled_upper_triang_masked_softmax_hip.h	2026-07-26 15:18:57.438330000 -0700
+@@ -0,0 +1,526 @@
++// !!! This is a file automatically generated by hipify!!!
++#include "hip/hip_runtime.h"
++/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved. */
++
++#pragma once
++
++#include <assert.h>
++#include <hip/hip_fp16.h>
++#include <cfloat>
++#include <limits>
++#include <stdint.h>
++#include <c10/macros/Macros.h>
++
++namespace {
++
++template <typename Datatype, int ELEMENTS_PER_LDG>
++__device__ __inline__ void copy_vector(Datatype *dst, const Datatype *src);
++
++template <>
++__device__ __inline__ void copy_vector<c10::BFloat16, 1>(c10::BFloat16 *dst, const c10::BFloat16 *src) { *dst = *src; }
++
++template <>
++__device__ __inline__ void copy_vector<c10::BFloat16, 4>(c10::BFloat16 *dst, const c10::BFloat16 *src) { *((float2*) dst) = *((float2*) src); }
++  
++template <>
++__device__ __inline__ void copy_vector<c10::Half, 1>(c10::Half *dst, const c10::Half *src) { *dst = *src; }
++
++template <>
++__device__ __inline__ void copy_vector<c10::Half, 4>(c10::Half *dst, const c10::Half *src) { *((float2*) dst) = *((float2*) src); }
++
++template <>
++__device__ __inline__ void copy_vector<uint8_t, 1>(uint8_t *dst, const uint8_t *src) { *dst = *src; }
++
++template <>
++__device__ __inline__ void copy_vector<uint8_t, 4>(uint8_t *dst, const uint8_t *src) {*((half2*) dst) = *((half2*) src); }
++
++template <typename Datatype, int ELEMENTS_PER_LDG>
++__device__ __inline__ void copy_zero_vector(Datatype *dst);
++
++template <>
++__device__ __inline__ void copy_zero_vector<c10::BFloat16, 1>(c10::BFloat16 *dst) { *dst = 0.0; }
++
++template <>
++__device__ __inline__ void copy_zero_vector<c10::BFloat16, 4>(c10::BFloat16 *dst) { *((float2*) dst) = make_float2(0.0f, 0.0f); }
++
++template <>
++__device__ __inline__ void copy_zero_vector<c10::Half, 1>(c10::Half *dst) { *dst = 0.0; }
++
++template <>
++__device__ __inline__ void copy_zero_vector<c10::Half, 4>(c10::Half *dst) { *((float2*) dst) = make_float2(0.0f, 0.0f); }
++
++
++int log2_ceil(int value) {
++    int log2_value = 0;
++    while ((1 << log2_value) < value) ++log2_value;
++    return log2_value;
++}
++
++template<typename T>
++struct Add {
++  __device__ __forceinline__ T operator()(T a, T b) const {
++    return a + b;
++  }
++};
++
++template<typename T>
++struct Max {
++  __device__ __forceinline__ T operator()(T a, T b) const {
++    return a < b ? b : a;
++  }
++};
++
++template <typename T>
++__device__ __forceinline__ T WARP_SHFL_XOR_NATIVE(T value, int laneMask, int width = warpSize, unsigned int mask = 0xffffffff)
++{
++#if TORCH_HIP_VERSION >= 9000
++    return __shfl_xor_sync(mask, value, laneMask, width);
++#else
++    return __shfl_xor(value, laneMask, width);
++#endif
++}
++
++template <typename acc_t, int WARP_BATCH, int WARP_SIZE, template<typename> class ReduceOp>
++__device__ __forceinline__ void warp_reduce(acc_t* sum) {
++    ReduceOp<acc_t> r;
++    #pragma unroll
++    for (int offset = WARP_SIZE / 2; offset > 0; offset /= 2) {
++        #pragma unroll
++        for (int i = 0;  i < WARP_BATCH;  ++i) {
++            acc_t b = WARP_SHFL_XOR_NATIVE(sum[i], offset, WARP_SIZE);
++            sum[i] = r(sum[i], b);
++        }
++    }
++}
++
++/*
++ * Extended softmax (from native aten pytorch) with following additional features
++ * 1) input scaling
++ * 2) Implicit time (diagonal masking)
++ */
++template <typename input_t, typename output_t, typename acc_t, int log2_elements>
++__global__ void scaled_upper_triang_masked_softmax_warp_forward(
++    output_t *dst, 
++    const input_t *src, 
++    const acc_t scale, 
++    int micro_batch_size, 
++    int stride, 
++    int element_count) 
++{
++    // WARP_SIZE and WARP_BATCH must match the return values batches_per_warp and 
++    // warp_size of method warp_softmax_forward_kernel.
++    constexpr int next_power_of_two = 1 << log2_elements;
++    constexpr int WARP_SIZE = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
++    constexpr int WARP_ITERATIONS = next_power_of_two / WARP_SIZE;
++    constexpr int WARP_BATCH = (next_power_of_two <= 128) ? 2 : 1;
++    constexpr int ELEMENTS_PER_LDG_STG = (WARP_ITERATIONS < 4) ? 1 : 4;
++
++    int first_batch = (blockDim.y * blockIdx.y + threadIdx.y) * gridDim.x * WARP_BATCH + blockIdx.x;
++    int local_seq = blockIdx.x + 1; 
++    int warp_iteration_limit = (local_seq + ELEMENTS_PER_LDG_STG * WARP_SIZE - 1)/ WARP_SIZE;
++
++    // micro_batch_size might not be a multiple of WARP_BATCH. Check how
++    // many batches have to computed within this WARP.
++    int local_batches = micro_batch_size - first_batch;
++    if (local_batches > WARP_BATCH)
++        local_batches = WARP_BATCH;
++
++    // there might be multiple batches per warp. compute the index within the batch
++    int local_idx = threadIdx.x;
++
++    src += first_batch * stride + ELEMENTS_PER_LDG_STG * local_idx;
++    dst += first_batch * stride + ELEMENTS_PER_LDG_STG * local_idx;
++
++    // load data from global memory
++    acc_t elements[WARP_BATCH][WARP_ITERATIONS];
++    input_t temp_data[ELEMENTS_PER_LDG_STG];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        int batch_element_count = (i >= local_batches) ? 0 : local_seq;
++
++        #pragma unroll
++        for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
++            int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
++
++            if (element_index < batch_element_count) {
++                copy_vector<input_t, ELEMENTS_PER_LDG_STG>(temp_data, src + i*element_count*stride + it*WARP_SIZE);
++
++                #pragma unroll
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    if ((element_index + element) < batch_element_count) {
++                        elements[i][it+element] = (acc_t)temp_data[element] * scale;
++                    } else {
++                        elements[i][it + element] = -std::numeric_limits<acc_t>::infinity();
++                    }
++                }
++            } else {
++                #pragma unroll
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    elements[i][it + element] = -std::numeric_limits<acc_t>::infinity();
++                }
++            }
++        }
++    }
++
++    // compute max_value
++    acc_t max_value[WARP_BATCH];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        max_value[i] = elements[i][0];
++        #pragma unroll
++        for (int it = 1;  it < WARP_ITERATIONS;  ++it) {
++            max_value[i] = (max_value[i] > elements[i][it]) ? max_value[i] : elements[i][it];
++        }
++    }
++    warp_reduce<acc_t, WARP_BATCH, WARP_SIZE, Max>(max_value);
++
++    acc_t sum[WARP_BATCH] { 0.0f };
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        #pragma unroll
++        for (int it = 0;  it < WARP_ITERATIONS;  ++it) {
++            if (it < warp_iteration_limit) {
++                elements[i][it] = std::exp((elements[i][it] - max_value[i]));
++                sum[i] += elements[i][it];
++            } 
++        }
++    }
++    warp_reduce<acc_t, WARP_BATCH, WARP_SIZE, Add>(sum);
++
++    // store result
++    output_t out[ELEMENTS_PER_LDG_STG];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        if (i >= local_batches)
++            break;
++        #pragma unroll
++        for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
++            int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
++
++            if (element_index < local_seq) {
++
++                #pragma unroll  
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    if (element_index + element < local_seq) {
++                        out[element] = elements[i][it + element] / sum[i];
++                    } else {
++                        out[element] = 0;
++                    }
++                }
++                copy_vector<output_t, ELEMENTS_PER_LDG_STG>(dst + i * element_count * stride + it * WARP_SIZE, out);
++            } else if (element_index < element_count) {
++                copy_zero_vector<output_t, ELEMENTS_PER_LDG_STG>(dst + i * element_count * stride + it * WARP_SIZE);
++            } else {
++                break;
++            } 
++        }
++    }
++}
++
++template <typename input_t, typename output_t, typename acc_t, int log2_elements>
++__global__ void scaled_upper_triang_masked_softmax_warp_backward(
++    output_t *gradInput, 
++    input_t *grad, 
++    const input_t *output,
++    acc_t scale, 
++    int micro_batch_size, 
++    int stride, 
++    int element_count)
++{
++    // WARP_SIZE and WARP_BATCH must match the return values batches_per_warp and 
++    // warp_size of method warp_softmax_backward_kernel.
++    constexpr int next_power_of_two = 1 << log2_elements;
++    constexpr int WARP_SIZE = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
++    constexpr int WARP_ITERATIONS = next_power_of_two / WARP_SIZE;
++    constexpr int WARP_BATCH = (next_power_of_two <= 128) ? 2 : 1;
++    constexpr int ELEMENTS_PER_LDG_STG = (WARP_ITERATIONS < 4) ? 1 : 4;
++
++    int first_batch = (blockDim.y * blockIdx.y + threadIdx.y) * gridDim.x * WARP_BATCH + blockIdx.x;
++    int local_seq = blockIdx.x + 1; 
++    
++    // micro_batch_size might not be a multiple of WARP_BATCH. Check how
++    // many batches have to computed within this WARP.
++    int local_batches = micro_batch_size - first_batch;
++    if (local_batches > WARP_BATCH)
++        local_batches = WARP_BATCH;
++
++    // there might be multiple batches per warp. compute the index within the batch
++    int local_idx = threadIdx.x;
++
++    // the first element to process by the current thread
++    int thread_offset = first_batch * stride + ELEMENTS_PER_LDG_STG * local_idx;
++    grad += thread_offset;
++    output += thread_offset;
++    gradInput += thread_offset;
++
++    // load data from global memory
++    acc_t grad_reg[WARP_BATCH][WARP_ITERATIONS] { 0.0f };
++    acc_t output_reg[WARP_BATCH][WARP_ITERATIONS] { 0.0f };
++    input_t temp_grad[ELEMENTS_PER_LDG_STG];
++    input_t temp_output[ELEMENTS_PER_LDG_STG];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        int batch_element_count = (i >= local_batches) ? 0 : local_seq;
++
++        #pragma unroll
++        for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
++            int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
++            if (element_index < batch_element_count) {
++                copy_vector<input_t, ELEMENTS_PER_LDG_STG>(temp_grad, grad + i * element_count * stride + it * WARP_SIZE);
++                copy_vector<input_t, ELEMENTS_PER_LDG_STG>(temp_output, output + i * element_count * stride + it * WARP_SIZE);
++
++                #pragma unroll
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    if (element_index + element < batch_element_count) {
++                        output_reg[i][it + element] = (acc_t)temp_output[element];
++                    }
++                }
++                #pragma unroll
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    if (element_index + element < batch_element_count) {
++                        grad_reg[i][it + element] = (acc_t)temp_grad[element] * output_reg[i][it + element];
++                    }
++                }
++            }
++        }
++    }
++   
++    acc_t sum[WARP_BATCH];
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        sum[i] = grad_reg[i][0];
++        #pragma unroll
++        for (int it = 1;  it < WARP_ITERATIONS;  ++it) {
++            sum[i] += grad_reg[i][it];
++        }
++    }
++    warp_reduce<acc_t, WARP_BATCH, WARP_SIZE, Add>(sum);
++
++    // store result
++    #pragma unroll
++    for (int i = 0;  i < WARP_BATCH;  ++i) {
++        if (i >= local_batches)
++            break;
++        #pragma unroll
++        for (int it = 0;  it < WARP_ITERATIONS;  it+=ELEMENTS_PER_LDG_STG) {
++            int element_index = ELEMENTS_PER_LDG_STG * local_idx + it * WARP_SIZE;
++            if (element_index < element_count) {
++                // compute gradients
++                output_t out[ELEMENTS_PER_LDG_STG];
++                #pragma unroll
++                for (int element = 0; element < ELEMENTS_PER_LDG_STG; ++element) {
++                    out[element] = (output_t)(scale * (grad_reg[i][it + element] - output_reg[i][it + element] * sum[i]));
++                }
++                copy_vector<output_t, ELEMENTS_PER_LDG_STG>(gradInput + i * element_count * stride + it * WARP_SIZE, out);
++            } 
++        }
++    }
++}
++
++} // end of anonymous namespace
++
++template<typename input_t, typename output_t, typename acc_t>
++void dispatch_scaled_upper_triang_masked_softmax_forward(
++    output_t *dst, 
++    const input_t *src, 
++    const input_t scale, 
++    int softmax_elements, 
++    int softmax_elements_stride, 
++    int attn_batches)
++{
++    TORCH_INTERNAL_ASSERT(softmax_elements >= 0 && softmax_elements <= 16384 );
++    if (softmax_elements == 0) {
++        return;
++    } else {
++        int log2_elements = log2_ceil(softmax_elements);
++        const int next_power_of_two = 1 << log2_elements;
++        int seq_len = softmax_elements;
++        int batch_count = attn_batches * seq_len;
++
++        // This value must match the WARP_SIZE constexpr value computed inside softmax_warp_forward.
++        int warp_size = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
++
++        // This value must match the WARP_BATCH constexpr value computed inside softmax_warp_forward.
++        int batches_per_warp = (next_power_of_two <= 128) ? 2 : 1;
++
++        // use 128 threads per block to maximimize gpu utilization
++        constexpr int threads_per_block = 128;
++
++        int warps_per_block = (threads_per_block / warp_size);
++        int batches_per_block = warps_per_block * batches_per_warp;
++        TORCH_INTERNAL_ASSERT(attn_batches % batches_per_block == 0);
++
++        int blocks_per_seq = attn_batches / batches_per_block;
++        dim3 blocks(seq_len, blocks_per_seq, 1);
++        dim3 threads(warp_size, warps_per_block, 1);
++        // Launch code would be more elegant if C++ supported FOR CONSTEXPR
++        switch (log2_elements) {
++            case 0: // 1
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 0>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 1: // 2
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 1>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 2: // 4
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 2>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 3: // 8
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 3>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 4: // 16
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 4>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 5: // 32
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 5>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 6: // 64
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 6>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 7: // 128
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 7>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 8: // 256
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 8>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 9: // 512
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 9>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 10: // 1024
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 10>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 11: // 2048
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 11>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 12: // 4096
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 12>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++	    case 13: // 8192
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 13>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++	    case 14: // 16384
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_forward<input_t, output_t, acc_t, 14>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), dst, src, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++
++            default:
++                break;
++        }
++    }
++}
++
++template<typename input_t, typename output_t, typename acc_t>
++void dispatch_scaled_upper_triang_masked_softmax_backward(
++    output_t *grad_input, 
++    input_t *grad, 
++    const input_t *output, 
++    const acc_t scale, 
++    int softmax_elements, 
++    int softmax_elements_stride, 
++    int attn_batches)
++{
++    TORCH_INTERNAL_ASSERT( softmax_elements >= 0 && softmax_elements <= 16384 );
++    if (softmax_elements == 0) {
++       return;
++    } else {
++        int log2_elements = log2_ceil(softmax_elements);
++        const int next_power_of_two = 1 << log2_elements;
++        int seq_len = softmax_elements;
++        int batch_count = attn_batches * seq_len;
++
++        // This value must match the WARP_SIZE constexpr value computed inside softmax_warp_backward.
++        int warp_size = (next_power_of_two < C10_WARP_SIZE) ? next_power_of_two : C10_WARP_SIZE;
++
++        // This value must match the WARP_BATCH constexpr value computed inside softmax_warp_backward.
++        int batches_per_warp = (next_power_of_two <= 128) ? 2 : 1;
++
++        // use 128 threads per block to maximimize gpu utilization
++        constexpr int threads_per_block = 128;
++
++        int warps_per_block = (threads_per_block / warp_size);
++        int batches_per_block = warps_per_block * batches_per_warp;
++        TORCH_INTERNAL_ASSERT(attn_batches % batches_per_block == 0);
++
++        int blocks_per_seq = attn_batches / batches_per_block;
++        dim3 blocks(seq_len, blocks_per_seq, 1);
++        dim3 threads(warp_size, warps_per_block, 1);
++        // Launch code would be more elegant if C++ supported FOR CONSTEXPR
++        switch (log2_elements) {
++            case 0: // 1
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 0>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 1: // 2
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 1>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 2: // 4
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 2>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 3: // 8
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 3>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 4: // 16
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 4>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 5: // 32
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 5>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 6: // 64
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 6>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 7: // 128
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 7>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 8: // 256
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 8>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 9: // 512
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 9>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 10: // 1024
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 10>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 11: // 2048
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 11>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 12: // 4096
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 12>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 13: // 8192
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 13>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            case 14: // 16384
++               hipLaunchKernelGGL(( scaled_upper_triang_masked_softmax_warp_backward<input_t, output_t, acc_t, 14>)
++                    , dim3(blocks), dim3(threads), 0, at::hip::getCurrentHIPStreamMasqueradingAsCUDA(), grad_input, grad, output, scale, batch_count, softmax_elements_stride, softmax_elements);
++                break;
++            default:
++                break;
++        }
++    }
++}
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/fused_kernels/scaled_upper_triang_masked_softmax_hip.hip $WS/annotated/source/megatron/fused_kernels/scaled_upper_triang_masked_softmax_hip.hip
+--- $WS/baseline/source/megatron/fused_kernels/scaled_upper_triang_masked_softmax_hip.hip	1969-12-31 16:00:00.000000000 -0800
++++ $WS/annotated/source/megatron/fused_kernels/scaled_upper_triang_masked_softmax_hip.hip	2026-07-26 15:18:57.447279000 -0700
+@@ -0,0 +1,87 @@
++// !!! This is a file automatically generated by hipify!!!
++/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved. */
++
++#include <ATen/ATen.h>
++#include <hip/hip_runtime.h>
++#include <hip/hip_runtime.h>
++#include <hip/hip_fp16.h>
++#ifndef __HIP_PLATFORM_HCC__
++#include <hip/hip_runtime_api.h>
++#endif
++#include <ATen/hip/HIPContext.h>
++#include <torch/extension.h>
++#include "scaled_upper_triang_masked_softmax_hip.h"
++#include "type_shim.h"
++
++namespace multihead_attn {
++namespace fused_softmax {
++namespace scaled_upper_triang_masked_softmax {
++
++torch::Tensor fwd_cuda(
++    torch::Tensor const& input, 
++    float scale_factor)
++{
++  // input is a 3d tensor with dimensions [attn_batches, seq_len, seq_len]
++  const int attn_batches = input.size(0);
++  const int seq_len = input.size(1);
++  TORCH_INTERNAL_ASSERT(seq_len <= 16384);
++
++  // Output 
++  auto act_options = input.options().requires_grad(false);
++  torch::Tensor softmax_results = 
++      torch::empty({attn_batches, seq_len, seq_len}, act_options);
++
++  // Softmax Intermediate Result Ptr
++  void* input_ptr = static_cast<void*>(input.data_ptr());
++  void* softmax_results_ptr = static_cast<void*>(softmax_results.data_ptr());
++
++  DISPATCH_HALF_AND_BFLOAT(
++      input.scalar_type(),
++      "dispatch_scaled_upper_triang_masked_softmax_forward",
++      dispatch_scaled_upper_triang_masked_softmax_forward<scalar_t, scalar_t, float>(
++	  reinterpret_cast<scalar_t*>(softmax_results_ptr),
++	  reinterpret_cast<const scalar_t*>(input_ptr),
++	  scale_factor,
++	  seq_len,
++	  seq_len,
++	  attn_batches);
++      );
++  return softmax_results;
++}
++				      
++
++torch::Tensor bwd_cuda(
++    torch::Tensor const& output_grads_, 
++    torch::Tensor const& softmax_results_, 
++    float scale_factor)  {
++	
++  auto output_grads = output_grads_.contiguous();
++  auto softmax_results = softmax_results_.contiguous();
++
++  //output grads is a 3d tensor with dimensions [attn_batches, seq_len, seq_len]
++  const int attn_batches = output_grads.size(0);
++  const int seq_len = output_grads.size(1);
++  TORCH_INTERNAL_ASSERT(output_grads.size(1) == output_grads.size(2));
++
++  void* output_grads_ptr = static_cast<void*>(output_grads.data_ptr());
++
++  //Softmax Grad
++  DISPATCH_HALF_AND_BFLOAT(
++      output_grads_.scalar_type(),
++      "dispatch_scaled_upper_triang_masked_softmax_backward",
++      dispatch_scaled_upper_triang_masked_softmax_backward<scalar_t, scalar_t, float>(
++          reinterpret_cast<scalar_t*>(output_grads_ptr), 
++	  reinterpret_cast<scalar_t*>(output_grads_ptr), 
++	  reinterpret_cast<scalar_t const*>(softmax_results.data_ptr()),
++	  scale_factor,
++	  seq_len,
++	  seq_len,
++	  attn_batches);
++      );
++  
++  //backward pass is completely in-place
++  return output_grads;
++}
++}
++}
++}
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/initialize.py $WS/annotated/source/megatron/initialize.py
+--- $WS/baseline/source/megatron/initialize.py	2026-07-26 11:55:20.128188000 -0700
++++ $WS/annotated/source/megatron/initialize.py	2026-07-26 12:23:21.248739000 -0700
+@@ -27,10 +27,13 @@
+ from deepspeed.accelerator import get_accelerator
+ import deepspeed
+ from deepspeed.ops.op_builder.builder import OpBuilder
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("init")
+ 
+ is_rocm_pytorch = OpBuilder.is_rocm_pytorch()
+ 
+ 
++@_dft.log
+ def initialize_megatron(
+     extra_args_provider=None,
+     args_defaults={},
+@@ -68,6 +71,7 @@
+     set_global_variables(args)
+ 
+     # torch.distributed initialization
++    @_dft.log
+     def finish_mpu_init():
+         args = get_args()
+         # Pytorch distributed.
+@@ -106,6 +110,7 @@
+         return None
+ 
+ 
++@_dft.log
+ def _compile_dependencies():
+ 
+     args = get_args()
+@@ -186,6 +191,7 @@
+         )
+ 
+ 
++@_dft.log
+ def setup_deepspeed_random_and_activation_checkpointing(args):
+     """Optional DeepSpeed Activation Checkpointing features.
+     Gives access to partition activations, contiguous memory optimizations
+@@ -219,6 +225,7 @@
+     )
+ 
+ 
++@_dft.log
+ def _initialize_distributed():
+     """Initialize torch.distributed and core model parallel."""
+     args = get_args()
+@@ -304,6 +311,7 @@
+         setup_deepspeed_random_and_activation_checkpointing(args)
+ 
+ 
++@_dft.log
+ def _init_autoresume():
+     """Set autoresume start time."""
+     autoresume = get_adlr_autoresume()
+@@ -313,6 +321,7 @@
+         torch.distributed.barrier()
+ 
+ 
++@_dft.log
+ def _set_random_seed(seed_, data_parallel_random_init=False):
+     """Set random seed for reproducability."""
+     if seed_ is not None and seed_ > 0:
+@@ -334,6 +343,7 @@
+         raise ValueError("Seed ({}) should be a positive integer.".format(seed))
+ 
+ 
++@_dft.log
+ def write_args_to_tensorboard():
+     """Write arguments to tensorboard."""
+     args = get_args()
+@@ -343,6 +353,7 @@
+             writer.add_text(arg, str(getattr(args, arg)), global_step=args.iteration)
+ 
+ 
++@_dft.log
+ def _initialize_mem_buffs():
+     """Initialize manually allocated static memory."""
+     args = get_args()
+@@ -351,6 +362,7 @@
+         tensor_parallel.init_checkpointed_activations_memory_buffer()
+ 
+ 
++@_dft.log
+ def set_jit_fusion_options():
+     """Set PyTorch JIT layer fusion options."""
+     # flags required to enable jit fusion kernels
+@@ -377,6 +389,7 @@
+     _warmup_jit_function()
+ 
+ 
++@_dft.log
+ def _warmup_jit_function():
+     """Compilie JIT functions before the main training steps"""
+     args = get_args()
+Binary files $WS/baseline/source/megatron/model/__pycache__/bert_model.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/bert_model.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/distributed.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/distributed.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/enums.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/enums.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/fused_bias_gelu.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/fused_bias_gelu.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/fused_layer_norm.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/fused_layer_norm.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/fused_softmax.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/fused_softmax.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/gpt_model.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/gpt_model.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/language_model.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/language_model.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/module.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/module.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/rmsnorm.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/rmsnorm.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/rotary_pos_embedding.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/rotary_pos_embedding.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/t5_model.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/t5_model.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/transformer.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/transformer.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/__pycache__/utils.cpython-313.pyc and $WS/annotated/source/megatron/model/__pycache__/utils.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/vision/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/megatron/model/vision/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/model/vision/__pycache__/knn_monitor.cpython-313.pyc and $WS/annotated/source/megatron/model/vision/__pycache__/knn_monitor.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/optimizer/__pycache__/clip_grads.cpython-313.pyc and $WS/annotated/source/megatron/optimizer/__pycache__/clip_grads.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/optimizer/__pycache__/distrib_optimizer.cpython-313.pyc and $WS/annotated/source/megatron/optimizer/__pycache__/distrib_optimizer.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/optimizer/__pycache__/grad_scaler.cpython-313.pyc and $WS/annotated/source/megatron/optimizer/__pycache__/grad_scaler.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/optimizer/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/megatron/optimizer/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/optimizer/__pycache__/optimizer.cpython-313.pyc and $WS/annotated/source/megatron/optimizer/__pycache__/optimizer.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/arguments.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/arguments.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/checkpointing.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/checkpointing.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/dist_signal_handler.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/dist_signal_handler.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/global_vars.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/global_vars.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/initialize.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/initialize.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/memory.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/memory.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/microbatches.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/microbatches.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/optimizer_param_scheduler.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/optimizer_param_scheduler.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/profiler.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/profiler.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/timers.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/timers.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/training.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/training.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/training_log.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/training_log.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/__pycache__/utils.cpython-313.pyc and $WS/annotated/source/megatron/__pycache__/utils.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/tokenizer/__pycache__/bert_tokenization.cpython-313.pyc and $WS/annotated/source/megatron/tokenizer/__pycache__/bert_tokenization.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/tokenizer/__pycache__/gpt2_tokenization.cpython-313.pyc and $WS/annotated/source/megatron/tokenizer/__pycache__/gpt2_tokenization.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/tokenizer/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/megatron/tokenizer/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/megatron/tokenizer/__pycache__/tokenizer.cpython-313.pyc and $WS/annotated/source/megatron/tokenizer/__pycache__/tokenizer.cpython-313.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/training.py $WS/annotated/source/megatron/training.py
+--- $WS/baseline/source/megatron/training.py	2026-07-26 11:55:21.253173000 -0700
++++ $WS/annotated/source/megatron/training.py	2026-07-26 15:14:59.260134000 -0700
+@@ -55,7 +55,17 @@
+ from megatron.model import Float16Module, GPTModel
+ from megatron.model import DistributedDataParallel as LocalDDP
+ from megatron.model.transformer import ParallelTransformerLayer
+-from megatron.model.vision.knn_monitor import compute_feature_bank
++try:
++    from megatron.model.vision.knn_monitor import compute_feature_bank
++except ImportError:
++    # Vision codepath (torchvision) is not available/needed for non-vision
++    # (e.g. GPT-only) pretraining; defer the error until actually used.
++    def compute_feature_bank(*args, **kwargs):
++        raise ImportError(
++            "megatron.model.vision.knn_monitor could not be imported "
++            "(torchvision unavailable); vision pretraining is not supported "
++            "in this environment."
++        )
+ from megatron.optimizer import get_megatron_optimizer
+ from megatron.optimizer_param_scheduler import OptimizerParamScheduler
+ from megatron.training_log import training_log
+@@ -70,6 +80,9 @@
+     update_rotary_pos_emb,
+ )
+ 
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("training")
++
+ from megatron.profiler import (
+     setup_profiler,
+     trigger,
+@@ -93,6 +106,7 @@
+ log.setLevel(LOG_LEVEL) if RANK == 0 else log.setLevel("CRITICAL")
+ 
+ 
++@_dft.log
+ def print_datetime(string):
+     """Note that this call will sync across all ranks."""
+     tdist.barrier()
+@@ -106,6 +120,7 @@
+ """
+ 
+ 
++@_dft.log
+ def _create_ds_config_dict():
+     args = get_args()
+     assert args is not None
+@@ -121,6 +136,7 @@
+     return ds_config_dict
+ 
+ 
++@_dft.log
+ @dlp.log
+ def pretrain(
+     train_valid_test_dataset_provider,
+@@ -349,6 +365,7 @@
+     return model
+ 
+ 
++@_dft.log
+ @dlp.log
+ def update_train_iters(args):
+     # For iteration-based training, we don't need to do anything
+@@ -378,6 +395,7 @@
+     log.info("setting training iterations to {}".format(args.train_iters))
+ 
+ 
++@_dft.log
+ @dlp.log
+ def setup_teacher_model(args, model_provider):
+     log.info("***>>>>> Student model checkpoint iteration:{}".format(args.iteration))
+@@ -408,6 +426,7 @@
+     return teacher_model
+ 
+ 
++@_dft.log
+ @dlp.log
+ @ezpz.dist.timeitlogit(rank=RANK)
+ def get_model(
+@@ -557,6 +576,7 @@
+     return model
+ 
+ 
++@_dft.log
+ @dlp.log
+ @ezpz.dist.timeitlogit(rank=RANK)
+ def get_optimizer_param_scheduler(optimizer):
+@@ -636,6 +656,7 @@
+     return opt_param_scheduler
+ 
+ 
++@_dft.log
+ @dlp.log
+ def load_model_weights_only(model_provider_func):
+     """Setup model and optimizer."""
+@@ -667,6 +688,7 @@
+     return model, optimizer, lr_scheduler
+ 
+ 
++@_dft.log
+ @dlp.log
+ @ezpz.dist.timeitlogit(rank=RANK)
+ def setup_model_and_optimizer(
+@@ -854,6 +876,7 @@
+     return model, optimizer, opt_param_scheduler
+ 
+ 
++@_dft.log
+ @dlp.log
+ def train_step(
+     forward_step_func, data_iterator, model, optimizer, opt_param_scheduler, config
+@@ -1004,6 +1027,7 @@
+     return {}, skipped_iter, grad_norm, num_zeros_in_grad
+ 
+ 
++@_dft.log
+ @dlp.log
+ @ezpz.dist.timeitlogit(rank=RANK)
+ def save_checkpoint_and_time(iteration, model, optimizer, opt_param_scheduler):
+@@ -1021,6 +1045,7 @@
+     timers.log(["save-checkpoint"])
+ 
+ 
++@_dft.log
+ @dlp.log
+ def train(
+     forward_step_func,
+@@ -1488,6 +1513,7 @@
+     return iteration
+ 
+ 
++@_dft.log
+ @dlp.log
+ def evaluate(
+     forward_step_func,
+@@ -1606,6 +1632,7 @@
+     return total_loss_dict, collected_non_loss_data
+ 
+ 
++@_dft.log
+ @dlp.log
+ def evaluate_and_print_results(
+     prefix,
+@@ -1695,12 +1722,14 @@
+     return total_loss_dict
+ 
+ 
++@_dft.log
+ def cyclic_iter(iter):
+     while True:
+         for x in iter:
+             yield x
+ 
+ 
++@_dft.log
+ @dlp.log
+ @ezpz.dist.timeitlogit(rank=RANK)
+ def build_train_valid_test_datasets(build_train_valid_test_datasets_provider):
+@@ -1730,6 +1759,7 @@
+     return build_train_valid_test_datasets_provider(train_val_test_num_samples)
+ 
+ 
++@_dft.log
+ @dlp.log
+ @ezpz.dist.timeitlogit(rank=RANK)
+ def build_train_valid_test_data_loaders(build_train_valid_test_datasets_provider):
+@@ -1801,6 +1831,7 @@
+     return train_dataloader, valid_dataloader, test_dataloader
+ 
+ 
++@_dft.log
+ @dlp.log
+ @ezpz.dist.timeitlogit(rank=RANK)
+ def build_train_valid_test_data_iterators(build_train_valid_test_datasets_provider):
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/megatron/utils.py $WS/annotated/source/megatron/utils.py
+--- $WS/baseline/source/megatron/utils.py	2026-07-26 11:55:21.259152000 -0700
++++ $WS/annotated/source/megatron/utils.py	2026-07-26 12:48:12.048880000 -0700
+@@ -20,6 +20,8 @@
+ from megatron.model.rotary_pos_embedding import RotaryEmbedding
+ 
+ import ezpz as ez
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("utils")
+ 
+ ACCELERATOR = get_accelerator()
+ assert ACCELERATOR is not None
+@@ -52,7 +54,7 @@
+ 
+ 
+ if _DFTRACER_EXIST:
+-    from dftracer.logger import (  # type:ignore
++    from dftracer.python.logger import (  # type:ignore
+         dftracer as PerfTrace,
+         dft_fn as Profile,
+         DFTRACER_ENABLE as DFTRACER_ENABLE,
+@@ -65,62 +67,79 @@
+ 
+     class Profile(object):
+ 
++        @_dft.log_init
+         def __init__(
+             self, cat, name=None, epoch=None, step=None, image_idx=None, image_size=None
+         ):
+             return
+ 
++        @_dft.log
+         def log(self, func):
+             return func
+ 
++        @_dft.log
+         def log_init(self, func):
+             return func
+ 
++        @_dft.log
+         def iter(self, func, iter_name="step"):
+             return func
+ 
++        @_dft.log
+         def __enter__(self):
+             return
+ 
++        @_dft.log
+         def __exit__(self, type, value, traceback):
+             return
+ 
++        @_dft.log
+         def update(
+             self, epoch=None, step=None, image_idx=None, image_size=None, args={}
+         ):
+             return
+ 
++        @_dft.log
+         def flush(self):
+             return
+ 
++        @_dft.log
+         def reset(self):
+             return
+ 
++        @_dft.log
+         def log_static(self, func):
+             return
+ 
+     class dftracer(object):
+ 
++        @_dft.log_init
+         def __init__(
+             self,
+         ):
+             self.type = None
+ 
++        @_dft.log
+         def initialize_log(self, logfile=None, data_dir=None, process_id=-1):
+             return
+ 
++        @_dft.log
+         def get_time(self):
+             return
+ 
++        @_dft.log
+         def enter_event(self):
+             return
+ 
++        @_dft.log
+         def exit_event(self):
+             return
+ 
++        @_dft.log
+         def log_event(self, name, cat, start_time, duration, string_args=None):
+             return
+ 
++        @_dft.log
+         def finalize(self):
+             return
+ 
+@@ -128,6 +147,7 @@
+     DFTRACER_ENABLE = False
+ 
+ 
++@_dft.log
+ def get_logger(
+     name: str,
+     level: Optional[str] = None,
+@@ -147,6 +167,7 @@
+     return logger
+ 
+ 
++@_dft.log
+ def update_rotary_pos_emb(seq_length):
+     args = get_args()
+     accelerator = get_accelerator()
+@@ -169,6 +190,7 @@
+     args.rotary_pos_emb = rotary_pos_emb
+ 
+ 
++@_dft.log
+ def unwrap_model(model, module_instances=(torchDDP)):
+     return_list = True
+     if not isinstance(model, list):
+@@ -184,6 +206,7 @@
+     return unwrapped_model
+ 
+ 
++@_dft.log
+ def calc_params_l2_norm(model):
+     """Calculate l2 norm of parameters"""
+     args = get_args()
+@@ -221,6 +244,7 @@
+     return norm_2.item() ** 0.5
+ 
+ 
++@_dft.log
+ def average_losses_across_data_parallel_group(losses):
+     """Reduce a tensor of losses across all GPUs."""
+     averaged_losses = torch.cat([loss.clone().detach().view(1) for loss in losses])
+@@ -232,6 +256,7 @@
+     return averaged_losses
+ 
+ 
++@_dft.log
+ def report_memory(name):
+     """Simple GPU memory report."""
+     accelerator = get_accelerator()
+@@ -252,6 +277,7 @@
+         log.info(f"[Rank {RANK}] {string}")
+ 
+ 
++@_dft.log
+ def print_params_min_max_norm(optimizer, iteration):
+     """Print min, max, and norm of all parameters."""
+     index = 0
+@@ -271,6 +297,7 @@
+     log.info(string)
+ 
+ 
++@_dft.log
+ def check_adlr_autoresume_termination(iteration, model, optimizer, opt_param_scheduler):
+     """Check for autoresume signal and exit if it is received."""
+     from megatron.checkpointing import save_checkpoint
+@@ -290,6 +317,7 @@
+         sys.exit(0)
+ 
+ 
++@_dft.log
+ def get_ltor_masks_and_position_ids(
+     data,
+     eod_token,
+@@ -360,6 +388,7 @@
+     return attention_mask, loss_mask, position_ids
+ 
+ 
++@_dft.log
+ def print_rank_0(message):
+     """If distributed is initialized, print only on rank 0."""
+     # if torch.distributed.is_initialized():
+@@ -371,10 +400,12 @@
+     _ = log.info(f"{message}") if RANK == 0 else None
+ 
+ 
++@_dft.log
+ def is_last_rank():
+     return torch.distributed.get_rank() == (torch.distributed.get_world_size() - 1)
+ 
+ 
++@_dft.log
+ def print_rank_last(message):
+     """If distributed is initialized, print only on last rank."""
+     if torch.distributed.is_initialized():
+@@ -385,11 +416,13 @@
+         log.info(message)
+ 
+ 
++@_dft.log
+ def is_aml():
+     # Are we running inside an Azure Machine Learning (AML) environment?
+     return "AZUREML_EXPERIMENT_ID" in os.environ
+ 
+ 
++@_dft.log
+ def is_rank_0():
+     """Check whether it is rank 0. For AML, check if it is rank 0 of a node"""
+     if torch.distributed.is_initialized():
+@@ -405,6 +438,7 @@
+         return True
+ 
+ 
++@_dft.log
+ def get_parameters_in_billions(model):
+     gpus_per_model = torch.distributed.get_world_size(
+         group=mpu.get_model_parallel_group()
+@@ -425,6 +459,7 @@
+     return approx_parameters_in_billions * gpus_per_model / (1e9)
+ 
+ 
++@_dft.log
+ def num_floating_point_operations(args, batch_size):
+     # Group Query Attention.
+     # if not args.group_query_attention:
+@@ -456,6 +491,7 @@
+     )
+ 
+ 
++@_dft.log
+ def throughput_calculator(model, args, iteration_time, total_iterations):
+     batch_size = (
+         args.micro_batch_size * get_num_microbatches() * args.data_parallel_size
+@@ -526,6 +562,7 @@
+     return samples_per_second, tflops, approx_parameters_in_billions
+ 
+ 
++@_dft.log
+ def checkpoint_throughput_calculator(model, latency_second):
+     approx_parameters_in_billions = get_parameters_in_billions(model)
+     checkpoint_multiplier = (
+@@ -538,14 +575,17 @@
+     )
+ 
+ 
++@_dft.log
+ def get_fingerprint_header():
+     return f"{'min':^13} {'max':^13} {'mean':^13} {'l2 norm':^12} metadata"
+ 
+ 
++@_dft.log
+ def get_fingerprint(p):
+     return f"{p.min():13.6e} {p.max():13.6e} {p.mean():13.6e} {p.norm():12.6e}"
+ 
+ 
++@_dft.log
+ def dump_position_embed_weights(preamble, iteration, model):
+     # return
+     from deepspeed.utils import safe_get_full_fp32_param
+@@ -571,6 +611,7 @@
+             )
+ 
+ 
++@_dft.log
+ def dump_weights(preamble, iteration, model, optimizer, tensor=None):
+     # return
+     tp_rank = mpu.get_tensor_model_parallel_rank()
+@@ -622,6 +663,7 @@
+     return
+ 
+ 
++@_dft.log
+ def found_kill_switch():
+     args = get_args()
+     assert args is not None
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/pretrain_gpt.py $WS/annotated/source/pretrain_gpt.py
+--- $WS/baseline/source/pretrain_gpt.py	2026-07-26 11:55:21.263020000 -0700
++++ $WS/annotated/source/pretrain_gpt.py	2026-07-26 20:09:47.576225000 -0700
+@@ -2,6 +2,21 @@
+ 
+ """Pretrain GPT"""
+ 
++# DIAGNOSTIC: Check env vars at Python startup, BEFORE any imports
++import os
++import sys
++print(f"=== DIAGNOSTIC: pretrain_gpt.py startup (PID={os.getpid()}) ===", file=sys.stderr)
++print(f"DFTRACER_ENABLE={os.environ.get('DFTRACER_ENABLE', 'NOT SET')}", file=sys.stderr)
++print(f"DFTRACER_LOG_FILE={os.environ.get('DFTRACER_LOG_FILE', 'NOT SET')}", file=sys.stderr)
++print(f"DFTRACER_INIT={os.environ.get('DFTRACER_INIT', 'NOT SET')}", file=sys.stderr)
++print(f"DFTRACER_DATA_DIR={os.environ.get('DFTRACER_DATA_DIR', 'NOT SET')}", file=sys.stderr)
++print(f"DFTRACER_INC_METADATA={os.environ.get('DFTRACER_INC_METADATA', 'NOT SET')}", file=sys.stderr)
++print(f"RANK={os.environ.get('RANK', 'NOT SET')}", file=sys.stderr)
++print(f"LOCAL_RANK={os.environ.get('LOCAL_RANK', 'NOT SET')}", file=sys.stderr)
++print(f"FLUX_TASK_RANK={os.environ.get('FLUX_TASK_RANK', 'NOT SET')}", file=sys.stderr)
++print(f"========================================", file=sys.stderr)
++
++
+ import torch
+ import math
+ from functools import partial
+@@ -26,8 +41,26 @@
+ 
+ from torch import nn
+ import torch.nn.functional as F
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("pretrain")
++# FIX: Pass rank to dftracer so each rank writes to its own trace file
++# When process_id=-1, all ranks compete for the same file, causing lock contention
++_rank = int(os.environ.get('RANK', -1))
++_dft_log = dftracer.initialize_log(
++    logfile=os.environ.get('DFTRACER_LOG_FILE'),
++    data_dir=os.environ.get('DFTRACER_DATA_DIR'),
++    process_id=_rank
++)
++# dftracer app-parameter metadata
++_dft_log.log_metadata_event("model", "GPT-3-Medium-350M")
++_dft_log.log_metadata_event("num_layers", "24")
++_dft_log.log_metadata_event("hidden_size", "1024")
++_dft_log.log_metadata_event("num_attention_heads", "16")
++_dft_log.log_metadata_event("global_batch_size", "256")
++_dft_log.log_metadata_event("framework", "megatron-deepspeed")
+ 
+ 
++@_dft.log
+ def model_provider(pre_process=True, post_process=True):
+     """Build the model."""
+ 
+@@ -90,6 +123,7 @@
+     return model
+ 
+ 
++@_dft.log
+ def get_batch(data_iterator):
+     """Generate a batch"""
+     args = get_args()
+@@ -144,6 +178,7 @@
+ 
+     return tokens, labels, loss_mask, attention_mask, position_ids
+ 
++@_dft.log
+ def data_post_process(data, data_sampler_state_dict):
+     args = get_args()
+     if args.data_efficiency_curriculum_learning:
+@@ -169,6 +204,7 @@
+             args.data_efficiency_curriculum_learning_seqlen_type = None
+     return data
+ 
++@_dft.log
+ def get_batch_pipe(data):
+     """Modification of `get_batch` to work on `next(data_iterator)` instead of `data_iterator`"""
+     args = get_args()
+@@ -205,6 +241,7 @@
+     return (tokens, position_ids, attention_mask), (labels, loss_mask)
+ 
+ 
++@_dft.log
+ def loss_func(loss_mask, moe_loss, mos_loss, output_tensor):
+     args = get_args()
+     losses = output_tensor.float()
+@@ -228,6 +265,7 @@
+             loss = loss + moe_loss
+             return loss, {'lm loss': averaged_loss[0], 'moe loss': moe_loss}
+ 
++@_dft.log
+ def calculate_mos_loss(args, stu_output, teacher_model, tokens, position_ids, attention_mask):
+     mos_loss = 0
+     alpha = args.kd_alpha_ce
+@@ -254,6 +292,7 @@
+         mos_loss = mos_loss.div(args.seq_length) * beta
+     return mos_loss
+ 
++@_dft.log
+ def forward_step(data_iterator, model):
+     """Forward step."""
+     args = get_args()
+@@ -301,6 +340,7 @@
+     return output_tensor, partial(loss_func, loss_mask, moe_loss, mos_loss)
+ 
+ 
++@_dft.log
+ def train_valid_test_datasets_provider(train_val_test_num_samples):
+     """Build train, valid, and test datasets."""
+     args = get_args()
+@@ -324,11 +364,13 @@
+     return train_ds, valid_ds, test_ds
+ 
+ 
++@_dft.log
+ def command_exists(cmd):
+     result = subprocess.Popen(f'type {cmd}', stdout=subprocess.PIPE, shell=True)
+     return result.wait() == 0
+ 
+ 
++@_dft.log
+ def git_ds_info():
+     from deepspeed.env_report import main as ds_report
+     ds_report()
+@@ -359,3 +401,4 @@
+              forward_step,
+              args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+              data_post_process=data_post_process)
++_dft_log.finalize()
+Binary files $WS/baseline/source/__pycache__/pretrain_gpt.cpython-313.pyc and $WS/annotated/source/__pycache__/pretrain_gpt.cpython-313.pyc differ
+Binary files $WS/baseline/source/tools/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/tools/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/tools/retro/__pycache__/__init__.cpython-313.pyc and $WS/annotated/source/tools/retro/__pycache__/__init__.cpython-313.pyc differ
+Binary files $WS/baseline/source/tools/retro/__pycache__/utils.cpython-313.pyc and $WS/annotated/source/tools/retro/__pycache__/utils.cpython-313.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/torchrun_hpc-python_2026-07-26_21h37m29s/torchrun_hpc_trampoline.py $WS/annotated/source/torchrun_hpc-python_2026-07-26_21h37m29s/torchrun_hpc_trampoline.py
+--- $WS/baseline/source/torchrun_hpc-python_2026-07-26_21h37m29s/torchrun_hpc_trampoline.py	1969-12-31 16:00:00.000000000 -0800
++++ $WS/annotated/source/torchrun_hpc-python_2026-07-26_21h37m29s/torchrun_hpc_trampoline.py	2026-07-26 21:37:29.201819000 -0700
+@@ -0,0 +1,143 @@
++# Copyright (c) 2014-2025, Lawrence Livermore National Security, LLC.
++# Produced at the Lawrence Livermore National Laboratory.
++# Written by the LBANN Research Team (B. Van Essen, et al.) listed in
++# the CONTRIBUTORS file. See the top-level LICENSE file for details.
++#
++# LLNL-CODE-697807.
++# All rights reserved.
++#
++# This file is part of LBANN: Livermore Big Artificial Neural Network
++# Toolkit. For details, see http://software.llnl.gov/LBANN or
++# https://github.com/LBANN and https://github.com/LLNL/LBANN.
++#
++# SPDX-License-Identifier: (Apache-2.0)
++import hpc_launcher.torch
++
++import torch
++import torch.distributed as dist
++import runpy
++import atexit
++import sys
++import os
++
++from hpc_launcher.schedulers import get_schedulers
++
++
++def main():
++    # Strip off the name of this script and pass the rest to runpy
++    args = sys.argv[1:]
++
++    scheduler_type = os.getenv("TORCHRUN_HPC_SCHEDULER")
++    scheduler = get_schedulers()[scheduler_type]
++    (world_size, rank, local_world_size, local_rank) = (
++        scheduler.get_parallel_configuration()
++    )
++
++    # Check on the backend and report if the memory size was set
++    backend = None
++    device = None
++    if torch.cuda.is_available():
++        backend = "nccl"
++        device = "cuda"
++        fraction_max_gpu_mem = float(os.getenv("HPC_LAUNCHER_MAX_GPU_MEM", 1.0))
++        if fraction_max_gpu_mem != 1.0 and rank == 0:
++            print(
++                f"[Rank {rank} of {world_size}] TORCHRUN-HPC set the max GPU memory fraction to {fraction_max_gpu_mem}"
++            )
++    else:
++        backend = "gloo"
++        device="cpu"
++
++    # Standard operating mode assumes that there is one rank per GPU
++    # Check to see how many GPUS are actually available to this rank
++    avail_gpus = 0
++    gpus = []
++    for e in ["CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES"]:
++        if os.getenv(e):
++            gpus = os.getenv(e)
++            break
++    if gpus:
++        avail_gpus = gpus.split(",")
++
++    # Round-robin assign the visibile GPUs
++    if avail_gpus:
++        local_device_id = local_rank % len(avail_gpus)
++    else:
++        local_device_id = local_rank
++    os.environ["LOCAL_RANK"] = f"{local_device_id}"
++
++    torch_dist_initialized = dist.is_initialized()
++    rdv_protocol = os.getenv("TORCHRUN_HPC_RDV_PROTOCOL")
++    if world_size > 1 or rdv_protocol == "mpi://":
++        if rdv_protocol == "mpi://":
++            try:
++                import mpi4py
++
++                # This will automatically register MPI for initialization.
++                import mpi_rdv
++                from mpi4py import MPI
++
++                mpi = True
++                if backend == "gloo" and torch.distributed.is_mpi_available():
++                    backend = "mpi"
++            except (ImportError, ModuleNotFoundError):
++                mpi = None
++                raise Exception(
++                    f"MPI rendezvous protocol selected without installing mpi_rndv library."
++                )
++
++        if not torch_dist_initialized:
++            if not backend:
++                raise Exception(
++                    f"torchrun-hpc is unable to find a valid backend for torch distributed."
++                )
++
++            if rank == 0:
++                print(
++                    f"[Rank {rank} of {world_size}]: Initializing distributed PyTorch using protocol: {rdv_protocol}"
++                )
++            # TODO(later): Fix how we handle CUDA visible devices and MPI bind
++            dist.init_process_group(
++                backend, init_method=rdv_protocol, world_size=world_size, rank=rank, device_id=torch.device(device, local_device_id)
++            )
++
++            if rdv_protocol == "mpi://" and rank == 0:
++                print(
++                    "[Rank {} of {}]: MPI Version: {}".format(
++                        rank, world_size, MPI.Get_version()
++                    )
++                )
++                print(
++                    "[Rank {} of {}]: MPI Implementation: {}".format(
++                        rank, world_size, MPI.Get_library_version()
++                    )
++                )
++
++    # If the world size is only 1, torch distributed doesn't have to be initialized
++    # however, the called application may try to setup torch distributed -- provide env variables
++    # Additionally, some codes (e.g. Huggingface accelerate) will look for these fields
++    os.environ["WORLD_SIZE"] = f"{world_size}"
++    if os.getenv("TORCHRUN_HPC_MASTER_ADDR"):
++        os.environ["MASTER_ADDR"] = os.getenv("TORCHRUN_HPC_MASTER_ADDR")
++    else:
++        # If the mpi rendezvous protocol is set, this should be necessary but some packages still look for it
++        os.environ["MASTER_ADDR"] = "127.0.0.1"
++
++    if os.getenv("TORCHRUN_HPC_MASTER_PORT"):
++        os.environ["MASTER_PORT"] = os.getenv("TORCHRUN_HPC_MASTER_PORT")
++    else:
++        # If the mpi rendezvous protocol is set, this should be necessary but some packages still look for it
++        os.environ["MASTER_ADDR"] = "23456"
++
++    # Note that run_path will prepend the args[0] back onto the sys.argv so it needs to be stripped off first
++    sys.argv = sys.argv[1:]
++    # Run underlying script
++    runpy.run_path(args[0], run_name="__main__")
++
++    if dist.is_initialized():
++        # Deal with destroying the process group here
++        dist.destroy_process_group()
++
++
++if __name__ == "__main__":
++    main()
+Binary files $WS/baseline/source/tuolumne1021-pt_nccl_heartbt-3331272.core and $WS/annotated/source/tuolumne1021-pt_nccl_heartbt-3331272.core differ
+Binary files $WS/baseline/source/tuolumne1021-pt_nccl_watchdg-3331269.core and $WS/annotated/source/tuolumne1021-pt_nccl_watchdg-3331269.core differ
+Binary files $WS/baseline/source/tuolumne1021-pt_nccl_watchdg-3331270.core and $WS/annotated/source/tuolumne1021-pt_nccl_watchdg-3331270.core differ
+Binary files $WS/baseline/source/tuolumne1021-pt_nccl_watchdg-3331271.core and $WS/annotated/source/tuolumne1021-pt_nccl_watchdg-3331271.core differ
+Binary files $WS/baseline/source/tuolumne1021-pt_nccl_watchdg-3332815.core and $WS/annotated/source/tuolumne1021-pt_nccl_watchdg-3332815.core differ
+Binary files $WS/baseline/source/tuolumne1021-pt_nccl_watchdg-3332816.core and $WS/annotated/source/tuolumne1021-pt_nccl_watchdg-3332816.core differ
+Binary files $WS/baseline/source/tuolumne1021-pt_nccl_watchdg-3332817.core and $WS/annotated/source/tuolumne1021-pt_nccl_watchdg-3332817.core differ
+Binary files $WS/baseline/source/tuolumne1021-pt_nccl_watchdg-3332818.core and $WS/annotated/source/tuolumne1021-pt_nccl_watchdg-3332818.core differ
+Binary files $WS/baseline/source/tuolumne1021-pt_nccl_watchdg-3340123.core and $WS/annotated/source/tuolumne1021-pt_nccl_watchdg-3340123.core differ
+Binary files $WS/baseline/source/tuolumne1022-pt_nccl_heartbt-1415782.core and $WS/annotated/source/tuolumne1022-pt_nccl_heartbt-1415782.core differ
+Binary files $WS/baseline/source/tuolumne1022-pt_nccl_heartbt-1415783.core and $WS/annotated/source/tuolumne1022-pt_nccl_heartbt-1415783.core differ
+Binary files $WS/baseline/source/tuolumne1022-pt_nccl_watchdg-1407074.core and $WS/annotated/source/tuolumne1022-pt_nccl_watchdg-1407074.core differ
+Binary files $WS/baseline/source/tuolumne1022-pt_nccl_watchdg-1408829.core and $WS/annotated/source/tuolumne1022-pt_nccl_watchdg-1408829.core differ
+Binary files $WS/baseline/source/tuolumne1022-pt_nccl_watchdg-1408830.core and $WS/annotated/source/tuolumne1022-pt_nccl_watchdg-1408830.core differ
+Binary files $WS/baseline/source/tuolumne1022-pt_nccl_watchdg-1408831.core and $WS/annotated/source/tuolumne1022-pt_nccl_watchdg-1408831.core differ
+Binary files $WS/baseline/source/tuolumne1022-pt_nccl_watchdg-1408832.core and $WS/annotated/source/tuolumne1022-pt_nccl_watchdg-1408832.core differ
+Binary files $WS/baseline/source/tuolumne1022-pt_nccl_watchdg-1415781.core and $WS/annotated/source/tuolumne1022-pt_nccl_watchdg-1415781.core differ
+Binary files $WS/baseline/source/tuolumne1024-pt_nccl_heartbt-1028631.core and $WS/annotated/source/tuolumne1024-pt_nccl_heartbt-1028631.core differ
+Binary files $WS/baseline/source/tuolumne1024-pt_nccl_heartbt-1028632.core and $WS/annotated/source/tuolumne1024-pt_nccl_heartbt-1028632.core differ
+Binary files $WS/baseline/source/tuolumne1024-pt_nccl_heartbt-1028633.core and $WS/annotated/source/tuolumne1024-pt_nccl_heartbt-1028633.core differ
+Binary files $WS/baseline/source/tuolumne1024-pt_nccl_watchdg-1016229.core and $WS/annotated/source/tuolumne1024-pt_nccl_watchdg-1016229.core differ
+Binary files $WS/baseline/source/tuolumne1024-pt_nccl_watchdg-1017914.core and $WS/annotated/source/tuolumne1024-pt_nccl_watchdg-1017914.core differ
+Binary files $WS/baseline/source/tuolumne1024-pt_nccl_watchdg-1028630.core and $WS/annotated/source/tuolumne1024-pt_nccl_watchdg-1028630.core differ
+Binary files $WS/baseline/source/tuolumne1025-pt_tcpstore_uv-1252512.core and $WS/annotated/source/tuolumne1025-pt_tcpstore_uv-1252512.core differ
+Binary files $WS/baseline/source/tuolumne1158-python3.13-4006048.core and $WS/annotated/source/tuolumne1158-python3.13-4006048.core differ
+Binary files $WS/baseline/source/tuolumne1158-python3.13-4006050.core and $WS/annotated/source/tuolumne1158-python3.13-4006050.core differ
+Binary files $WS/baseline/source/tuolumne1158-python3.13-4006332.core and $WS/annotated/source/tuolumne1158-python3.13-4006332.core differ
+Binary files $WS/baseline/source/tuolumne1158-python3.13-4006333.core and $WS/annotated/source/tuolumne1158-python3.13-4006333.core differ
+Binary files $WS/baseline/source/tuolumne1161-python3.13-2866795.core and $WS/annotated/source/tuolumne1161-python3.13-2866795.core differ
+Binary files $WS/baseline/source/tuolumne1161-python3.13-2866797.core and $WS/annotated/source/tuolumne1161-python3.13-2866797.core differ
+Binary files $WS/baseline/source/tuolumne1161-python3.13-2866798.core and $WS/annotated/source/tuolumne1161-python3.13-2866798.core differ
+Binary files $WS/baseline/source/tuolumne1161-python3.13-2866799.core and $WS/annotated/source/tuolumne1161-python3.13-2866799.core differ
+Binary files $WS/baseline/source/tuolumne1161-python3.13-2867044.core and $WS/annotated/source/tuolumne1161-python3.13-2867044.core differ
+Binary files $WS/baseline/source/tuolumne1161-python3.13-2867045.core and $WS/annotated/source/tuolumne1161-python3.13-2867045.core differ
+Binary files $WS/baseline/source/tuolumne1163-python3.13-958310.core and $WS/annotated/source/tuolumne1163-python3.13-958310.core differ
+Binary files $WS/baseline/source/tuolumne1163-python3.13-958312.core and $WS/annotated/source/tuolumne1163-python3.13-958312.core differ
+Binary files $WS/baseline/source/tuolumne1163-python3.13-958313.core and $WS/annotated/source/tuolumne1163-python3.13-958313.core differ
+Binary files $WS/baseline/source/tuolumne1163-python3.13-958314.core and $WS/annotated/source/tuolumne1163-python3.13-958314.core differ
+Binary files $WS/baseline/source/tuolumne1163-python3.13-958555.core and $WS/annotated/source/tuolumne1163-python3.13-958555.core differ
+Binary files $WS/baseline/source/tuolumne1163-python3.13-958556.core and $WS/annotated/source/tuolumne1163-python3.13-958556.core differ
+Binary files $WS/baseline/source/tuolumne1220-python3.13-473345.core and $WS/annotated/source/tuolumne1220-python3.13-473345.core differ
+Binary files $WS/baseline/source/tuolumne1220-python3.13-473347.core and $WS/annotated/source/tuolumne1220-python3.13-473347.core differ
+Binary files $WS/baseline/source/tuolumne1220-python3.13-473348.core and $WS/annotated/source/tuolumne1220-python3.13-473348.core differ
+Binary files $WS/baseline/source/tuolumne1220-python3.13-473349.core and $WS/annotated/source/tuolumne1220-python3.13-473349.core differ
+Binary files $WS/baseline/source/tuolumne1220-python3.13-473591.core and $WS/annotated/source/tuolumne1220-python3.13-473591.core differ
+Binary files $WS/baseline/source/tuolumne1220-python3.13-473592.core and $WS/annotated/source/tuolumne1220-python3.13-473592.core differ
+Binary files $WS/baseline/source/tuolumne1220-python3.13-473593.core and $WS/annotated/source/tuolumne1220-python3.13-473593.core differ
+Binary files $WS/baseline/source/tuolumne1220-python3.13-473594.core and $WS/annotated/source/tuolumne1220-python3.13-473594.core differ

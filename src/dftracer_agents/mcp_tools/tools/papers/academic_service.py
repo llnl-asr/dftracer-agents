@@ -124,7 +124,14 @@ _RATE_LIMITS: Dict[str, float] = {
     "web_search":        1.0,   # avoid getting blocked by the search engine
 }
 
-_rate_locks: Dict[str, asyncio.Lock] = {}
+# Keyed by (id(running_loop), source). An asyncio.Lock binds to the loop that is
+# running when it is first awaited, but this module-level cache outlives any single
+# loop — a server that serves requests on more than one loop (or recreates one) would
+# reuse a stale lock and raise
+#   RuntimeError: <asyncio.locks.Lock ...> is bound to a different event loop
+# which surfaced as a hard failure whenever two search tools ran concurrently.
+# Scoping the cache per-loop keeps the rate limit correct while making it loop-safe.
+_rate_locks: Dict[tuple, asyncio.Lock] = {}
 _rate_last_call: Dict[str, float] = {}
 
 
@@ -132,15 +139,21 @@ async def _rate_limit(name: str) -> None:
     """Block until it is safe to issue another request to *name*.
 
     Enforces ``_RATE_LIMITS[name]`` seconds of minimum spacing between
-    requests to the same source, shared across all concurrent callers in
-    this process via a per-source lock.
+    requests to the same source, shared across all concurrent callers on
+    the same event loop via a per-(loop, source) lock.
     """
     interval = _RATE_LIMITS.get(name, 0.0)
     if interval <= 0:
         return
-    lock = _rate_locks.setdefault(name, asyncio.Lock())
+    loop = asyncio.get_running_loop()
+    key = (id(loop), name)
+    lock = _rate_locks.get(key)
+    if lock is None:
+        lock = _rate_locks[key] = asyncio.Lock()
+        # Drop locks belonging to dead loops so this cache cannot grow without bound.
+        for stale in [k for k in _rate_locks if k[0] != id(loop)]:
+            _rate_locks.pop(stale, None)
     async with lock:
-        loop = asyncio.get_event_loop()
         now = loop.time()
         wait = interval - (now - _rate_last_call.get(name, 0.0))
         if wait > 0:

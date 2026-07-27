@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "tracking_uri": "http://127.0.0.1:20002",
+  "experiment": "dftracer-agents",
+  "parent_run_id": "78ca361e760841a5a8108f42fe1257a8",
+  "ui_url": "http://127.0.0.1:20002/#/experiments/1/runs/78ca361e760841a5a8108f42fe1257a8",
+  "error": ""
+}

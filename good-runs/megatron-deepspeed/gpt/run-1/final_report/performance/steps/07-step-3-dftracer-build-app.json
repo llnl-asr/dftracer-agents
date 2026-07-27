@@ -1,0 +1,51 @@
+{
+  "run_id": "megatron_deepspeed/20260726_185517",
+  "key": "STEP 3: dftracer-build-app",
+  "index": 7,
+  "agent": "dftracer-build-app",
+  "notes": "Building original app: PyTorch 2.13.0 (CUDA wheels), megatron_core 0.2.0, DeepSpeed 0.19.3, mpi4py installed successfully in shared venv",
+  "status": "ok",
+  "tries": 2,
+  "retries": 1,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 6.562,
+  "wall_s": 773.933,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 4.385,
+      "error": "",
+      "start_ns": 1785092688062684283,
+      "end_ns": 1785092692447187198
+    },
+    {
+      "number": 2,
+      "status": "ok",
+      "duration_s": 2.177,
+      "error": "",
+      "start_ns": 1785093459818153652,
+      "end_ns": 1785093461995515038
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}
