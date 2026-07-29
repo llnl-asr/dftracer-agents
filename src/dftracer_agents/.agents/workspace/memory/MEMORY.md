@@ -23,7 +23,6 @@
 - [Feedback: dftracer install env vars](feedback_dftracer_install_env_vars.md) — dftracer setup.py reads ENV VARS not CMAKE_ARGS; HIP off on Tuolumne; patch Cray HDF5 chid_t + module unload
 - [Feedback: analysis parallel workers](feedback_analysis_parallel_workers.md) — dfanalyzer must finish in minutes; use cluster_n_workers=32, never cluster_cores
 - [Feedback: always source HDF5](feedback_always_source_hdf5.md) — Always build HDF5 from source into session workspace; never use Cray/system HDF5 module
-- [Feedback: Confirm before skill updates](feedback_confirm_before_skill_updates.md) — always confirm observation/fix with user BEFORE writing to skills/MCP/agents/lessons; propose, don't auto-persist
 - [Feedback: Pipeline self-learning](feedback_pipeline_selflearning.md) — session-first; planner writes sectioned pipeline_plan.md; all agents record lessons to workload/system/software skills
 - [Project: Claude agent models](project_claude_agent_models.md) — install materializes agents + resolves level_N→haiku/sonnet/opus; live session needs model override or reload
 - [Feedback: Profiling at session create](feedback_profiling_at_session_create.md) — profile_bind right after session_create; OTEL env must live in ~/.vscode-server/server-env-setup — settings.json env DROPS OTEL_*, and ~/.profile is never sourced
@@ -68,3 +67,11 @@
 - [software-megatron-deepspeed-compute-tuning-findings](software-megatron-deepspeed-compute-tuning-findings.md) — Megatron-DeepSpeed on ROCm/MI300A is already compute-tuned; bf16 costs 25%, flash-attn flags silently no-op, DeepSpeed op-builder table misreads as a fused-kernel gap
 - [project-megatron-deepspeed-gpt-pipeline](project-megatron-deepspeed-gpt-pipeline.md) — Megatron-DeepSpeed GPT-350M dftracer pipeline on Tuolumne — STEPS 1-10 complete (final_report assembled, privacy-clean); BERT deferred/never started; rule-12 service-daemon gap noted
 - [bugs-optimizer-mcp-tools-block-external-runs](bugs-optimizer-mcp-tools-block-external-runs.md) — Reproducible MCP tool bugs + final_report script-glob gap found during the Megatron-DeepSpeed optimization pass
+- [feedback-app-uses-real-pfs-path-not-symlink](feedback-app-uses-real-pfs-path-not-symlink.md) — Applications must open data via the REAL PFS path, never the workspace dataset symlink — traces record the opened path and the symlink hides which file was actually touched
+- [bug-python-annotate-multiline-import-fixed](bug-python-annotate-multiline-import-fixed.md) — FIXED at tool level: python annotation inserted the dftracer import inside an open multi-line parenthesized import, corrupting files — recurred across two sessions before being fixed
+- [bug-module-harvest-swaps-toolchain-fixed](bug-module-harvest-swaps-toolchain-fixed.md) — FIXED: smoke-test module auto-harvesting pulled another facility's modules and silently DOWNGRADED the compiler/MPI, breaking native builds
+- [bug-dftracer-cray-runtime-silent-noop](bug-dftracer-cray-runtime-silent-noop.md) — dftracer built with Cray CCE silently degrades to NoOpProfiler (zero .pfw, no error) in any venv that doesn't load the Cray PE modules — check `import dftracer.dftracer`
+- [feedback-pydftracer-api-import-path](feedback-pydftracer-api-import-path.md) — The pydftracer Python API is `dftracer.python`, not `dftracer.logger` — the wrong path wastes a debug cycle
+- [feedback-confirm-before-skill-updates](feedback-confirm-before-skill-updates.md) — SUPERSEDED 2026-07-29: record learnings into skills/agents/tools IMMEDIATELY as you verify them, then review the list with the user at the end of the report
+- [feedback-write-only-in-user-space](feedback-write-only-in-user-space.md) — Never write outside the user's own space; shared group trees are read-only; never find / 
+- [project-alphafold3-optimization](project-alphafold3-optimization.md) — AF3 inference dftracer pipeline on Tuolumne — STEPS 1-4 done and verified; BLOCKED at smoke test on model-weights group access

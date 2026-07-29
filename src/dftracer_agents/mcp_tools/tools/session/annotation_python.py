@@ -65,18 +65,69 @@ _DFT_FINI  = "_dft_log.finalize()"
 
 
 def _last_import_idx(lines: List[str]) -> int:
-    """Return the 0-based index AFTER the last top-level import line.
+    """Return the 0-based index AFTER the last top-level import STATEMENT.
 
-    Tracks preprocessor-style depth to stay out of try/except/if blocks
-    where imports sometimes appear.
+    Uses the AST so multi-line imports are handled correctly. A purely
+    line-based scan matches the opening line of
+
+        from megatron import (
+            get_args,
+        )
+
+    and then reports the NEXT line as the insertion point — i.e. inside the open
+    parenthesis — which silently corrupts the file with a SyntaxError. That bug
+    recurred verbatim across sessions and was repeatedly hand-patched; the AST
+    knows each statement's real ``end_lineno``, so ask it instead.
+
+    Falls back to a paren-aware line scan when the source does not parse (the
+    caller may be annotating a file that is already mid-edit).
+    """
+    src = "\n".join(lines)
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return _last_import_idx_fallback(lines)
+
+    last_end = 0          # 1-based line number of the last import's final line
+    docstring_end = 0
+    body = getattr(tree, "body", [])
+    if body and isinstance(body[0], ast.Expr) and isinstance(
+        getattr(body[0], "value", None), ast.Constant
+    ) and isinstance(body[0].value.value, str):
+        docstring_end = getattr(body[0], "end_lineno", 0) or 0
+
+    for node in body:  # top-level only — never descend into try/if bodies
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            last_end = max(last_end, getattr(node, "end_lineno", node.lineno) or node.lineno)
+
+    if last_end:
+        return last_end            # 1-based end line == 0-based index of the NEXT line
+    # No top-level imports: stay after the module docstring so we don't demote it
+    # from a docstring to a bare expression by inserting above it.
+    return docstring_end
+
+
+def _last_import_idx_fallback(lines: List[str]) -> int:
+    """Line-based insertion point for sources that do not parse.
+
+    Same heuristic as the original, plus bracket-depth tracking so a multi-line
+    import cannot be split.
     """
     last = -1
     depth = 0
+    paren = 0
     for i, ln in enumerate(lines):
         s = ln.strip()
-        # Simple depth tracking for indented blocks
-        if depth == 0 and re.match(r'^(?:import |from .+ import )', s):
+        if paren == 0 and depth == 0 and re.match(r'^(?:import |from .+ import )', s):
             last = i
+        # Track bracket depth so `from x import (` ... `)` counts as ONE statement
+        # and `last` advances to its closing line rather than its opening one.
+        paren += ln.count("(") + ln.count("[") + ln.count("{")
+        paren -= ln.count(")") + ln.count("]") + ln.count("}")
+        paren = max(paren, 0)
+        if paren > 0:
+            last = i
+            continue
         if s.endswith(':') and not s.startswith('#'):
             depth += 1
         elif depth > 0 and s and not ln[0].isspace():

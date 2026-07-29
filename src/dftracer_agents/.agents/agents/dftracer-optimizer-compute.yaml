@@ -128,4 +128,20 @@ sections:
     MECHANISM. State the mechanism as an explicit hypothesis unless it was independently
     verified, and say which it is. A plausible-sounding cause recorded as fact propagates
     into the KB and misleads later sessions.
+- title: Run the login-node capability probe FIRST (free, authoritative)
+  body: |
+    Before generating any kernel/precision proposal, run the capability probe on the LOGIN
+    NODE — it needs no allocation and returns in seconds:
 
+    ```bash
+    source <WS>/scripts/env.sh
+    python3 -c "import amp_C, fused_layer_norm_cuda, fused_weight_gradient_mlp_cuda; \
+    from apex.optimizers import FusedAdam; print('fused OK')"
+    python3 -c "import flash_attn" ; python3 -c "import transformer_engine"
+    python3 -c "import deepspeed; print(deepspeed.ops.op_builder.get_op_builder('FlashAttentionBuilder'))"
+    ```
+
+    **Treat its output as authoritative over ANY premise in your dispatch brief**, including a
+    premise sourced from a prior session's report — capability claims go stale between sessions,
+    and a stale one has already sent a pass chasing a non-existent "missing fused kernels" gap.
+    Prior sessions also burned allocation time on this probe; it is free.

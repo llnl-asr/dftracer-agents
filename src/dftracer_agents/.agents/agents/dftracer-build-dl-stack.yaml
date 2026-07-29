@@ -65,7 +65,13 @@ sections:
     | 3 | Collectives (RCCL/NCCL) | **standalone multi-node all-reduce at the real rank count returns the correct sum** |
     | 4 | Fused kernels (apex / flash-attn) | the compiled modules IMPORT on a compute node (never infer from a framework status table) |
     | 5 | MPI bindings (mpi4py) if needed | `MPI.Get_library_version()` names the intended vendor MPI |
+    | 6b | **dftracer itself** (into the SAME venv) | `python -c "import dftracer.dftracer"` succeeds |
     | 6 | App + deps | `ldd` on key `.so` files resolves session-local/module paths, not stray system copies |
+
+    **Do not forget dftracer itself.** The DL stack is not "done" until dftracer is installed
+    into the SAME session venv as the app (`pip install git+https://github.com/llnl/dftracer.git@develop`
+    with `DFTRACER_ENABLE_MPI=ON`, `DFTRACER_ENABLE_PYTHON=ON`, and HDF5 off unless the app
+    uses it). Leaving it out silently defers a hard failure to the smoke-test stage.
 
     **Gate 3 is the one most often skipped and the most valuable.** A single-rank success
     proves nothing about collective initialization. Never declare the stack ready without it.

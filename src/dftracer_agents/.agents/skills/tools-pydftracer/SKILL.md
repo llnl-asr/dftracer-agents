@@ -93,3 +93,40 @@ The venv where `pydftracer` is importable MUST be the same venv the traced
 Python app is installed into and run from — never install dftracer's Python
 bindings into one venv and run the annotated app from another. See
 [[feedback_dftracer_aiml_venv]].
+
+## The import path is `dftracer.python` (not `dftracer.logger`) (2026-07-29)
+
+```python
+from dftracer.python import dftracer, dft_fn
+
+log = dftracer.initialize_log(logfile=<prefix>, data_dir=<dir>, process_id=-1)
+
+@dft_fn("category").log
+def f(): ...
+
+log.finalize()
+```
+
+`from dftracer.logger import ...` raises `ModuleNotFoundError: No module named
+'dftracer.logger'`, which reads like a broken install and sends you off reinstalling
+dftracer instead of fixing one import line. Submodules actually present under the
+`dftracer` package: `_version`, `dftracer` (the compiled C extension), `dftracer_dbg`,
+`python`, `utils`.
+
+`dftracer.python` also exports the AI/ML region helpers used by ML annotation:
+`Compute`, `Data`, `DataLoader`, `Checkpoint`, `Communication`, `Device`, `Pipeline`,
+`IO`, `Other`, plus `DFTracerAI` / `ai_init`.
+
+To see what a given install exposes:
+```bash
+python -c "import dftracer,pkgutil,os; print([m.name for m in pkgutil.iter_modules([os.path.dirname(dftracer.__file__)])])"
+```
+
+## A successful `import` does NOT mean tracing works (2026-07-29)
+
+The pydftracer layer falls back to `NoOpProfiler` when the compiled C extension
+(`dftracer.dftracer`) fails to load. Every Python-level check then passes while zero
+trace data is produced, silently. **Always gate on `python -c "import dftracer.dftracer"`
+plus an actual non-empty `.pfw` with `"ph"` events** — never on `import dftracer` alone.
+On Cray PE the usual cause is the missing CCE runtime on `LD_LIBRARY_PATH`; see
+[[bug-dftracer-cray-runtime-silent-noop]] and [[system-tuolumne]].

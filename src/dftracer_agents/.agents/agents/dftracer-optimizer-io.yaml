@@ -109,3 +109,15 @@ sections:
 - include: run-length-make-the-run-long-enough-to-measure
 - include: dl-run-length-ask-for-a-time-budget-then-fix-the-epoch-count
 - include: optimizer-replicate-count
+- title: Compute the I/O headline over long-lived ranks only
+  body: |
+    Traces usually contain BOTH the real application ranks and short-lived helper/launcher
+    processes. Averaging them together skews the per-rank I/O percentage badly — a measured
+    case had a 50s helper at 3.9% I/O against 0.47% for the real ranks.
+
+    Bucket traces by wall span, compute the headline over the long-lived ranks, and report
+    helper processes separately.
+
+    Also: before crediting large write volume as application I/O, check whether it is the
+    tracer's own trace flush (a few very large `write()` calls at teardown). Cross-reference
+    against `du` of the trace directory. See [[dftracer-io-optimization]].

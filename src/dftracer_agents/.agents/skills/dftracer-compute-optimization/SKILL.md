@@ -255,3 +255,33 @@ its absolute savings stay flat, because the denominator (total time) shrank fast
 I/O fix's own cost did (tar-streaming here: -13.2% of the ORIGINAL total standalone, but
 removed 5.5s of the remaining 6.0s once parse cost collapsed -- i.e. it became relatively far
 more important after the compute fix, not less).
+
+## Normalize before you quote a percentage: layer buckets are AGGREGATES, not wall time
+
+dfanalyzer's layer-breakdown `Time (s)` values are summed **across all ranks**. Dividing a
+per-rank number by that aggregate understates the share by roughly the rank count. This
+produced a 10x error in a real session: a metadata storm was reported as "7.3% of app" when
+it was **71% of per-rank wall time**, which inverted the entire optimization priority.
+
+**Before quoting any percentage:**
+1. Get per-rank wall: divide the aggregate by the rank count AND cross-check against the
+   trace's own wall span (`max(ts+dur) - min(ts)` from one rank's file). They should agree.
+2. Split the bucket into (a) iteration 1 vs iterations 2..N, and (b) instrumented children vs
+   the unattributed leaf remainder.
+3. State the **steady-state** ceiling explicitly. If it is below ~2% of wall, say so as the
+   primary finding and redirect proposals to one-time/startup costs — do not propose
+   kernel-level levers whose ceiling sits inside run-to-run noise.
+
+A short run (<50 iterations) is startup-dominated **by construction**. Say that plainly rather
+than extrapolating a kernel win to app wall time.
+
+## Two disproved-by-data patterns worth not re-deriving
+
+- **"Per-iteration Python overhead worth hoisting."** A helper with a large aggregate and many
+  calls may be first-call-only. Measured example: 1007 ms on call 1, then 0.01 ms for the rest.
+  Get the per-call duration SEQUENCE before proposing hoisting; aggregates cannot distinguish
+  "expensive every call" from "expensive once".
+- **"JIT recompiles every run, so persist the cache."** Check whether the built `.so` files
+  already exist. If they do, ninja is a cache hit and the real cost is N ranks `dlopen`-ing the
+  same object from a SHARED filesystem inside a barrier — the lever is staging to node-local
+  storage, not cache persistence.

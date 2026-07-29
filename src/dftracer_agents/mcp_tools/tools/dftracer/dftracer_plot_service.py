@@ -46,6 +46,7 @@ from __future__ import annotations
 import base64
 import collections
 import gzip
+import zlib
 import json
 import os
 import re
@@ -105,20 +106,29 @@ def _scan_events(
     events: List[Dict[str, Any]] = []
     for fpath in pfw_files[:max_files]:
         opener = gzip.open if str(fpath).endswith(".gz") else open
+        # A trace whose writer was killed at teardown (common for the dftracer_service
+        # node-counter daemon) leaves a TRUNCATED gzip stream. Iterating it raises EOFError
+        # partway through. Catching that around the WHOLE file would discard every record
+        # already read -- in a real case ~515k usable records per node would have been
+        # thrown away and reported as "no events". Keep the readable prefix instead.
         try:
             with opener(fpath, "rt") as fh:
-                for line in fh:
-                    line = line.strip().rstrip(",")
-                    if not line or line in ("[", "]"):
-                        continue
-                    try:
-                        ev = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if ev.get("ph") != "X":
-                        continue
-                    if _eval_filter(filter_expr, ev):
-                        events.append(ev)
+                try:
+                    for line in fh:
+                        line = line.strip().rstrip(",")
+                        if not line or line in ("[", "]"):
+                            continue
+                        try:
+                            ev = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if ev.get("ph") != "X":
+                            continue
+                        if _eval_filter(filter_expr, ev):
+                            events.append(ev)
+                except (EOFError, OSError, gzip.BadGzipFile, zlib.error):
+                    # Truncated/corrupt tail: retain everything decoded so far.
+                    pass
         except Exception:
             continue
     return events, total

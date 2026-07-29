@@ -8,18 +8,56 @@ description: ROCm environment configuration for PyTorch/DL workloads on AMD GPUs
 Verified on an AMD MI300A (gfx942) APU cluster with Cray PE, ROCm 6.4.3, torch 2.9.1+rocm6.4,
 Python 3.13. Every item below caused a real, hours-long failure before being root-caused.
 
+## SITE FACT (Tuolumne): prefer the PATCHED ROCm module, never the bare version
+
+Tuolumne ships **patched ROCm builds alongside the base ones**, and the base version is the
+lmod default — so `module load rocm/6.4.3` silently gives you the UNPATCHED build. Always check
+`module avail rocm` and prefer a patched variant when one exists for your version.
+
+The suffixes are meaningful, and the patched builds are genuinely separate installs under
+`/usr/tce/packages/rocbeta/`, not aliases:
+
+| Suffix | What it is (from `module help`) |
+|---|---|
+| `leakfix` | base + `HSA_USE_UDMABUF=1` support from 7.2.0 **+ memory-leak patch from 7.14** |
+| `cgroupfix` | base + `HSA_USE_UDMABUF=1` support from 7.2.0 |
+| `hangfix` | patched to fix a known **hang** |
+| `-magic` (on `rocmcc/*`) | site-blessed ROCm+CCE compiler pairing; prefer these for `rocmcc` |
+
+```bash
+module avail rocm                      # see what patched variants exist
+module help rocm/<ver><suffix>         # states exactly what was patched
+module load rocm/6.4.3leakfix          # NOT rocm/6.4.3
+```
+Verify you got the patched tree: `echo $ROCM_PATH` should be
+`/usr/tce/packages/rocbeta/rocm-<ver><suffix>`, **not** `/opt/rocm-<ver>`.
+
+**Selection rule:** `leakfix` > `cgroupfix` > `hangfix` > base, for the version you need
+(`leakfix` is a superset of `cgroupfix`). For `rocmcc/*` compiler modules, prefer the `-magic`
+pairing. Long-running training jobs are exactly the workload these patches target — a leak or a
+hang will not announce itself, it will look like a mysterious stall or a slow degradation.
+
+**Note:** two full Megatron-DeepSpeed sessions on this system ran on the bare `rocm/6.4.3`
+because it is the lmod default, while `rocm/6.4.3leakfix` and `rocm/6.4.3cgroupfix` were
+available the whole time. One of those sessions hit an unexplained ~140 s stall. That is not
+proof the base build caused it — but it is precisely the class of symptom these patches exist
+to remove, and there was no reason to be on the unpatched build.
+
 ## Canonical ROCm environment block
 
 Put this in the SAME script that execs python (module/env state does not persist across
 separate shell invocations):
 
 ```bash
-module load <compiler> <mpi> rocm/<ver> rccl/<working-env> python/<ver>
-export ROCM_HOME=/opt/rocm-<ver>
-export ROCM_PATH=/opt/rocm-<ver>
-export PATH="/opt/rocm-<ver>/bin:${PATH}"        # rocminfo MUST be findable — see below
+module load <compiler> <mpi> rocm/<ver><patch-suffix> rccl/<working-env> python/<ver>
+# ^ e.g. rocm/6.4.3leakfix -- see the SITE FACT section above; the bare version is the lmod default
+# Derive from the module -- do NOT hardcode /opt/rocm-<ver>. A patched module sets
+# ROCM_PATH to /usr/tce/packages/rocbeta/..., and hardcoding the base path would load the
+# patched module but then point the toolchain at the UNPATCHED tree.
+export ROCM_HOME="${ROCM_PATH:?rocm module not loaded}"
+export PATH="${ROCM_PATH}/bin:${PATH}"           # rocminfo MUST be findable — see below
 export PYTORCH_ROCM_ARCH=gfx942                  # MI300A; pin it, do not autodetect
-export LD_LIBRARY_PATH="/opt/rocm-<ver>/lib:${LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="${ROCM_PATH}/lib:${LD_LIBRARY_PATH}"
 source <venv>/bin/activate
 export LD_LIBRARY_PATH="<venv>/lib/python<X.Y>/site-packages/torch/lib:${LD_LIBRARY_PATH}"
 ```
@@ -57,9 +95,10 @@ though torch is a genuine ROCm build and reports HIP correctly.
 **Root cause:** `torch.utils.cpp_extension.ROCM_HOME` is `None` because nothing in the module
 stack exports `ROCM_HOME`/`ROCM_PATH`; torch's autodetection does not find the install.
 
-**Fix:** export both `ROCM_HOME` and `ROCM_PATH` to `/opt/rocm-<ver>`, matching the version
-reported by `torch.version.hip`, BEFORE importing deepspeed or anything that triggers
-`op_builder`.
+**Fix:** export `ROCM_HOME` (and ensure `ROCM_PATH` is set) BEFORE importing deepspeed or
+anything that triggers `op_builder`. Take the value from the loaded module
+(`ROCM_HOME="$ROCM_PATH"`), not a hardcoded `/opt/rocm-<ver>` — on a patched module the two
+differ, and hardcoding silently mixes a patched module with an unpatched toolchain.
 
 ## Missing `rocminfo` on PATH silently invalidates the JIT cache and deadlocks multi-rank jobs
 

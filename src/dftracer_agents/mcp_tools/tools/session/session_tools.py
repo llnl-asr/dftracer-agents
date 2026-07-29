@@ -144,6 +144,13 @@ _MODULE_SCAN_EXCLUDE_DIRS = {
     "sites", "docs", "doc", "test", "tests", "examples", "example",
     "third_party", "thirdparty", "external", "extern", "vendor",
     ".git", "unittest", "unittests",
+    # Facility-specific launcher dirs. Upstream forks routinely ship setup
+    # scripts pinned to ANOTHER site's module stack (e.g. Argonne's
+    # Megatron-DeepSpeed fork carries ALCF/*.sh loading `conda`,
+    # `cudatoolkit`, `pytorch/2.0.1`). Harvesting those poisons the module
+    # environment on every other machine.
+    "alcf", "olcf", "nersc", "ncsa", "tacc", "riken", "cscs", "jsc",
+    "polaris", "aurora", "theta", "summit", "frontier", "perlmutter",
 }
 
 
@@ -229,10 +236,18 @@ def _build_module_preamble(source_dir: Path) -> str:
     lines = _extract_module_load_lines(source_dir)
     if not lines:
         return ""
+    # Harvested module names come from the APP's scripts, which may have been
+    # written for a different facility. A module that does not exist here must
+    # not abort the run: Lmod returns non-zero and, under `set -e`, kills the
+    # whole wrapper before the app starts. Make each load best-effort and say
+    # so loudly in the emitted script.
+    tolerant = [f"{ln.rstrip()} 2>/dev/null || true" for ln in lines]
     parts = [
-        "# Auto-detected module loads from app scripts",
+        "# Auto-detected module loads from app scripts (best-effort:",
+        "# these come from the app's own scripts and may target another site,",
+        "# so a missing module is skipped rather than failing the run).",
         "[ -f /etc/profile.d/lmod.sh ] && source /etc/profile.d/lmod.sh",
-    ] + lines
+    ] + tolerant
     return "\n".join(parts) + "\n"
 
 

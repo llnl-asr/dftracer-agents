@@ -133,3 +133,31 @@ removing any real collection cost. Before proposing `gc.disable()` as a fix, con
 object graph actually contains reference cycles (e.g. via `gc.get_stats()` collection counts
 or object graph inspection) -- for interpreter-heavy workloads with no cycles, this lever has
 negative expected value.
+
+## What the `service_*` node counters CAN and CANNOT tell you
+
+The `dftracer_service` daemon emits exactly four series: `cpu`, `cpu-0..N`, `memory`
+(/proc/meminfo), and `sda`. Know their limits before quoting them.
+
+**`cpu` / `cpu-N` are CUMULATIVE-SINCE-BOOT averages, not per-interval deltas.** Verify with
+`max == mean == p95` across the samples — if they are equal, the series is cumulative. A
+measured example: `cpu-1` moved 6.924 -> 6.952 over 1376 s. **Steady-state CPU utilization is
+NOT derivable from them.** Reporting "the node is 2% busy" from these is a misreading.
+
+**`memory` and `sda` ARE per-sample and usable.** Window them to the application's wall span —
+the daemon typically runs far longer than the app, so whole-span aggregates include setup.
+
+**There is NO HBM / memory-controller / GPU counter.** Therefore:
+> The roofline check can only ever **rule out CAPACITY bounding**. It can neither confirm nor
+> deny **BANDWIDTH bounding**. Any achieved-GB/s number derived from these traces is fabricated.
+
+State this distinction explicitly in the dimension verdict. "Capacity ruled out" must not be
+relayed to sibling dimensions as "compute-bound proven" — they are different claims.
+Measuring achieved bandwidth needs `rocprof`/ROCm-SMI sampling in a dedicated run.
+
+## Free memory does not license raising micro_batch
+
+If `global_batch / world_size == micro_batch`, the model is already at one gradient-accumulation
+step. Raising `micro_batch` then changes the **global batch**, i.e. changes what is being
+trained — a workload-semantics change, not an optimization. Say so explicitly rather than
+proposing a batch-size sweep, however much HBM headroom the counters show.

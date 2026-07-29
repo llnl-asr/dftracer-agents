@@ -92,3 +92,19 @@ sections:
 - include: environment-consistency
 - include: run-length-make-the-run-long-enough-to-measure
 - include: optimizer-replicate-count
+- title: Establish the transport BEFORE proposing any collective tuning (MANDATORY)
+  body: |
+    Run one short job with `NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=INIT,NET,ENV` and record which
+    transport was actually selected (the `Using network ...` line).
+
+    Channel, buffer, algorithm and protocol levers are **structurally inert** if the library
+    fell back to host TCP sockets — and that fallback is silent. A real session measured
+    ~1.6 GB/s all-reduce because `librccl-net.so` was missing and no IB device was found; every
+    tuning variant tried against it was a null by construction.
+
+    If the transport is a socket fallback, the ONLY meaningful recommendation is fixing the
+    transport (build the vendor plugin against the exact bundled collective library), and it
+    belongs in the BUILD step. Say so instead of generating tuning proposals.
+
+    Also verify module-provided env vars actually survived: `module load ... | grep ...` runs
+    Lmod in a subshell and silently discards its `setenv`s. Check `env | grep NCCL_` directly.

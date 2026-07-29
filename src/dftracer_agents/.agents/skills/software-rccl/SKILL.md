@@ -54,23 +54,36 @@ TCPStore/MASTER_ADDR/firewall problems. The real failure is that rank 0 aborted 
 
 **Fix:** load both modules. Confirm with the all-reduce test above.
 
-## Do NOT force `NCCL_NET=libfabric` / `NCCL_NET_PLUGIN=librccl-net.so` blindly
+## The plugin DOES work — just never set `NCCL_NET` (MEASURED: 43% win)
 
-**Symptom:** collective init succeeds, then the first `all_reduce` fails with
-`ncclInvalidUsage ... Last error: Error: network libfabric not found.`
+**This supersedes earlier guidance in this skill that called the site plugin
+"ABI-incompatible" and told you not to use it. That was wrong.**
 
-**Root cause:** the site's `aws-ofi-rccl` plugin build is compiled against a specific RCCL
-version. A torch wheel ships its **own** bundled RCCL (e.g. 2.22.3), and a plugin built for a
-different ROCm/RCCL version is not loadable by it. Forcing `NCCL_NET=libfabric` then makes the
-collective fail hard rather than fall back.
+The site `aws-ofi-rccl` plugin registers itself under the name **`AWS Libfabric`**. Setting
+`NCCL_NET=libfabric` therefore never matches, and RCCL fails hard with
+`ncclInvalidUsage ... Error: network libfabric not found` — which is easily misread as an ABI
+mismatch. It is not: the plugin built against ROCm 6.4.1 loads cleanly against the RCCL 2.22.3
+bundled in a torch wheel, and the site ROCm 6.4.3 ships that *same* RCCL 2.22.3.
 
-**Fix:** leave RCCL on its default network selection — collectives work. Only set `NCCL_NET`
-after verifying the plugin is ABI-matched to the RCCL actually in use
-(`python -c "import torch; print(torch.cuda.nccl.version())"`).
+**The fix is one line — add the plugin dir to `LD_LIBRARY_PATH` and leave `NCCL_NET` UNSET:**
+```bash
+export LD_LIBRARY_PATH="/collab/usr/global/tools/rccl/toss_4_x86_64_ib_cray/rocm-<ver>/install/lib:$LD_LIBRARY_PATH"
+# Do NOT set NCCL_NET / NCCL_NET_PLUGIN — auto-detection finds it.
+```
+Confirm in the log:
+```
+NET/Plugin: Loaded net plugin AWS Libfabric (v5)
+Using network AWS Libfabric          <- NOT "Using network Socket"
+```
 
-**Important corollary:** a working `launch.sh` copied from another project on the same machine
-may set these vars — those settings are matched to *that* project's ROCm/RCCL versions. Do not
-copy such env blocks verbatim into a different stack.
+**Measured impact (BERT-Base 110M, 16 ranks / 4 nodes, 400 iters, replicate-confirmed):**
+`train_step` **177.92s -> 100.78s = -43.4%**; wall 245s -> 152.5s. That is ~9x the measured
+~5% run-to-run noise band on this system. Without the plugin RCCL silently uses host TCP at
+~1.6 GB/s.
+
+**Always verify the transport** with `NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=INIT,NET` before
+drawing ANY communication conclusion — the socket fallback is silent and costs ~44% of
+training time. Channel/buffer/algorithm tuning is inert while it is in effect.
 
 ## `gloo` is a silent performance trap on GPU clusters
 
@@ -89,6 +102,49 @@ gradient accumulation 4 over 16 ranks, switching gloo→RCCL measured **+1.2% �
 no change**, against a trace-derived prediction of ~35%. At that model size the gradient
 all-reduce is simply not a material fraction of iteration time. The fix is still correct, but
 size the expected benefit to the actual collective volume before promising a win.
+
+## FIRST: confirm which transport RCCL actually selected
+
+Run one short job with `NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=INIT,NET,ENV` and read the
+`Using network` line **before** proposing any RCCL tuning. Channel, buffer, algorithm and
+protocol levers are all **structurally inert** on a socket fallback path.
+
+**Measured failure on Tuolumne MI300A:**
+```
+NET/Plugin: Could not find: librccl-net.so. Using internal network plugin.
+NET/IB : No device found.
+NET/Socket : Using [0]enp129s0:...<0> [1]hsi0:...<0>
+Using network Socket
+```
+RCCL never touched Slingshot/CXI RDMA — every gradient went over **host TCP** at
+**~1.6 GB/s** (220 MB fp16 grads -> ~412 MB/rank ring traffic in 255 ms), roughly 10-20x below
+Slingshot CXI. On a BERT-Base 16-rank run that made `bwd_allreduce` ~104s of a 239.6s wall
+(~43%).
+
+**Cause:** the site's `aws-ofi-rccl` plugin build is compiled against a different RCCL than the
+one bundled inside the torch wheel, so the plugin is not loadable and RCCL silently falls back.
+**Fix:** build `aws-ofi-rccl` from source against BOTH the site ROCm and the exact RCCL inside
+the wheel, expose it as `librccl-net.so`. This belongs in the BUILD step, not mid-optimization.
+
+**Consequence for interpreting prior results:** a `gloo` vs `nccl` comparison on a socket-
+fallback stack is a null *by construction* — both push bytes over host TCP. Do not read such a
+null as "the workload is compute-bound and transport does not matter."
+
+## Never pipe `module load` — it discards the module's env
+
+```bash
+module load ... rccl/working-env ... 2>&1 | grep -E "(loading|Lmod)" | head -5   # BROKEN
+```
+The pipeline runs Lmod in a **subshell**, so every `setenv` it performs is discarded. In a real
+session this silently dropped `NCCL_SOCKET_IFNAME=hsi` and `FI_MR_CACHE_MONITOR=userfaultfd`
+for **every run**, while explicitly-exported vars from the same wrapper appeared normally —
+making it look like the module had been applied.
+
+Redirect to a file or capture to a variable instead:
+```bash
+module load ... > /tmp/modload.log 2>&1 ; tail -5 /tmp/modload.log
+```
+Verify with `env | grep -E "NCCL_|FI_"` after sourcing, not by trusting the module name.
 
 ## Related
 

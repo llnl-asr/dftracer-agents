@@ -112,7 +112,7 @@ sections:
     from the plan file.
 
     Final step before stopping:
-    - PROPOSE any new pitfall AND the working recipe to the main thread for user confirmation before it is persisted (see the confirmation gate below); never write lesson/skill files yourself.
+    - RECORD any new pitfall AND the working recipe IMMEDIATELY into the right home yourself (skill for knowledge, your own agent YAML for behaviour, an MCP tool for generic logic) as soon as you verify it, then list what you wrote in your final summary for end-of-session review (see the self-learning gate below).
 - include: pipeline-eagerly-dont-wait-for-the-whole-batch
 - include: self-learning-confirmation-gate
 - include: never-manual-when-a-restart-is-needed

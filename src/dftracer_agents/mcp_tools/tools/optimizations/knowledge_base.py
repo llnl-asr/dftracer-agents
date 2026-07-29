@@ -370,8 +370,25 @@ def register_optimization_kb_tools(mcp: FastMCP) -> None:
             and ``markdown`` — a ready-to-paste table.
         """
         rows = _lookup(system, workload, software, scope, bottleneck, limit, metric_scope)
-        return _ok(f"{len(rows)} prior result(s)", count=len(rows), rows=rows,
-                   markdown=_render_rows(rows))
+        # `notes` bodies are deliberately long (symptom -> root cause -> fix, with caveats).
+        # Returning every row's full notes AND a duplicate markdown table pushed an unfiltered
+        # system=/workload= lookup to 80-100 KB, over the tool-result token cap — which made
+        # step 1 of the mandatory optimization loop unusable without a bottleneck= filter.
+        # Truncate in the list view; the full text stays in the KB file for targeted reads.
+        _NOTES_CAP = 400
+        slim = []
+        for r in rows:
+            r = dict(r)
+            n = r.get("notes") or ""
+            if len(n) > _NOTES_CAP:
+                r["notes"] = n[:_NOTES_CAP].rstrip() + " ...[truncated]"
+                r["notes_truncated"] = True
+                r["notes_full_len"] = len(n)
+            slim.append(r)
+        return _ok(f"{len(slim)} prior result(s)", count=len(slim), rows=slim,
+                   markdown=_render_rows(slim),
+                   hint=("notes truncated to %d chars in this view; narrow with "
+                         "bottleneck=/scope= or read the KB file for full text" % _NOTES_CAP))
 
     @mcp.tool()
     def opt_kb_record(

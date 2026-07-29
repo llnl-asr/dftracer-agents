@@ -735,3 +735,39 @@ BytesIO)` in-memory, or writing straight into the open `TarFile` instead of scra
 removes the round trip entirely. Measured on this workload: `IND_TAR_STREAM=1` alone was
 -13.2% standalone, and its relative share of the remaining cost GREW (not shrank) once a
 companion compute fix collapsed the parse-time component -- see workload-1000genome.
+
+## Attribute large write volume BEFORE crediting it as workload I/O
+
+In FUNCTION mode the tracer's own trace flush appears inside the trace as a small number of
+very large `write()` calls at process teardown (measured: 2 writes per file handle, 166-249 MB
+each). A workload that writes no application data can therefore appear to write **many GB**.
+
+**Check:** cross-reference aggregate write bytes against `du` of the trace directory before
+treating writes as application I/O. Measured example: 11.2 GB of aggregate POSIX writes was
+entirely the tracer emitting 216 MB of gzipped traces — zero application writes.
+
+Corroborate with node counters: if every node-local block device reports 0 bytes read/written
+and `iowait` is ~0.04%, there is no application write path regardless of what the POSIX totals
+suggest.
+
+## Replicate before crediting a metadata stall
+
+A per-op mean in the tens of milliseconds for a plain `stat()`/`open()` is a **transient /
+interference signature**, not an application access-pattern signature. A real access-pattern
+metadata cost shows up as MANY ops at normal per-op latency, not FEW ops at pathological
+latency.
+
+Before proposing any metadata or striping lever from a single run on a shared PFS:
+1. Reproduce on at least one fresh replicate, and
+2. Re-measure the suspect call standalone (seconds, no allocation).
+
+Measured case: a single run showed `__xstat64` = 140.5s (~84 ms/op mean) and looked like a
+71%-of-wall bottleneck. A clean re-run of the identical config gave **0.083s** (~1700x lower),
+and the same `os.path.exists()` measured standalone took **0.19 ms**. The correct action was to
+**void the contaminated baseline**, not optimize against it.
+
+## Compute the I/O headline over LONG-LIVED RANKS ONLY
+
+Traces often contain both real ranks and short-lived helper/launcher processes. Mixing them
+skews the per-rank percentage badly — measured: a 50s helper showed 3.9% I/O against 0.47% for
+the real ranks. Report helpers separately.

@@ -344,3 +344,67 @@ distinction automatically, it must be a manual judgment call per function.
 - [ ] NO function decorated with `@property`/`@cached_property`/`@x.setter`/`@x.deleter`/`@x.getter` has a stacked `@_dft.log` — contextual `with DFTracerFn(...)` region instead
 - [ ] No file anywhere in the tree still references `dftracer.logger` or `DFTracer.initialize_log`/`DFTracer.finalize_log` (stale API — grep for it if in doubt)
 - [ ] Every `DataLoader`/`DataListLoader`/`multiprocessing.Process`/`Pool` construction with more than one worker has a `worker_init_fn` (or equivalent) that calls `initialize_log()` + registers an `atexit` `finalize()` INSIDE the worker process (Rule 2b) — a plain top-level function, never a closure, if `multiprocessing_context="spawn"` is used anywhere
+
+## Never decorate methods whose class defines a `step` attribute-name collision
+
+dftracer's Python `log()` wrapper inspects `args[0]` for well-known attribute names
+(`step`, `epoch`, `image_size`, `image_idx`) to enrich the event, doing roughly
+`if hasattr(args[0], "step"): ... args[0].step`.
+
+If the decorated method belongs to a class that itself defines a **method** named `step()`
+(optimizers, LR schedulers, trainers — extremely common), `self.step` resolves to the BOUND
+METHOD rather than an int, and the wrapper breaks at runtime.
+
+**Rule:** do not decorate methods on classes that define `step`/`epoch`/`image_size`/
+`image_idx` as methods. Seen in `megatron/optimizer_param_scheduler.py` and
+`megatron/optimizer/optimizer.py`.
+
+## Never stack `@_dft.log` above a non-introspectable wrapper
+
+`@lru_cache(...)`, `@torch.jit.script`, `@classmethod`, `@staticmethod` — the dftracer
+wrapper cannot introspect these objects. `@classmethod`/`@staticmethod` must be OUTERMOST
+(dftracer innermost); for `@lru_cache`/`@torch.jit.script`, drop the decorator entirely and
+use a `with DFTracerFn(...)` block inside the body if the span is genuinely needed.
+
+## Never annotate `@overload` stubs or abstract `Protocol` methods (2026-07-29)
+
+`python_estimate_function_cost` scores a function from its signature and body shape, and
+does **not** currently recognise two kinds of non-executable declaration:
+
+1. `@typing.overload`-decorated stub signatures (body is `...`)
+2. abstract methods on a `typing.Protocol` / interface class (body is `...`)
+
+Both get scored like real functions and `python_annotate_file` will happily decorate
+them. The result is a decorator on a declaration that never runs — at best dead weight,
+at worst it shadows the real implementation's dispatch or confuses the overload
+resolution.
+
+**Rule:** after any `python_annotate_project`/`python_annotate_file` pass, strip
+`@_dft.log` from every function whose body is only `...` (optionally preceded by a
+docstring). Detect them with:
+
+```bash
+grep -rn -B4 '^\s*\.\.\.\s*$' <annotated-tree> | grep -n "_dft.log\|@overload"
+```
+
+`validate_annotations(language="python")` flags some but not all of these — check
+explicitly. Observed 4 real instances in a single AF3 pass across 3 files.
+
+**Tool-level fix (preferred over remembering this):** `python_estimate_function_cost` /
+`python_annotate_file` in `src/dftracer_agents/mcp_tools/` should return cost 0 / skip
+when the function body is an `Ellipsis`-only statement, or when the enclosing class
+inherits `typing.Protocol` / `abc.ABC` and the method is abstract.
+
+## Byte-compile the annotated tree with the SESSION venv Python (2026-07-29)
+
+When gating an annotated tree with `python -m compileall`, always source the session's
+env script first so you use the app's own interpreter. Using the sandbox/system
+`/bin/python3` (which can be as old as 3.6) produces **false-positive `SyntaxError`s**
+on any modern syntax the app legitimately uses — walrus `:=`, `match`, f-string `=`
+debug specifiers — none of which have anything to do with the annotation. This has
+already cost one debugging cycle.
+
+```bash
+source <WS>/scripts/env_af3.sh   # or the session's equivalent env script
+python -m compileall -q <WS>/annotated/source/<pkg> <WS>/annotated/source/<entry>.py
+```

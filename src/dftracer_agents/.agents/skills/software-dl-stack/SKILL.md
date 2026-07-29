@@ -92,6 +92,25 @@ names the vendor MPI you intend.
 **Gate:** `ldd` every key `.so` and confirm each resolves to a session-local or module-provided
 path, never a stray system/anaconda copy.
 
+## Trap: a generic package install can pre-empt Layer 1 with a CUDA wheel
+
+**Symptom:** you carefully install the vendor torch wheel, but the venv ends up with a CUDA
+torch (plus a pile of `nvidia-*` packages) anyway.
+
+**Root cause:** any generic `pip install -e <app>/` (e.g. a session-configure step, or the
+app's own `setup.py`/`pyproject.toml` listing `torch` as a dependency) resolves `torch` from
+the DEFAULT PyPI index. If that runs before — or after — your vendor-index install, it
+silently pulls or replaces torch with the CUDA build.
+
+**Fix:** after ANY step that pip-installs the application or its dependencies, re-assert
+Layer 1's gate:
+```bash
+python -c "import torch; assert torch.version.hip, torch.__version__; print('rocm torch intact', torch.__version__)"
+```
+If it regressed, purge (`pip uninstall -y torch torchvision torchaudio` plus any `nvidia-*`
+packages) and reinstall from the vendor index. Consider pinning with a constraints file or
+installing the app with `--no-deps` once its deps are already satisfied.
+
 ## ABI trap: never pip-install a torch-adjacent C-extension package against a custom torch
 
 `torchvision`, `torchaudio`, `xformers` and friends from PyPI are built against a stock torch

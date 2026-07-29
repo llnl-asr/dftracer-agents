@@ -127,6 +127,55 @@ def _resolve_line(loc: dict, line_offsets: list[int]) -> int:
     return 0
 
 
+def _resolve_line_in_file(
+    loc: dict,
+    line_offsets: list[int],
+    state: dict,
+    target: str,
+) -> int:
+    """Resolve a clang loc to a 1-based line, but ONLY if it is in *target*.
+
+    Clang's ``-ast-dump=json`` delta-compresses locations: ``file`` is emitted
+    only when it CHANGES, and ``line`` / ``offset`` are always relative to
+    whatever file is currently in effect.  A consumer that reads ``line``
+    without tracking the current file will happily interpret a header's line
+    number as a line number in the file being rewritten.
+
+    That is the root cause of the ``clang_add_braces`` corruption class seen
+    on VPIC-Kokkos, flux-fiction and flux-sched: brace pairs computed from
+    header locations were applied to the .cpp, splitting statements and
+    scoping declarations out of their use sites.  Some of those bogus lines
+    landed past EOF (caught by the existing max_line guard), but any that
+    happened to fall inside the file's line count silently corrupted it.
+
+    *state* is a single mutable dict threaded through the whole traversal in
+    document order so the delta encoding decodes correctly.  Returns 0 when
+    the location does not belong to *target* — callers treat 0 as "reject".
+    """
+    # Macro expansion: the call-site is what lives in the target file.
+    if "expansionLoc" in loc:
+        return _resolve_line_in_file(loc["expansionLoc"], line_offsets,
+                                     state, target)
+
+    if "file" in loc:
+        state["file"] = loc["file"]
+    if "line" in loc:
+        state["line"] = loc["line"]
+
+    cur = state.get("file", "")
+    # An empty current file means we have not seen any ``file`` yet, which
+    # only happens before the first located node — treat as not-in-target
+    # rather than optimistically assuming the main file.
+    if not cur or (cur != target and not cur.endswith(target)
+                   and target not in cur):
+        return 0
+
+    if "offset" in loc and line_offsets:
+        import bisect as _bisect
+        return _bisect.bisect_right(line_offsets, loc["offset"])
+    return state.get("line", 0)
+
+
 def _try_clang(path: Path) -> Optional[list[dict]]:
     lang = "c" if path.suffix.lower() == ".c" else "c++"
     try:
@@ -414,27 +463,93 @@ def add_braces_c(path: Path) -> dict:
     return _add_braces_via_clang(path, lang)
 
 
+#: Language standards tried (newest first) when parsing for brace insertion.
+#: Without an explicit ``-std=``, clang defaults to an older standard and any
+#: project using newer syntax (e.g. a C++20 ``requires`` clause) fails to
+#: parse.  See ``_add_braces_via_clang`` for why a failed parse is fatal.
+_BRACE_STD_CANDIDATES = {
+    "c++": ("c++23", "c++20", "c++17", "c++14"),
+    "c":   ("c17", "c11", "gnu99"),
+}
+
+
+def _brace_include_dirs(path: Path) -> list[str]:
+    """Best-effort ``-I`` flags so project-local headers resolve.
+
+    Walks up from *path* to the enclosing source root (the directory holding
+    ``CMakeLists.txt`` / ``configure.ac`` / ``meson.build``, or the ``source``
+    directory of a session workspace) and offers that root plus the usual
+    ``include`` / ``src`` subdirs.  Missing dirs are simply not emitted.
+    """
+    dirs: list[Path] = [path.parent]
+    root: Optional[Path] = None
+    for parent in path.parents:
+        if parent.name == "source" or any(
+            (parent / m).exists()
+            for m in ("CMakeLists.txt", "configure.ac", "meson.build")
+        ):
+            root = parent
+            # keep walking: the OUTERMOST match is the project root
+    if root is not None:
+        dirs += [root, root / "include", root / "src"]
+    seen: set[str] = set()
+    flags: list[str] = []
+    for d in dirs:
+        s = str(d)
+        if d.is_dir() and s not in seen:
+            seen.add(s)
+            flags.append(f"-I{s}")
+    return flags
+
+
 def _add_braces_via_clang(path: Path, lang: str) -> dict:
     """Collect braceless control-flow bodies via clang AST then rewrite the file.
 
     Raises ClangNotFoundError if the clang binary is missing.
-    """
-    try:
-        proc = subprocess.run(
-            ["clang", "-Xclang", "-ast-dump=json", "-fsyntax-only", "-w",
-             f"-x{lang}", str(path)],
-            capture_output=True, text=True, timeout=60,
-        )
-    except FileNotFoundError:
-        raise ClangNotFoundError(
-            "clang binary not found — install clang to enable brace insertion"
-        )
-    except subprocess.TimeoutExpired:
-        return {"modified": False, "insertions": 0, "method": "clang"}
 
-    stdout = proc.stdout
+    A clang parse that FAILS (non-zero exit) still emits a partial
+    error-recovery AST on stdout, and the source ranges in that AST are not
+    trustworthy — acting on them splits ``try``/``catch`` blocks and scopes
+    declarations out of the statements that use them.  Three separate
+    corruption incidents (VPIC-Kokkos, flux-fiction, flux-sched) all trace
+    back to inserting braces from a broken parse, so a failed parse is fatal
+    here: we return without modifying the file rather than guess.
+    """
+    stdout = ""
+    used_std = ""
+    parse_error = ""
+    includes = _brace_include_dirs(path)
+    for std in _BRACE_STD_CANDIDATES.get(lang, ("c++17",)):
+        try:
+            proc = subprocess.run(
+                ["clang", "-Xclang", "-ast-dump=json", "-fsyntax-only", "-w",
+                 f"-x{lang}", f"-std={std}"] + includes + [str(path)],
+                capture_output=True, text=True, timeout=120,
+            )
+        except FileNotFoundError:
+            raise ClangNotFoundError(
+                "clang binary not found — install clang to enable brace insertion"
+            )
+        except subprocess.TimeoutExpired:
+            return {"modified": False, "insertions": 0, "method": "clang",
+                    "skipped_reason": "clang_timeout"}
+        if proc.returncode == 0:
+            stdout = proc.stdout
+            used_std = std
+            break
+        parse_error = (proc.stderr or "").strip().splitlines()[:1]
+        parse_error = parse_error[0] if parse_error else f"clang exited {proc.returncode}"
+
+    if not used_std:
+        # Every standard failed to parse. Do NOT insert braces from the
+        # error-recovery AST — that is what corrupts files.
+        return {"modified": False, "insertions": 0, "method": "clang",
+                "skipped_reason": "clang_parse_failed",
+                "clang_error": parse_error}
+
     if not stdout:
-        return {"modified": False, "insertions": 0, "method": "clang"}
+        return {"modified": False, "insertions": 0, "method": "clang",
+                "skipped_reason": "empty_ast", "std": used_std}
 
     json_start = stdout.find("{")
     if json_start == -1:
@@ -456,7 +571,8 @@ def _add_braces_via_clang(path: Path, lang: str) -> dict:
     lines = path.read_text(errors="replace").splitlines(keepends=True)
     new_lines = _insert_braces(lines, braceless)
     path.write_text("".join(new_lines))
-    return {"modified": True, "insertions": len(braceless), "method": "clang"}
+    return {"modified": True, "insertions": len(braceless), "method": "clang",
+            "std": used_std}
 
 
 
@@ -466,18 +582,30 @@ def _collect_braceless(
     target: str,
     current_file: str,
     line_offsets: list[int],
+    state: Optional[dict] = None,
 ) -> None:
     kind = node.get("kind", "")
 
-    # Track file context
+    # Clang delta-encodes ``file``: it appears only when it changes, so the
+    # current file must be threaded through the ENTIRE traversal in document
+    # order (across siblings), not passed down each branch independently.
+    # Passing it down-only lets a header's locations be mistaken for the
+    # target file's — see _resolve_line_in_file for the corruption this caused.
+    if state is None:
+        state = {"file": current_file, "line": 0}
+
     loc = node.get("loc", {})
     if "file" in loc:
-        current_file = loc["file"]
+        state["file"] = loc["file"]
+    if "line" in loc:
+        state["line"] = loc["line"]
+    current_file = state.get("file", "")
 
-    # Skip system headers
-    if current_file and target not in current_file and current_file != "":
-        if kind != "TranslationUnitDecl":
-            return
+    # Nodes outside the target file contribute no brace ranges, but we must
+    # still WALK them: bailing out early would leave `state["file"]` stale
+    # (clang only re-emits ``file`` when it differs from the last one it
+    # emitted, including ones emitted inside a subtree we skipped).
+    in_target = bool(current_file) and target in current_file
 
     # Kinds that are already syntactically self-contained — never need wrapping.
     # CompoundStmt already has braces; DoStmt (do { } while(0)) is self-contained.
@@ -487,9 +615,17 @@ def _collect_braceless(
         ck = child.get("kind", "")
         if ck in _ALREADY_BRACED:
             return
+        if not in_target:
+            return
         rng = child.get("range", {})
-        start = _resolve_line(rng.get("begin", {}), line_offsets)
-        end   = _resolve_line(rng.get("end",   {}), line_offsets)
+        # Resolve against a COPY of the delta state: this is a look-ahead at a
+        # node the main traversal has not reached yet, so it must not advance
+        # the document-order state machine.
+        probe = dict(state)
+        start = _resolve_line_in_file(rng.get("begin", {}), line_offsets,
+                                      probe, target)
+        end   = _resolve_line_in_file(rng.get("end",   {}), line_offsets,
+                                      probe, target)
         # Guard against unresolvable / out-of-file locations (e.g. macro
         # expansions whose spellingLoc points at a header, or an
         # expansionLoc that resolves past this file's own line count).
@@ -520,17 +656,30 @@ def _collect_braceless(
         #   do NOT wrap the whole else-if in braces — a stand-alone "{"
         #   inserted before "else" on its own line breaks the if-else chain.
         #   Recursion below handles the inner IfStmt's own bodies.
-        _then_is_null = (len(inner) >= 2 and inner[1].get("kind") == "NullStmt")
-        for i, child in enumerate(inner):
-            if i == 0:
-                continue  # condition — never a body
-            if _then_is_null:
-                # assert()-style: skip all bodies to avoid corrupting macro
-                continue
-            if i >= 2 and child.get("kind") == "IfStmt":
-                # else-if: skip wrapping; recurse will add braces inside it
-                continue
-            _maybe_add(child)
+        # Guard 3 — init-statement / condition-variable forms:
+        #   `if (auto x = f())`      → inner = [DeclStmt, cond, then, else?]
+        #   `if (init; cond)`        → inner = [init,     cond, then, else?]
+        #   `if (T x = f(); cond)`   → inner = [init, DeclStmt, cond, then, ...]
+        #   Assuming inner[0] is always the condition makes the CONDITION
+        #   itself look like the then-body, so a brace pair gets wrapped
+        #   around `if (...)` — splitting the statement and scoping the
+        #   condition variable out of the real body. Clang flags these forms
+        #   explicitly, so use the flags rather than positional guessing.
+        _cond_idx = int(bool(node.get("hasInit"))) + int(bool(node.get("hasVar")))
+        _then_idx = _cond_idx + 1
+        _else_idx = _then_idx + 1
+
+        _then_is_null = (len(inner) > _then_idx
+                         and inner[_then_idx].get("kind") == "NullStmt")
+        if not _then_is_null:
+            if len(inner) > _then_idx:
+                _maybe_add(inner[_then_idx])
+            # else-body: skip when it is itself an IfStmt (else-if chain) —
+            # a stand-alone "{" before `else` breaks the chain; recursion
+            # adds braces inside the nested IfStmt instead.
+            if (node.get("hasElse") and len(inner) > _else_idx
+                    and inner[_else_idx].get("kind") != "IfStmt"):
+                _maybe_add(inner[_else_idx])
 
     elif kind in ("WhileStmt",):
         # inner: [condition, body]
@@ -545,7 +694,8 @@ def _collect_braceless(
     # DoStmt body is always a CompoundStmt in well-formed C; skip.
 
     for child in inner:
-        _collect_braceless(child, result, target, current_file, line_offsets)
+        _collect_braceless(child, result, target, current_file, line_offsets,
+                           state)
 
 
 def _insert_braces(

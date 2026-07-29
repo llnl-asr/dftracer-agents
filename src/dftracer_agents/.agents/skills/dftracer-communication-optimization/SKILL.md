@@ -160,3 +160,34 @@ DAG's own structure, e.g. narrow serialization barriers between wide fan-out lev
 schedulable inefficiency -- do not "fix" it by changing rank count. Confirmed on this
 workflow: 8-level DAG, max width 17 (individuals fan-out), vs. 31 workers -- the 19.4%
 utilization figure is expected and correct, not a target for optimization.
+
+## For DeepSpeed: set `wall_clock_breakdown: true` as the FIRST communication step
+
+`train_step` is a leaf under normal annotation — DDP/DeepSpeed fuse the gradient reduction into
+`backward()`, so collective time is invisible. DeepSpeed's own timers decompose it with no
+source changes, yielding `fwd` / `bwd_inner` / `bwd_allreduce` / `step` per iteration.
+
+Measured example (BERT-Base, 16 ranks, steady-state rank-0 medians): fwd 30.2 ms,
+bwd_inner 10.1 ms, **bwd_allreduce 255 ms**, step 19.0 ms — i.e. ~74% of the opaque leaf was
+the all-reduce, and the optimizer step was only ~7.6s of 400 iterations.
+
+**Sanity-check the decomposition:** if `bwd_inner` < `fwd`, `bwd_allreduce` is absorbing the
+async backward-kernel tail at its first device sync. Report the collective figure as an
+**upper bound** and state the band, rather than quoting it as exact.
+
+The probe itself costs ~2% — which conveniently calibrates the run's noise floor.
+
+## Verify a delta in the steady-state metric, not in wall time
+
+Startup phases (JIT, `dlopen` over a shared filesystem, distributed bootstrap) dominate
+run-to-run wall variance and will manufacture fake single-digit "wins". Measured case: two
+communication variants showed wall deltas of -4.6% and -7.8% while their `train_step` totals
+moved -0.1% and -2.0% — both inside the noise band. **`train_step` (or the equivalent
+steady-state total) is the metric of record.**
+
+## ZeRO-0: the DeepSpeed comm config keys are structurally inert
+
+`overlap_comm`, `contiguous_gradients`, `reduce_bucket_size` and `allgather_bucket_size` are
+read ONLY by the stage>=1 ZeRO optimizer constructors. At **ZeRO-0**, `allreduce_gradients()`
+uses a hardcoded `MEMORY_OPT_ALLREDUCE_SIZE`, so all four are no-ops. Never propose them as a
+ZeRO-0 lever — raising the stage is a separate decision with its own measured cost.
