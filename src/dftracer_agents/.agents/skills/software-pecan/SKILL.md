@@ -502,3 +502,60 @@ before stacking to reproduce the exact old `(B,)` shape, or the loss function's 
 check will fail downstream — hit as a live `BCELoss` "target size different from input size"
 crash the first validation-run attempt, not caught by a synthetic correctness check unless that
 check specifically uses matching `(1,)`-shaped per-sample tensors.
+
+## Annotation coverage gap (2026-07-28) — RESOLVED, verified on a 4-node run
+
+`pecan/trainer.py` has **two** batch loops, and only one of them is instrumented:
+
+| | `train_one_epoch` (~:106) | eval loop (~:296) |
+|---|---|---|
+| mode | `model.train()` | `model.eval()` + `torch.no_grad()` |
+| passes | forward + backward | forward only |
+| `dft_event_logging` regions | `model-forward` (~:195), `model-backward` (~:244) | **none** |
+| torch profiler | yes | **none** |
+
+Consequence: the eval loop is completely invisible in the trace — no `compute`
+events, no `PP` events — so its time is silently attributed to trace gap rather
+than to compute. Confirmed empirically: `model-forward` and `model-backward`
+counts are exactly equal (411 each per rank on a 1-node/1-epoch run), which can
+only happen if no forward-only loop is annotated.
+
+Two further coverage limits on the train loop itself, both intentional but easy
+to misread as lost events:
+
+- The profiler is gated on `self.rank == 0`, so only 1 rank of N emits `PP`.
+- `schedule(wait=2, warmup=2, active=6, repeat=1)` records **6 steps then stops
+  permanently**. On a 411-step epoch that is 12 of 822 forward/backward regions
+  (regions 8-19). Set `repeat=0` for whole-run coverage; expect ~65k PP events
+  per 6 profiled steps.
+
+**Fix direction:** per ML-R28 in [[dftracer-ml-annotate]], every batch loop gets
+its own `profile()` context and `prof.step()`, plus `model-forward` regions in
+the eval loop, with each loop wrapped in a distinctly named region
+(`train-loop` / `eval-loop`) so PP events are attributable.
+
+### Fix applied and verified (2026-07-28, 4 nodes / 16 ranks, 2 epochs)
+
+Changes in `pecan/trainer.py`:
+
+1. `eval_one_epoch` got its **own** `profile()` context + `prof.step()` (rank-0
+   gated, same as train) and a `dft_event_logging("compute", name="model-forward")`
+   region around the `self.model(input)` call.
+2. Both loops wrapped in named regions — `train-loop` / `eval-loop` — so PP
+   events are attributable to the loop they came from.
+3. Train-loop schedule switched from `repeat=1` to **`repeat=0`** for continuous
+   coverage over the whole run instead of one 6-step window.
+
+The eval loop is **inert unless validation data is configured** — the session
+config has `val_csvs: null` and `val_fns: null`, so `val_dataloader` stays `None`
+and `eval_one_epoch` is never called. To exercise it, set `val_fns`. (For a pure
+instrumentation check, reusing a few train shards is acceptable; it IS train/val
+leakage, so such a run is not valid for model quality or perf comparison.)
+
+Cost of `repeat=0`: epoch-1 wall time went 191s -> 305s in the profiled run.
+Continuous PP profiling is expensive — use it for instrumentation verification,
+NOT for performance measurement runs.
+
+Deterministic check that the fix is live: `model-forward` count must EXCEED
+`model-backward` (forward-only eval loop adds forwards with no backwards). Equal
+counts mean the eval loop is unannotated again.

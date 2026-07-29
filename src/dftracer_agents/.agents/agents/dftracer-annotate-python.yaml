@@ -50,3 +50,32 @@ sections:
 - include: redact-before-you-persist
 - title: Initialize the dftracer singleton exactly ONCE per process
   body: "A `cli.py`-style dispatcher usually imports **every** subcommand module. If two modules\neach call `initialize_log()` at import, the singleton initializes twice and the matching\n`finalize()` aborts with `double free or corruption (!prev)`.\n\n- Call `initialize_log()` in exactly ONE module (the one always imported on every path).\n- Everywhere else use `dftracer.get_instance()`.\n- Call `finalize()` from exactly one place, and before MPI teardown.\n- Never leave `initialize_log(logfile=None)` as the *diagnosis* for an empty trace:\n  `logfile=None` + `DFTRACER_LOG_FILE` exported works fine. An empty trace almost always\n  means the native extension failed to import (swallowed ImportError \u2192 `NoOpProfiler`),\n  which is an ENVIRONMENT bug. Verify with `python -c \"import dftracer.dftracer\"`.\n"
+- title: Instrument EVERY batch loop, not just the training loop (ML-R28)
+  body: |
+    ML/DL trainers contain several batch loops and only the training one is
+    obvious. Annotate and profile ALL of them: train (`model.train()`,
+    forward+backward), validation (`model.eval()` + `torch.no_grad()`, forward
+    only), test/inference, and any warmup loop.
+
+    An unprofiled eval loop is INVISIBLE in the trace: no compute events, no PP
+    events, so its time is silently attributed to trace gap instead of compute,
+    and an eval-bound job reads as an idle job.
+
+    Find every loop before you annotate:
+
+    ```bash
+    grep -nE "model\.(eval|train)\(\)|no_grad|for .* in enumerate\(.*loader" <file>
+    ```
+
+    Each loop needs its OWN `profile()` context and its own `prof.step()` — a
+    single profiler context cannot span two loops. Wrap each in a distinctly
+    named region (`train-loop` / `eval-loop`) so PP events are attributable.
+
+    Verification (do not skip): if the app has a forward-only eval loop, the
+    trace's `model-forward` count MUST exceed `model-backward`. Exactly equal
+    counts prove the eval loop was missed.
+
+    Also record, don't silently accept: a `rank == 0` profiler gate means only
+    1 rank of N emits PP, and `schedule(..., repeat=1)` records its active
+    window ONCE and then stops for the rest of the run. Both look like data
+    loss in the trace and are not. See `dftracer-ml-annotate` ML-R28.

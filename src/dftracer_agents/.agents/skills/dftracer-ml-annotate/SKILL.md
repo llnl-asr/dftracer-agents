@@ -459,9 +459,42 @@ semantic overrides above.
 
 ### 4i. PyTorch Profiler integration (ML-R28) — when "pytorch" in FRAMEWORKS
 
-  When PYTORCH_EXTRAS_OK is True, inject the PyTorch Profiler wrapper into the
-  TRAIN_FILE that contains the batch loop. Do this AFTER python_annotate_ai_file
-  so the batch loop is already wrapped with dft_ai.dataloader.fetch.iter().
+  When PYTORCH_EXTRAS_OK is True, inject the PyTorch Profiler wrapper into
+  EVERY batch loop in the app — not just the training one. Do this AFTER
+  python_annotate_ai_file so the batch loops are already wrapped with
+  dft_ai.dataloader.fetch.iter().
+
+  ALL LOOPS, NOT JUST TRAINING (mandatory). A typical trainer has several
+  distinct batch loops and they are trivially easy to miss because only the
+  training one is obvious:
+
+    - train      — `model.train()`, forward + backward + optimizer step
+    - validation — `model.eval()` + `torch.no_grad()`, forward only
+    - test/infer — `model.eval()` + `torch.no_grad()`, often a separate method
+    - warmup/profile-only loops, if the app has them
+
+  Instrument every one of them. An unprofiled eval loop is invisible in the
+  trace, so any time spent there is silently attributed to "gap" rather than to
+  compute, and an eval-bound job looks like an idle job. Find them all with:
+
+    grep -nE "model\.(eval|train)\(\)|no_grad|for .* in enumerate\(.*loader" <file>
+
+  Give each loop its OWN profiler context and its own schedule — a single
+  `profile()` cannot span two loops, and `prof.step()` must belong to exactly
+  one. Distinguish them in the trace by wrapping each loop in a differently
+  named dft_fn region (e.g. `train-loop` / `eval-loop`) so the PP events under
+  each are attributable.
+
+  Two related coverage traps, both observed in a real session:
+
+    - RANK GATING. `if self.rank == 0:` around the profiler means 15 of 16 ranks
+      emit zero PP events. That is a legitimate choice (profiling every rank is
+      expensive), but record it — otherwise the trace looks like data loss.
+    - SCHEDULE COVERAGE. `schedule(wait=2, warmup=2, active=6, repeat=1)` records
+      6 steps and then stops FOREVER, because `repeat=1`. On a 411-step epoch
+      that is 1.5% of the loop. Use `repeat=0` to repeat the cycle for the whole
+      run when you need continuous coverage, and expect the volume: 6 steps of
+      one rank produced ~65k PP events in a real run.
 
   Inject at the top of the training file (after the dftracer import block):
 
@@ -550,7 +583,9 @@ Check:
   ☐ Checkpoint I/O phases use ai.checkpoint.io.open/read/write/close (ML-R26)
   ☐ Non-dataloader/non-checkpoint I/O uses ai.other.io.open/read/write/close (ML-R27)
   ☐ image_size metadata passed in every data.io.read / checkpoint.io.read / write region
-  ☐ [pytorch] PyTorch Profiler wrapper injected (trace_handler, prof.step()) — ML-R28
+  ☐ [pytorch] PyTorch Profiler wrapper injected into EVERY batch loop — train AND
+    eval/validation AND test/inference, each with its own profile() context and
+    prof.step(); rank-gating and schedule repeat= coverage recorded — ML-R28
   ☐ [pytorch] Dynamo backend wired to torch.compile or model forward — ML-R29
   ☐ image_size metadata passed in every other.io.read / other.io.write region
 

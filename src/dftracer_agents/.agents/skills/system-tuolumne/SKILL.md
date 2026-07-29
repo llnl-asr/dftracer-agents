@@ -1,6 +1,22 @@
 # System: Tuolumne
 
-AMD MI300A APU cluster at LLNL. Uses Cray PE with ROCm.
+AMD MI300A APU cluster at LLNL, in the **CZ** zone. Uses Cray PE with ROCm.
+
+Load [[site-lc]] FIRST for the Livermore Computing site-wide facts that apply here
+too — banks/`bankinfo` and `flux -B`, the Flux scheduler and LC's `flux_wrappers`
+Slurm shims, Lmod conventions (`-magic`, and patched `leakfix`/`cgroupfix`/`hangfix`
+builds NOT being the lmod default), TOSS, and the `/p/lustre*` vs `/usr/workspace`
+split. This skill covers only what is specific to Tuolumne.
+
+**Verified 2026-07-28** (`flux queue list`) — queues and limits:
+
+| Queue | Default / limit | Nodes |
+|---|---|---|
+| `pbatch` (default) | 12 h / 1 d | 0–256 |
+| `pdebug` | 30 m / 1 h | 0–16 |
+| `pci` | 1 h / 4 h | 0–1 |
+| `pall` | 12 h / 1 d | 0–1144 (scheduling disabled) |
+| `pclass` | 12 h / 1 d | 0–14 |
 
 See also [[software-mpifileutils]] — for any large-scale (multi-GB/TB, or >10k files)
 copy/sync/delete/compare/archive/restripe operation on `/p/lustre5`, use the mpifileutils
@@ -861,3 +877,74 @@ tuning.
 client on Tuolumne compute nodes. `max_read_ahead_per_file_mb` is admin-only (`lctl set_param`
 returns Permission denied for unprivileged users). Don't propose user-space readahead tuning as
 an L3 optimization here — there is no headroom to gain and no permission to change it anyway.
+
+## Patched ROCm / compiler modules exist — the bare version is the lmod DEFAULT and is unpatched
+
+`module load rocm/6.4.3` gives you the **unpatched** build. Tuolumne ships patched builds
+alongside the base ones as separate installs under `/usr/tce/packages/rocbeta/`:
+
+| Suffix | Contents (per `module help`) |
+|---|---|
+| `leakfix` | base + `HSA_USE_UDMABUF=1` (from 7.2.0) **+ memory-leak patch (from 7.14)** |
+| `cgroupfix` | base + `HSA_USE_UDMABUF=1` (from 7.2.0) |
+| `hangfix` | patched to fix a known hang |
+| `-magic` (`rocmcc/*`) | site-blessed ROCm+CCE compiler pairing |
+
+Available at time of writing: `rocm/6.4.3leakfix`, `rocm/6.4.3cgroupfix`, `rocm/7.2.1leakfix`,
+`rocm/7.2.4leakfix`, `rocm/6.3.0hangfix`, `rocm/6.3.1hangfix`, plus a large `rocmcc/*-magic` set.
+
+**Rule:** prefer `leakfix` > `cgroupfix` > `hangfix` > base for the version you need; prefer
+`-magic` for `rocmcc/*`. Run `module avail rocm` and `module help rocm/<ver><suffix>` — the help
+text states exactly what was patched.
+
+**Verify you actually got it:** `$ROCM_PATH` must be `/usr/tce/packages/rocbeta/rocm-<ver><suffix>`,
+NOT `/opt/rocm-<ver>`. And derive `ROCM_HOME`/`PATH`/`LD_LIBRARY_PATH` from `$ROCM_PATH` rather
+than hardcoding `/opt/rocm-<ver>` — hardcoding loads the patched module but points the toolchain
+at the unpatched tree.
+
+**Why it matters:** long-running training jobs are exactly what these patches target, and a leak
+or hang does not announce itself — it looks like a mysterious stall or gradual degradation. Two
+full Megatron-DeepSpeed sessions here ran on bare `rocm/6.4.3` purely because it is the default.
+See [[software-rocm]].
+
+## dftracer silently degrades to NoOpProfiler in a non-Cray-PE venv (2026-07-29, root-caused)
+
+**Symptom.** dftracer installs cleanly into an app venv. `import dftracer` works,
+`from dftracer.python import dftracer, dft_fn` works, decorators apply,
+`initialize_log()` and `finalize()` both return without error — and **not a single
+`.pfw` is written**. `dft.log` appears but stays 0 bytes. No exception, no warning.
+
+**Root cause.** `session_install_dftracer` builds the C core and the Python C extension
+with `cce`, so they link the Cray CCE runtime: `libmodules.so.1`, `libfi.so.1`,
+`libcraymath.so.1`, `libf.so.1`, `libu.so.1`, `libcsup.so.1`. A Python/AI app venv
+usually loads only `python/<ver>` and `rocm/<ver>` — not the Cray PE modules — so those
+libraries are not on the loader path. The extension import fails, and the pydftracer
+layer **catches the ImportError and falls back to `NoOpProfiler`**, converting a hard
+link error into a silent no-op.
+
+This is easy to misdiagnose as an MPI problem, a `DFTRACER_ENABLE`/`DFTRACER_INIT`
+problem, or a `DATA_DIR` problem. It is none of those.
+
+**Diagnosis (do this first, before touching env vars or reinstalling):**
+```bash
+python -c "import dftracer.dftracer"   # the real gate, NOT `import dftracer`
+ldd <site-packages>/dftracer/dftracer.cpython-*-linux-gnu.so | grep "not found"
+```
+
+**Exact fix** — prepend the CCE runtime dirs in the env script that every run sources
+(not just an interactive shell; build/run subprocesses do not inherit ad hoc exports):
+```bash
+export LD_LIBRARY_PATH="/opt/cray/pe/cce/<ver>/cce/x86_64/lib:\
+/opt/cray/pe/cce/<ver>/cce/x86_64/lib/default64:\
+/opt/cray/pe/cce/<ver>/cce-clang/x86_64/lib:/usr/lib64:${LD_LIBRARY_PATH}"
+```
+`module load cce/<ver>` then reading `CRAY_LD_LIBRARY_PATH` gives the authoritative
+list. `/usr/lib64` is separately required for `dlopen`.
+
+**Acceptance gate.** `import dftracer` is NOT sufficient evidence that tracing works.
+A dftracer install step is only complete once a minimal FUNCTION-mode script has
+produced a non-empty `.pfw`/`.pfw.gz` containing `"ph"` events, verified with `ls -l`
+plus `zcat <file> | grep -c '"ph"'`.
+
+Same root-cause family as [[feedback-cray-ld-library-path-fortran-runtime]] (Cray-MPI-linked
+Python extensions) and [[bug-dftracer-crayclang-python-abi]]. See also [[tools-pydftracer]].

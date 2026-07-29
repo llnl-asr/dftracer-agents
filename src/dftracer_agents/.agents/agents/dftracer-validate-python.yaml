@@ -52,3 +52,24 @@ sections:
 - include: use-the-knowledge-graph-before-reading-files
 - include: redact-before-you-persist
 - include: environment-consistency
+- title: Verify batch-loop coverage is COMPLETE, not just present (ML-R28)
+  body: |
+    A tree can pass every decorator/lint check and still have a whole loop
+    unmeasured. Validation must confirm that EVERY batch loop is instrumented —
+    train, validation/eval, test/inference — not merely that some loop is.
+
+    Enumerate the loops in the source, then check each is covered:
+
+    ```bash
+    grep -nE "model\.(eval|train)\(\)|no_grad|for .* in enumerate\(.*loader" <trainer files>
+    ```
+
+    Deterministic trace-side check: if the app has a forward-only eval loop
+    (`model.eval()` + `torch.no_grad()`), then `model-forward` events MUST
+    outnumber `model-backward`. If the two counts are exactly equal, the eval
+    loop was NOT annotated — report it as a coverage failure, not a pass.
+
+    When a loop is deliberately left uninstrumented, or the profiler is
+    rank-gated (`rank == 0`) or schedule-limited (`repeat=1` records its active
+    window once and then stops), say so explicitly in the validation report with
+    the reason. Silent omission is what makes a later trace look like data loss.
