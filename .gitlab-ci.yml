@@ -1,0 +1,46 @@
+stages: [test, deploy]
+
+# LC corona batch runner (1 node) — mirrors the dftracer .corona-batch convention.
+.corona-batch:
+  id_tokens:
+    SITE_ID_TOKEN:
+      aud: https://lc.llnl.gov/gitlab
+  tags: [batch, corona]
+  variables:
+    PYTHON_MODULE: python/3.13.2
+    GCC_MODULE: gcc/11.2.1
+    SMALL_QUEUE: pdebug
+    SMALL_QUEUE_WALLTIME: 60
+    SCHEDULER_PARAMETERS: "-N 1 -q $SMALL_QUEUE -t $SMALL_QUEUE_WALLTIME"
+
+test:
+  extends: .corona-batch
+  stage: test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  before_script:
+    - module load $PYTHON_MODULE
+    - python3 -m venv .venv && source .venv/bin/activate
+  script:
+    # NOTE(gitlab-migration): pyproject deps still pull dftracer-utils/dfanalyzer
+    # from GitHub (git+https) until those projects are migrated to czgitlab.
+    - pip install -e ".[dev]"
+    # Slow/network integration tests are skipped by default (see test/conftest.py:
+    # they require --run-slow), so this runs the unit-style subset only.
+    - pytest test/ -x -q
+
+pages:
+  extends: .corona-batch
+  stage: deploy
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_COMMIT_BRANCH == "gitlab-migration"'  # temporary: remove after merge to develop
+  before_script:
+    - module load $PYTHON_MODULE
+    - python3 -m venv .venv-docs && source .venv-docs/bin/activate
+  script:
+    - pip install -r docs/requirements.txt
+    - sphinx-build -b html docs public
+  artifacts:
+    paths: [public]
