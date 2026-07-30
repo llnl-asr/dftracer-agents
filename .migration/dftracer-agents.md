@@ -47,3 +47,6 @@ Purely additive; nothing existing was modified.
 - 2026-07-30: remote added, plan created.
 - 2026-07-30: `.gitlab-ci.yml` authored (test + pages on `.corona-batch`); YAML/sphinx/pytest-collect checks run; committed on `gitlab-migration`; pushed develop/tags/gitlab-migration to czgitlab.
 - 2026-07-30: pyproject deps flipped in place to czgitlab ssh (dftracer-utils@develop, dfanalyzer@develop, dfdiagnoser@main) after those repos migrated; NOTE(gitlab-migration) comment records the GitHub URLs; REVERT.md updated (in-place must-fix).
+- 2026-07-30: CI switched to corona flux-allocation flow, single allocation per pipeline; MR opened.
+- 2026-07-30: Flux allocation made global via allocate/.flux-jobid artifact/release-allocation jobs; wait-event timeout removed.
+- 2026-07-30: branch rebuilt onto merged develop; allocate switched to flux alloc --bg.
