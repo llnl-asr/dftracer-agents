@@ -23,8 +23,12 @@ allocate:
     - if: '$CI_PIPELINE_SOURCE == "push"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   script:
-    - flux alloc --bg -N 1 -q "$SMALL_QUEUE" -t "${SMALL_QUEUE_WALLTIME}m" --job-name=dftracer-agents-ci
-    - JOBID=$(flux job last)
+    # Unique per-job name: `flux job last` is user-global and races with
+    # other pipelines running under the same LC account.
+    - ALLOC_NAME=dftracer-agents-ci-$CI_PIPELINE_ID-$CI_JOB_ID
+    - flux alloc --bg -N 1 -q "$SMALL_QUEUE" -t "${SMALL_QUEUE_WALLTIME}m" --job-name="$ALLOC_NAME"
+    - JOBID=$(flux jobs -n --name="$ALLOC_NAME" -o "{id}" | head -1)
+    - test -n "$JOBID"
     - echo "$JOBID" > .flux-jobid
     - echo "Created Flux allocation $JOBID (shared by all CI jobs)"
     - flux proxy "$JOBID" flux resource list
@@ -71,4 +75,4 @@ release-allocation:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: always
   script:
-    - flux cancel "$(cat .flux-jobid)" || true
+    - test -s .flux-jobid && flux cancel "$(cat .flux-jobid)" || true
