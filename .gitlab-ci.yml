@@ -1,46 +1,83 @@
-stages: [test, deploy]
+stages: [alloc, test, deploy, cleanup]
 
-# LC corona batch runner (1 node) — mirrors the dftracer .corona-batch convention.
-.corona-batch:
+# LC corona CI via a single shared Flux allocation:
+#  - `allocate` creates ONE 1-node allocation and saves its Flux job id to
+#    id discoverable by all jobs through the pipeline-scoped $ALLOC_NAME.
+#  - every CI job resolves that name and runs its steps via `flux proxy`.
+#  - `release-allocation` cancels it at the end (runs even on failure).
+.corona-flux:
   id_tokens:
     SITE_ID_TOKEN:
       aud: https://lc.llnl.gov/gitlab
-  tags: [batch, corona]
+  tags: [shell, corona]
   variables:
+    # Same name in every job of a pipeline, distinct across pipelines, so any
+    # job can find this pipeline's allocation without a shared state file
+    # (the runner build dir is reused across pipelines, so a file races).
+    ALLOC_NAME: "dftracer-agents-ci-$CI_PIPELINE_ID"
     PYTHON_MODULE: python/3.13.2
-    GCC_MODULE: gcc/11.2.1
+    COMPILER_MODULE: gcc/11.2.1
     SMALL_QUEUE: pdebug
     SMALL_QUEUE_WALLTIME: 60
-    SCHEDULER_PARAMETERS: "-N 1 -q $SMALL_QUEUE -t $SMALL_QUEUE_WALLTIME"
 
-test:
-  extends: .corona-batch
-  stage: test
+allocate:
+  extends: .corona-flux
+  stage: alloc
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-  before_script:
-    - module load $PYTHON_MODULE
-    - python3 -m venv .venv && source .venv/bin/activate
   script:
-    # NOTE(gitlab-migration): pyproject deps still pull dftracer-utils/dfanalyzer
-    # from GitHub (git+https) until those projects are migrated to czgitlab.
-    - pip install -e ".[dev]"
-    # Slow/network integration tests are skipped by default (see test/conftest.py:
-    # they require --run-slow), so this runs the unit-style subset only.
-    - pytest test/ -x -q
+    # A retried `allocate` must not leave the previous attempt running.
+    - for id in $(flux jobs -n --name="$ALLOC_NAME" -o "{id}" 2>/dev/null); do echo "cancelling stale allocation $id"; flux cancel "$id" || true; done
+    - flux alloc --bg -N 1 -q "$SMALL_QUEUE" -t "${SMALL_QUEUE_WALLTIME}m" --job-name="$ALLOC_NAME"
+    - JOBID=$(flux jobs -n --name="$ALLOC_NAME" -o "{id}" | head -1)
+    - test -n "$JOBID"
+    - echo "Created Flux allocation $JOBID (shared by all CI jobs)"
+    - flux proxy "$JOBID" flux resource list
 
+# NOTE(gitlab-migration): the pytest job is DISABLED for this project (its
+# suite is stale w.r.t. the current tree and never ran on GitHub). Only the
+# docs build runs; see .gitlab/ci/docs.sh for how to re-enable the tests.
+docs:
+  extends: .corona-flux
+  stage: test
+  needs: [allocate]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - JOBID=$(flux jobs -n --name="$ALLOC_NAME" -o "{id}" | head -1)
+    - test -n "$JOBID"
+    # flux run -N 1 executes the script ON the allocated node; the script
+    # builds the docs in a podman python:3.11 container.
+    - flux proxy "$JOBID" flux run -N 1 bash .gitlab/ci/docs.sh
+  artifacts:
+    paths: [public]
+
+# Publishes the artifact from docs — shell runner, no allocation.
 pages:
-  extends: .corona-batch
+  extends: .corona-flux
   stage: deploy
+  needs: [docs]
   rules:
     - if: '$CI_COMMIT_BRANCH == "develop"'
     - if: '$CI_COMMIT_BRANCH == "gitlab-migration"'  # temporary: remove after merge to develop
-  before_script:
-    - module load $PYTHON_MODULE
-    - python3 -m venv .venv-docs && source .venv-docs/bin/activate
   script:
-    - pip install -r docs/requirements.txt
-    - sphinx-build -b html docs public
+    - echo "Publishing docs built by docs"
   artifacts:
     paths: [public]
+
+release-allocation:
+  extends: .corona-flux
+  stage: cleanup
+  # No `needs:` on purpose: a job that declares `needs` is SKIPPED when one of
+  # them fails, which leaked the allocation on every failed pipeline. Plain
+  # stage ordering + `when: always` guarantees cleanup after success, failure,
+  # cancellation and manual reruns alike.
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+  script:
+    - for id in $(flux jobs -n --name="$ALLOC_NAME" -o "{id}" 2>/dev/null); do echo "cancelling $id"; flux cancel "$id" || true; done

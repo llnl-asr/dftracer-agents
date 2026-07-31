@@ -55,18 +55,25 @@ Some migrations change source files in place to point dependencies at GitLab. Th
   URLs in `pyproject.toml` `[project.urls]` are self-referential metadata,
   left untouched. Revert is fully additive-only (remove
   remote/branch/.gitlab-ci.yml).
-- **dfdiagnoser** — no in-place source changes. Its dependencies are all
-  third-party PyPI packages (optional `dftracer-analyzer` is a plain PyPI
-  version spec — no GitHub URL); `spack.yaml` repos (mochi/diaspora) are
-  third-party; `github.com/LLNL/*` occurrences in README/docs are prose links,
-  left untouched. Revert is fully additive-only (remove
-  remote/branch/.gitlab-ci.yml; `docs/` was newly authored — `git rm -r docs/`
-  too if unwanted on GitHub).
+- **dfdiagnoser** — `pyproject.toml`: `dftracer-analyzer>=0.0.9` (PyPI spec)
+  switched to `dftracer-analyzer @ git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dfanalyzer.git@develop`
+  in BOTH the `checkpoint` optional-dependency extra and the `dev` dependency
+  group (NOTE(gitlab-migration) comments record the original). On revert,
+  restore the PyPI spec in both places. Other deps are third-party; `spack.yaml`
+  repos (mochi/diaspora) third-party; README/docs github links prose-only, all
+  untouched. `docs/` was newly authored — `git rm -r docs/` on revert if
+  unwanted on GitHub.
 - **dfoptimizer** — no in-place source changes. Its only dependency is
   `structlog` (plus optional `pyzmq`), both third-party PyPI packages; the sole
   `github.com/LLNL/dfdiagnoser` occurrence is a README prose link, left
   untouched. Revert is fully additive-only (remove remote/branch/.gitlab-ci.yml;
   `docs/` was newly authored — `git rm -r docs/` too if unwanted on GitHub).
+- **dfdashboard** — no in-place source changes. All dependencies in
+  `pyproject.toml` are third-party PyPI packages (bokeh, dask, zindex_py, ...);
+  the only `github.com/LLNL/DFDashboard` occurrence is the self-referential
+  install line in README.md, left untouched. Revert is fully additive-only
+  (remove remote/branch/.gitlab-ci.yml; `docs/` was newly authored —
+  `git rm -r docs/` too if unwanted on GitHub).
 
 - **dftracer-agents** — `pyproject.toml` `[project]` dependencies: three git deps
   switched from GitHub to czgitlab ssh —
