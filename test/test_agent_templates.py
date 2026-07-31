@@ -802,4 +802,4 @@ class TestBootstrapRelativeSymlinks:
         assert mcp.exists(), f".mcp.json symlink is broken: {os.readlink(mcp)}"
         content = mcp.read_text()
         assert "dftracer" in content
-        assert "5000" in content  # port should be 5000 after our fix
+        assert "20000" in content  # workspace .mcp.json port (see fd2058d)
