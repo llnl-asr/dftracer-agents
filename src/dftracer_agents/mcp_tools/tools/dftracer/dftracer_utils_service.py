@@ -102,6 +102,45 @@ def _build_watchdog_flags(
     return args
 
 
+def info_command(
+    files: Optional[str] = None,
+    directory: Optional[str] = None,
+    query_type: str = "summary",
+    verbose: bool = False,
+    force_rebuild: bool = False,
+    checkpoint_size: Optional[int] = None,
+    index_dir: Optional[str] = None,
+    executor_threads: Optional[int] = None,
+) -> List[str]:
+    """Build the ``dftracer_info`` command line.
+
+    Shared with the ``info`` MCP tool rather than written twice: a caller that
+    wants the numbers instead of the text should still be asking the same
+    binary the same way.
+
+    Returns:
+        The argv for ``dftracer_info``.
+    """
+    cmd = ["dftracer_info"]
+    if files is not None:
+        for name in files.split():
+            cmd += ["--files", name]
+    if directory is not None:
+        cmd += ["-d", directory]
+    cmd += ["--query", query_type]
+    if verbose:
+        cmd.append("-v")
+    if force_rebuild:
+        cmd.append("--force-rebuild")
+    if checkpoint_size is not None:
+        cmd += ["--checkpoint-size", str(checkpoint_size)]
+    if index_dir is not None:
+        cmd += ["--index-dir", index_dir]
+    if executor_threads is not None:
+        cmd += ["--executor-threads", str(executor_threads)]
+    return cmd
+
+
 class DftracerUtilsService(MCPService):
     """MCP service that wraps every documented ``dftracer_*`` CLI binary.
 
