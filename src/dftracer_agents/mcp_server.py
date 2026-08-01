@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import os
 import signal
 import subprocess
@@ -407,6 +408,17 @@ def _build_system_server() -> FastMCP:
     return server
 
 
+def _build_agent_trace_server() -> FastMCP:
+    from dftracer_agents.mcp_tools.tools.dftracer import agent_trace_service
+
+    service = agent_trace_service.AgentTraceService()
+
+    server = _new_server("DFTracerAgentTrace")
+    for tool in asyncio.run(service.agent_subservice.list_tools()):
+        server.add_tool(tool)
+    return server
+
+
 def _build_session_server() -> FastMCP:
     from dftracer_agents.mcp_tools.tools.dftracer import dftracer_service
 
@@ -562,6 +574,9 @@ def build_server(service: str) -> FastMCP:
     if service == "system":
         return _build_system_server()
 
+    if service == "agent_trace":
+        return _build_agent_trace_server()
+
     # both — all services
     combined = _new_server("DFTracer")
     for srv in (
@@ -574,6 +589,7 @@ def build_server(service: str) -> FastMCP:
         _build_papers_server(),
         _build_system_server(),
         _build_skills_server(),
+        _build_agent_trace_server(),
     ):
         for tool in asyncio.run(srv.list_tools()):
             combined.add_tool(tool)
@@ -600,7 +616,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--service",
-        choices=["utils", "analyzer", "session", "docs", "diagnoser", "papers", "system", "skills", "both"],
+        choices=["utils", "analyzer", "session", "docs", "diagnoser", "papers", "system", "skills", "agent_trace", "both"],
         default="both",
         help="Which service(s) to expose (default: both)",
     )
@@ -688,18 +704,26 @@ def main() -> None:
             raise SystemExit(_daemon_start(args))
         # command == "run": continue with foreground server below.
 
-    if not args.skip_setup:
-        try:
-            _run_startup_setup(args)
-        except Exception as exc:  # never let setup issues block the server
-            import traceback
-            print(f"[setup] Skipped setup ({type(exc).__name__}): {exc}", file=sys.stderr)
-            traceback.print_exc()
+    # Under stdio the client owns stdout as the JSON-RPC channel, so anything
+    # printed there corrupts the protocol and the client fails or times out
+    # waiting for a reply it can parse. Setup and server construction both
+    # announce themselves, so their output is sent to stderr instead.
+    quiet = contextlib.redirect_stdout(sys.stderr) if args.transport == "stdio" \
+        else contextlib.nullcontext()
 
-    if getattr(args, "reload", False):
-        raise SystemExit(_run_with_reload(args))
+    with quiet:
+        if not args.skip_setup:
+            try:
+                _run_startup_setup(args)
+            except Exception as exc:  # never let setup issues block the server
+                import traceback
+                print(f"[setup] Skipped setup ({type(exc).__name__}): {exc}", file=sys.stderr)
+                traceback.print_exc()
 
-    server = build_server(args.service)
+        if getattr(args, "reload", False):
+            raise SystemExit(_run_with_reload(args))
+
+        server = build_server(args.service)
 
     if args.transport == "stdio":
         asyncio.run(server.run_stdio_async(show_banner=False))

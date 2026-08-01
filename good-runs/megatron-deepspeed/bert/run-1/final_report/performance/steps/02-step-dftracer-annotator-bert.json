@@ -1,0 +1,43 @@
+{
+  "run_id": "megatron_deepspeed/20260727_164229",
+  "key": "STEP: dftracer-annotator (BERT)",
+  "index": 2,
+  "agent": "dftracer-annotator",
+  "notes": "Annotate BERT training path in megatron_deepspeed/20260727_164229, mirroring GPT session's 10-file scope",
+  "status": "superseded",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 95.336,
+  "wall_s": 95.336,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 95.336,
+      "error": "",
+      "start_ns": 1785176412642684310,
+      "end_ns": 1785176507978278538
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}
