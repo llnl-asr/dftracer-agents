@@ -5,6 +5,9 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `software-rocm` skill ("HIP tracing requires a strict
+init ORDER" section — this file's full content is now persisted there).
+
 dftracer built with `DFTRACER_ENABLE_HIP_TRACING=ON` calls
 `rocprofiler_force_configure()` from `HIPFunction::initialize()`, which runs
 inside `dftracer.initialize_log()`. rocprofiler-sdk tolerates that in exactly

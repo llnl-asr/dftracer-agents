@@ -5,6 +5,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `dftracer-privacy-guard` skill (already documents this
+`final_report/` carve-out fix in full).
+
 Root cause: `privacy_tools.py`'s `_is_ignored()` excludes any file `git check-ignore` reports as
 ignored, to avoid scanning staging/temp files that would never ship. But the ENTIRE
 `workspaces/<session>/` tree is gitignored per project policy (it's meant to hold real resolved

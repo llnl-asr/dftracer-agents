@@ -5,9 +5,15 @@ metadata:
   type: feedback
 ---
 
-Three-part standing rule the user gave on 2026-07-28/29, now enforced as the shared agent
-section `skills-first-and-capture-every-qa` (in `agents/common-sections.yaml`, `- include:`d
-by all 29 agent templates) and as REQUIRED RULE 0 in the [[dftracer-lessons]] skill.
+**Canonical home:** see the `dftracer-lessons` skill (REQUIRED RULE 0) and the
+`skills-first-and-capture-every-qa` shared section in `agents/common-sections.yaml`.
+
+Three-part standing rule the user gave on 2026-07-28/29. As of this edit it IS actually
+enforced as the shared agent section `skills-first-and-capture-every-qa` (in
+`agents/common-sections.yaml`, `- include:`d by all 28 agent templates that have a
+`sections:` block) and as REQUIRED RULE 0 in the [[dftracer-lessons]] skill — a prior
+version of this memory file claimed this was already done when it had not actually been
+written to either file; that gap is now closed.
 
 1. **Skills first.** Before installing, building, annotating, running, tuning, or debugging
    anything, run `skill_search` / `graph_query(mode="docs")` / `skill_load` and act on what

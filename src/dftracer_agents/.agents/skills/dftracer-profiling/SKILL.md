@@ -91,6 +91,44 @@ the final step.
 See [[dftracer-context-economy]] for the companion rule on using the knowledge
 graph instead of reading files, which is the other half of keeping a run cheap.
 
+## Troubleshooting: token/dollar figures show 0 even though steps are recorded
+
+`profile_status`/`profile_report` will still show correct step timings and retry
+counts, but `events_seen: 0` and `$0.0000`, if OTEL telemetry env vars were not set
+**before** the Claude Code process started. Token and dollar figures only populate
+when telemetry is exported from process start, not mid-session.
+
+**Required env vars** (must be in the real process environment before launch):
+`CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_LOGS_EXPORTER=otlp`,
+`OTEL_METRICS_EXPORTER=otlp`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` (protobuf will
+NOT parse — the local receiver is stdlib-only), `OTEL_EXPORTER_OTLP_ENDPOINT=
+http://127.0.0.1:4318`. Symptom of a bound-but-blind profile:
+`performance/otlp/events-*.jsonl` stays 0 bytes.
+
+**The `env` block of `.claude/settings.json` does NOT work for these** — it reaches
+tool subprocesses but not the telemetry SDK, which reads its config at process
+start, before `settings.json`'s env block is applied to anything.
+
+**Do NOT try to diagnose this by grepping `env` in a Bash tool call.** Claude Code
+never re-exports `OTEL_*` to child processes, so they read as unset in BOTH the
+working and the broken state — the absence proves nothing either way. The only
+reliable signals are `profile_status` -> `events_seen`, and reading the
+vscode-server's own `/proc/<pid>/environ` directly.
+
+**Under the VS Code Remote-SSH extension**, the OTEL vars must be in the real
+process env of the **vscode-server** itself, which every extension host and
+`claude` process inherits. Remote-SSH sources `$HOME/.vscode-server/server-env-setup`
+before starting the server — put the exports there. `$HOME/.profile` does **not**
+work: Remote-SSH launches the server through a non-login shell, so it is never
+read (a `PATH` that looks profile-derived usually actually came from `.bashrc`).
+After editing `server-env-setup`, run **Remote-SSH: Kill VS Code Server on Host**
+and reconnect — a window reload is NOT enough, since the extension host inherits
+env from the already-running server process, not a freshly-read file.
+
+**To distinguish "collector broken" from "nothing being sent"**: POST a synthetic
+record to `/v1/logs` and watch `events-*.jsonl` grow. If it grows, the receiver and
+MLflow sink are fine and the problem is purely upstream env propagation.
+
 ## Permissions
 
 Read-only with respect to source. This skill uses:

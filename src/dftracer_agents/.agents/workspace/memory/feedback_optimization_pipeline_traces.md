@@ -6,6 +6,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** codified in CLAUDE.md Pipeline Policy rule 11, and see
+`workload-scaffold`/`feedback_lustre_io` for the applied pattern.
+
 When running `session_optimization_iteration`, the tool looks for trace files inside the session workspace at `<WS>/traces/` (under `$PROJECT_ROOT/workspaces/<session>/traces/`).
 
 If `DFTRACER_LOG_FILE` points to Lustre (`/p/lustre5/...`), the tool returns `"trace_files": []` and finds 0 bottlenecks — silently giving a false "optimization complete" result.

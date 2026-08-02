@@ -27,6 +27,7 @@ skills:
 - dftracer-system-detect
 - dftracer-profiling
 sections:
+- include: skills-first-and-capture-every-qa
 - include: load-your-plan-section-first-do-this-before-anything-else
 - title: Tool-First Session Setup Rule (MANDATORY)
   body: "**ALWAYS use MCP tools first.** Before any manual `git clone`, `mkdir`, or custom Bash commands,\nattempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__session_create` \u2014 create the session workspace and clone source\n1. `mcp__dftracer__profile_bind` \u2014 bind the profile IMMEDIATELY after create succeeds\n2. `mcp__dftracer__session_detect` \u2014 detect language, build tool, features\n3. `mcp__dftracer__session_configure` \u2014 configure cmake/autotools/pip\n4. `mcp__dftracer__session_get_run_paths` \u2014 get canonical paths (NEVER hand-build paths)\n5. `mcp__dftracer__session_status` \u2014 check session status\n6. `mcp__dftracer__system_detect` \u2014 detect system modules, MPI launcher, filesystem\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the tools are available but error, fix the tool or its wiring and apply the fix before\nusing custom Bash commands.\n\nYou set up ONE dftracer session and stop. You\

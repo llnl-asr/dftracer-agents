@@ -1203,6 +1203,34 @@ fix: |
 tags: [dftracer, dfanalyzer, dask, hang, timeout, mcp-tool-fix, subprocess]
 
 ---
+date: 2026-07-08
+app: n/a (dftracer-agents MCP tool code)
+context: follow-up bug in the SAME analyze() timeout handler above — the "timeout after output is success" except branch itself crashed
+error: |
+  With the timeout=300 fix above in place, a trace whose dfanalyzer dask
+  LocalCluster hung on teardown (e.g. h5bench-run1) still made the `analyze`
+  MCP tool fail outright, now with `TypeError: can't concat str to bytes`
+  instead of hanging.
+root_cause: |
+  The `except subprocess.TimeoutExpired` handler assumed `exc.stdout`/
+  `exc.stderr` were `str` (since the call passed `text=True`), and did
+  `stderr += "\n[...]"`. CPython's `subprocess.run(..., text=True,
+  timeout=...)` actually returns `TimeoutExpired.stdout`/`.stderr` as
+  **bytes**, not str, even though a normal (non-timeout) completion under
+  `text=True` decodes them — `text=True` is honored for the successful-return
+  path but not for the exception object's captured partial output. So the
+  "treat timeout-with-output as success" logic added for the hang bug above
+  crashed on its own success path.
+fix: |
+  In `src/dftracer_agents/mcp_tools/tools/dftracer/dfanalyzer_service.py`,
+  decode `exc.stdout`/`exc.stderr` from bytes to str (checking `isinstance(...,
+  bytes)` before calling `.decode()`, since the field's actual type is not
+  guaranteed by the `text=True` flag when raised via TimeoutExpired) before
+  any string concatenation in the except handler. Requires an MCP server
+  restart to load — see [[project_claude_agent_models]].
+tags: [dftracer, dfanalyzer, dask, hang, timeout, bytes, decode, mcp-tool-fix, subprocess]
+
+---
 date: 2026-07-06
 app: https://github.com/pegasus-isi/montage-workflow-v3
 context: annotation scoping filter must check the ACTUAL executed binaries, not assumed classic-tool names

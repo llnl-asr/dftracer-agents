@@ -51,3 +51,17 @@ that costs the app is not a win — never apply/keep one where this guard fired.
    is worthless.
 4. A `metric_scope="system"` entry always carries its paired app-metric proof
    — see the non-degradation guard above.
+5. **Comparator corroboration required before crediting any "win" (MANDATORY).**
+   A 5-rep median/CV comparison alone is not sufficient evidence on a noisy
+   shared filesystem — always ALSO run a same-rep `comparator` cross-check
+   (baseline repN vs. variant repN) and require it to show a non-negligible,
+   ideally statistically-significant delta before trusting a median-level
+   improvement. Confirmed on an h5bench session: three separate levers
+   (network NIC/rendezvous tuning, isolated rendezvous threshold, NUMA
+   cpu-affinity) each showed a large, misleading 5-rep median "improvement"
+   (+38-68%) that a same-rep `comparator` cross-check revealed as noise (≤3%
+   per-rep, correctly flagged negligible). Record the same-rep comparator
+   result in the `notes` field alongside the median/CV numbers whenever a win
+   is recorded — a median delta with no comparator corroboration is not yet a
+   credited result. See `feedback-h5bench-session-incidents` and
+   `project-h5bench-read-write-optimization` for the full incident.

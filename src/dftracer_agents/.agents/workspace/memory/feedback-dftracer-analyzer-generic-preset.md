@@ -5,6 +5,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `dftracer-diagnoser` skill (`rules.md`/`pitfalls.md`
+already carry the full technical writeup, per this file's own closing reference).
+
 When `analyze()`/`diagnose()` return empty/zero results against real trace data, root-cause and fix the TOOL, don't just fall back to manual parsing and move on.
 
 **Why:** during a PECAN session, `analyze(analyzer_preset="posix")` and `analyzer_preset="dlio"` both silently returned 0-row flat views / empty Layer Breakdown (returncode=0, no error) against a trace with 130M+ real events, because the app's `dft_event_logging` custom categories (`compute`/`preprocess`/`communication-io`) don't match either preset's hardcoded layer-name list. `diagnose()` separately returned "0 metric observations" due to THREE compounding bugs: (a) `_diagnose_via_api` always no-op'd because it checked for a `diagnose_checkpoint` method an outdated `dfdiagnoser` release didn't have, (b) a cascade-logic bug masked the real API exception behind a generic CLI error, (c) `Diagnoser.diagnose_checkpoint` transitively imports `dask_jobqueue`, which calls `signal.signal()` at MODULE IMPORT TIME — crashing on the MCP server's worker thread (`ValueError: signal only works in main thread`) the FIRST time any tool call triggered that import chain.

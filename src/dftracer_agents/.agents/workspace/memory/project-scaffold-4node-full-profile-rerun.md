@@ -5,6 +5,9 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `workload-scaffold` skill ("4-node x 4-GPU full-profile
+rerun" section — this file's full content is now persisted there) and `software-rocm`.
+
 COMPLETE (2026-07-29). Rerun of the ScaFFold session's most-correct baseline (`base_960`:
 problem_scale=6, workers=0, checkpoint_interval=1, 960 epochs, config byte-identical) at
 **4 nodes x 4 GPUs = 16 ranks** (was 32), on the latest develop stack, for a complete profile.

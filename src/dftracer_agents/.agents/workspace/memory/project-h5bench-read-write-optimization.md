@@ -5,6 +5,10 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `workload-h5bench` skill (ROMIO win, paged-file-space
+incompatibility, read write-first requirement, DIM_1 du-verification lesson) and
+`dftracer-optimization-kb` Rule 5 (comparator corroboration).
+
 ## State
 Session narrowed scope to `read`+`write` workloads only (5 other h5bench workloads baselined
 earlier, left as-is). Both `read` and `write` baselines were found broken/oversized and fixed:

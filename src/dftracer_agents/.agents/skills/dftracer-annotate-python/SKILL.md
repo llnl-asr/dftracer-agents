@@ -162,6 +162,30 @@ this automatically (same contextual-`with`-region treatment as
 `@staticmethod`) — never hand-write a decorator stack that puts anything above
 `@property`/`@x.setter`/`@x.deleter`/`@x.getter`/`@cached_property`.
 
+**`@functools.cache`/`@functools.lru_cache` are the SAME rule, different
+failure mode (real incident, AF3 session 2026-07-29):** these must be
+OUTERMOST, `@_dft.log` innermost (closest to `def`):
+
+```python
+# ❌ WRONG — @_dft.log outermost, wraps functools.cache's wrapper object
+@_dft.log
+@functools.cache
+def _get_protein_msa_and_templates(sequence: str, ...): ...
+
+# ✅ CORRECT — cache decorator outermost, @_dft.log innermost (closest to def)
+@functools.cache
+@_dft.log
+def _get_protein_msa_and_templates(sequence: str, ...): ...
+```
+
+The wrong order crashes at import with `TypeError: unsupported callable`,
+because `inspect.getfullargspec` (used internally by `@_dft.log`'s wrapper to
+build its call signature) cannot introspect a `functools._lru_cache_wrapper`
+object once `@functools.cache` has already wrapped the function. Always put
+`@functools.cache`/`@functools.lru_cache` as the OUTERMOST decorator and
+`@_dft.log` closest to `def` — same principle as `@classmethod`/
+`@staticmethod` ordering (Rule 7), just a different concrete exception.
+
 ### Python Rule 4 — Context manager for ad-hoc regions
 
 ```python
@@ -335,6 +359,59 @@ functions that legitimately run at wall-clock speed) before blanket-applying
 `python_annotate_project` to a simulator's code — the tool cannot make this
 distinction automatically, it must be a manual judgment call per function.
 
+### Python Rule 9 — Don't stack decorators through a pure orchestration chain (MANDATORY — distinct from `dftracer-annotate-general` Rule A's backend-wrapper case)
+
+If function A's only job is to call B, which calls C, and none of A/B/C do
+their own I/O/compute directly (they just dispatch downward), decorating all
+three with `@_dft.log` produces near-duplicate spans covering the same
+wall-clock window at every level — real example, an AF3 session (2026-07-29):
+`process()` → `process_protein_chain()` → `_get_protein_msa_and_templates()`
+→ `_get_protein_templates()` were ALL decorated, each wrapping ~the same
+window as its caller. This is exactly the "already wrapped by a larger
+annotated function that covers the same work" skip condition
+`dftracer-annotate-general` Rule 0 already documents — applied here
+specifically to Python orchestration chains.
+
+```python
+# ✅ Correct — annotate the ONE layer that does real work; leave pure
+# dispatch/orchestration layers un-decorated
+def process(self, fold_input):          # orchestration — no decorator
+    for chain in fold_input.chains:
+        self.process_protein_chain(chain)
+
+def process_protein_chain(self, chain):  # orchestration — no decorator
+    return _get_protein_msa_and_templates(...)
+
+@_dft.log
+def _get_protein_msa_and_templates(...): # does the real work — decorated
+    with futures.ThreadPoolExecutor(...) as executor:
+        ...
+```
+
+If a mid-level function mixes real work with dispatch (builds inputs, calls a
+sub-function, then post-processes the result), use a contextual region (Rule
+4) around just the real-work part instead of decorating the whole function:
+
+```python
+def process_protein_chain(self, chain):
+    unpaired_msa, paired_msa, template_hits = _get_protein_msa_and_templates(...)
+    with DFTracerFn("Data", name="assemble_templates"):
+        templates = [folding_input.Template(...) for hit, struc in ...]
+    return ...
+```
+
+**This does NOT apply to Rule A's wrapper-backend case** (e.g. a POSIX call
+wrapped by an MMAP-level function) — there, each layer is a genuinely
+different abstraction cost and both stay annotated. The distinction: Rule A
+layers differ in WHAT they cost (syscall vs. library overhead); a pure
+orchestration chain's layers are the SAME cost measured redundantly N times.
+
+`python_annotate_project`/`python_annotate_file` apply Rule 0's per-function
+I/O/loop/data-movement heuristics but do not currently detect "this function
+only calls other already-decorated functions" — treat that as a manual
+review pass after tool-based annotation, the same way manual judgment is
+required for Rule 8's simulated-clock functions.
+
 ### Python Quick checklist
 
 - [ ] `from dftracer.python import dftracer, dft_fn as DFTracerFn` imported (NOT `dftracer.logger`)
@@ -344,3 +421,4 @@ distinction automatically, it must be a manual judgment call per function.
 - [ ] NO function decorated with `@property`/`@cached_property`/`@x.setter`/`@x.deleter`/`@x.getter` has a stacked `@_dft.log` — contextual `with DFTracerFn(...)` region instead
 - [ ] No file anywhere in the tree still references `dftracer.logger` or `DFTracer.initialize_log`/`DFTracer.finalize_log` (stale API — grep for it if in doubt)
 - [ ] Every `DataLoader`/`DataListLoader`/`multiprocessing.Process`/`Pool` construction with more than one worker has a `worker_init_fn` (or equivalent) that calls `initialize_log()` + registers an `atexit` `finalize()` INSIDE the worker process (Rule 2b) — a plain top-level function, never a closure, if `multiprocessing_context="spawn"` is used anywhere
+- [ ] No pure orchestration call chain has `@_dft.log` stacked at every level (Rule 9) — only the layer(s) that do real work, or a contextual region around the real-work part of a mixed function

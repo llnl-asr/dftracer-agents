@@ -5,6 +5,10 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `flux-alloc` skill ("Cancelling a job or allocation" and
+"Never queue more jobs than the allocation can run concurrently" sections) and
+`dftracer-optimization-kb` Rule 5 (comparator corroboration).
+
 ## What happened
 
 **Runaway job-submission loop:** mid-session, ~3,200 queued `h5bench_write` jobs were found

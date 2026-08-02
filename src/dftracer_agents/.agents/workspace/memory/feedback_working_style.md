@@ -6,6 +6,14 @@ metadata:
   type: feedback
 ---
 
+**Canonical home (partial — see note):** the allocation-ID-hotswap sub-part below is
+covered by the `flux-alloc` skill ("Allocations: ASK the user first" section handles
+mid-session JOBID changes); the "fix the MCP tool, not a workaround" sub-part is
+covered by `dftracer-privacy-guard`/`dftracer-lessons` (tool-first, fix-the-tool
+rules). The autonomous-continuation preference (first paragraph below) has no
+project-skill home — it is a personal interaction-style preference, not a technical
+lesson, so it stays as personal-memory-only text.
+
 User runs long multi-step optimization pipelines and expects Claude to continue where the session left off without asking questions or summarizing context.
 
 **Why:** Sessions are long-running (hours); the user provides new allocation IDs mid-session and expects immediate continuation.

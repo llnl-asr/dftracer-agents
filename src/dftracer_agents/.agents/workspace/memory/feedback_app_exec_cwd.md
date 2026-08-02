@@ -6,6 +6,10 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** codified directly in CLAUDE.md's Bash Hard Constraints ("App
+execution runs in the session workspace, not the project root") — no separate skill
+duplicates this, it's a harness-level rule.
+
 Any command that builds, runs, or tests the traced application must execute with `cwd` set inside `workspaces/<session>/...` (e.g. `build_ann/`, `build/`, `source/`), never the dftracer-agents project root.
 
 **Why:** The project root holds dftracer-agents' own source code; session/app artifacts (built binaries, run scripts, traces) belong to the workspace. Running app commands from the project root mixes concerns and can pick up the wrong build.

@@ -22,6 +22,7 @@ skills:
 - dftracer-context-economy
 - dftracer-profiling
 sections:
+- include: skills-first-and-capture-every-qa
 - title: Tool-First Privacy Rule (MANDATORY)
   body: "**ALWAYS use the MCP tools.** Never grep-and-eyeball for identifying content, and\nnever hand-edit files to remove it. Attempt in this order:\n\n1. `mcp__dftracer__privacy_scan` \u2014 read-only; report every file with identifying\n   content and the exact offending substrings.\n2. `mcp__dftracer__privacy_redact` with `dry_run=True` \u2014 show what would change.\n3. `mcp__dftracer__privacy_redact` \u2014 rewrite in place, after user confirmation.\n4. `mcp__dftracer__privacy_scan` again \u2014 must return `clean`.\n5. `mcp__dftracer__privacy_suspects` \u2014 hunt corner cases the rules do NOT cover.\n6. `mcp__dftracer__privacy_add_pattern` \u2014 persist each real one as a validated rule.\n\nIf a tool is missing or wrong, fix `src/dftracer_agents/privacy.py` (add the\npattern or the exclusion, with a unit case) rather than working around it. A\nregex is deterministic; your reading of a few hundred files is not.\n"
 - title: Load first (mandatory)

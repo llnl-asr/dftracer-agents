@@ -86,7 +86,7 @@ near the end of this report.
 - **Artifacts:** `<WS>/opt1/patches/`, merged proposal table (Section 6/7).
 
 ### dftracer-tracer (STEP 9 -- opt1 validation)
-- **What it did:** Re-ran the identical DAG with `IND_ROW_PRECOMPUTE=1 IND_TAR_STREAM=1`, using allocation `f3NXj3jCbhtK`.
+- **What it did:** Re-ran the identical DAG with `IND_ROW_PRECOMPUTE=1 IND_TAR_STREAM=1`, using allocation `<flux-jobid>`.
 - **Key findings:** 244.7s vs 316.5s baseline (-29.3%, 1.29x), 25,783,965 events (-1.62%), 46/46 tasks exit 0. Confirms the pre-registered prediction of a sub-82% ceiling.
 - **Artifacts:** `<WS>/opt1/traces/{raw,compact}/`, `<WS>/opt1/record/`.
 
@@ -261,14 +261,14 @@ IND_WRITE_BUFSIZE = int(os.environ.get("IND_WRITE_BUFSIZE", "0"))  # bytes, 0=of
 
 ## 12. Reproducibility Validation (final self-contained check, run this session)
 
-**What was run:** `final_folder_validate/` was set up as an isolated `OUTPUT_ROOT`/`WORKSPACE_ROOT` pointed at this session's real workspace (a full scratch copy of the 4.2GB `baseline_4node`/460MB `opt1` PMC-planned run directories was not feasible in this pass -- see limitation below), using ONLY the files under `final_report/` plus the live allocation `f3NXj3jCbhtK`.
+**What was run:** `final_folder_validate/` was set up as an isolated `OUTPUT_ROOT`/`WORKSPACE_ROOT` pointed at this session's real workspace (a full scratch copy of the 4.2GB `baseline_4node`/460MB `opt1` PMC-planned run directories was not feasible in this pass -- see limitation below), using ONLY the files under `final_report/` plus the live allocation `<flux-jobid>`.
 
 1. **Smoke test (`run_smoke_individuals.sh`): PASSED, fully isolated.** 16.85s wall time vs the reported 15.61s (+8%, reasonable single-replicate noise), 2504 per-individual files produced, tar created successfully.
    - **Bug found and fixed:** the shipped script never activated `${WS}/tools/venv/bin/activate`, so `python3` resolved to system Python without dftracer installed. Fixed by adding venv activation and routing output through `OUTPUT_ROOT`.
 2. **Baseline 4-node PMC run (`run_baseline_4node.sh`): PARTIALLY reproduced.**
    - **Bug found and fixed:** the shipped script called an external `${WS}/baseline_4node/scripts/pmc_wrapper.sh` outside `final_report/`, with hardcoded absolute paths, violating self-containment (Pipeline Policy rule 15). Inlined directly into `final_report/scripts/run_baseline_4node.sh`.
    - **Second bug found and fixed:** without `-s`/`--skip-rescue`, PMC recognized the DAG's existing `.rescue` state as already-done and returned a no-op success in 5.5 seconds (`tasks=46, submitted=0, succeeded=0`) instead of a real reproduction. Fixed by adding `-s -r <OUTPUT_ROOT>/baseline_4node.rescue`.
-   - **Result after both fixes:** launched correctly via `flux proxy f3NXj3jCbhtK flux run -N4 -n32 ...`, PMC initialized 31 workers across 4 real nodes and began executing real tasks -- `individuals_ID0000001` completed in 13.7s (consistent with the opt1-era per-task profile) -- but the Flux allocation itself expired mid-DAG before all 46 tasks finished.
+   - **Result after both fixes:** launched correctly via `flux proxy <flux-jobid> flux run -N4 -n32 ...`, PMC initialized 31 workers across 4 real nodes and began executing real tasks -- `individuals_ID0000001` completed in 13.7s (consistent with the opt1-era per-task profile) -- but the Flux allocation itself expired mid-DAG before all 46 tasks finished.
    - **Known limitation, disclosed:** the DAG (`baseline_4node/1000-genome-pmc-run-4node/*.dag`) is a Pegasus-planned artifact with per-task absolute paths baked in at plan time; it cannot be relocated under `OUTPUT_ROOT` without re-running `pegasus-plan` (out of scope this pass -- `scripts/install.sh` remains a TODO for a from-scratch re-plan). Task I/O still lands under `$WS/baseline_4node`; only the rescue file and dftracer trace output were isolated to `OUTPUT_ROOT`.
 3. **opt1 run (`run_opt1.sh`):** same inlining + `-s`/isolated-rescue fix applied for consistency, but **not executed** -- the allocation expired before the baseline run finished.
 

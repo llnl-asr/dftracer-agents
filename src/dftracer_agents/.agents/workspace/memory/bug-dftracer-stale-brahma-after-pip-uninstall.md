@@ -5,6 +5,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `tools-dftracer` skill (this file's full content is now
+persisted there).
+
 Upgrading an existing session venv's dftracer to a newer `develop` fails at
 compile time with a wall of:
 

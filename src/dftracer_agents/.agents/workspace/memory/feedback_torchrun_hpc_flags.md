@@ -6,6 +6,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `workload-scaffold` skill (baseline/smoke-test run-shape
+sections already apply this flag convention throughout).
+
 `torchrun-hpc -n` means **procs per node**, not total process count. Using `-N 8 -n 32` requests 32 processes per node (256 total), which fails with "alloc denied due to type=unsatisfiable" on Tuolumne.
 
 **Why:** Unlike `mpirun -n` (total ranks), torchrun-hpc follows the `--procs-per-node` convention.

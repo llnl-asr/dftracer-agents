@@ -93,6 +93,31 @@
   If you still see "0 observations" after these fixes, THEN fall back to
   reading the analyzer's own console summary (Time Period Summary / Layer
   Breakdown) directly — but try the generic preset + updated diagnose first.
+- **SECOND, DISTINCT "0 observations" failure mode: a zombie/stale MCP server
+  process, not a code bug at all.** RESOLVED — confirmed root cause: an MCP
+  server process (`dftracer-mcp-server ... --reload` and its `--_child-run`
+  child) had been running continuously for over a day, started BEFORE the
+  session's `dfdiagnoser`/`dftracer-analyzer` `pip install --force-reinstall`.
+  A `pip install --force-reinstall` into the shared venv is NOT picked up by
+  an already-running Python process — the old module stays cached in memory.
+  Multiple reported "restarts" did not actually replace the process (same PID
+  and start timestamp survived across them), most likely because a newer
+  server instance was started on a different port while the stale one kept
+  running and answering requests. The tell: calling the exact same function
+  (`_diagnose_via_api` in `dfdiagnoser_service.py`) directly in the same venv/
+  interpreter, OUTSIDE the MCP server, returned real findings (15, in the case
+  that resolved this) every time — proving the code was already correct and
+  the discrepancy was pure process/environment staleness, not a logic bug.
+  **How to apply:** before re-diagnosing a "0 observations" report as a code
+  bug, run `ps -o pid,lstart,cmd -p <pid>` on the actual MCP server process(es)
+  and check the start time against the last relevant `pip install` — don't
+  trust "I restarted it" at face value if the symptom persists. If the start
+  time predates the install, kill that EXACT PID (not just any process
+  matching a grep) and start fresh; verify with `curl` that something is
+  listening on the new port before retrying the tool call. Watch for MULTIPLE
+  stale server instances accumulating on different ports over a long-running
+  session — a second, unrelated stale instance (11 days old, different port)
+  was found by the same `ps -o lstart` check before the real culprit was.
 - **`diagnose_checkpoint()` can crash with `ValueError: signal only works in
   main thread of the main interpreter`, but only the FIRST time it's called
   in an MCP-server process.** Root cause (found 2026-07-20, same PECAN

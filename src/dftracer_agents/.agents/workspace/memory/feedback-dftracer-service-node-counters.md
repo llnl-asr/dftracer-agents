@@ -5,6 +5,11 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `software-pecan` skill (the validated `-n<n> -c1` pattern)
+and CLAUDE.md Pipeline Policy rule 12 — superseded in part by
+`bug-dftracer-service-start-blocks-flux-run` (start/stop must go through `flux submit`
+detached, not `flux run`).
+
 Every job run (smoke test, best-case trace, N-node validation run) must start the `dftracer_service` background daemon — it captures node-level counters, separate from per-rank application traces — with ONE instance per node, pinned to a single core, bracketing the actual job launch. This is a standing rule, not session-specific: `session_service_start(run_id=...)` before the run, `session_service_stop(run_id=...)` after, every time, on every node in the allocation.
 
 **Why:** User stated this as a hard rule — node-level counters from the service daemon are expected output of every run, not optional instrumentation. The service resolves the `dftracer_service` binary from the session's own `install_ann/bin/` first (i.e. the pip-installed dftracer build for this session), falling back to PATH — so as long as dftracer was pip-installed into the session env (which it always is per this project's install steps), no extra setup is needed to make the binary available.

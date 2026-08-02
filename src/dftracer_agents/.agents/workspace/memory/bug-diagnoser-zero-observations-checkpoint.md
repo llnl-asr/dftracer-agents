@@ -5,6 +5,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `dftracer-diagnoser` skill (`pitfalls.md`, the second
+"0 observations" failure mode entry — this file's full content is now persisted there).
+
 RESOLVED root cause for the previously-open `diagnose()` "0 metric observations" discrepancy (MCP call returned 0 findings while the identical standalone `Diagnoser().diagnose_checkpoint()` call in the same venv returned 15 real findings).
 
 **Root cause:** an MCP server process (`dftracer-mcp-server ... --reload` and its `--_child-run` child) had been running continuously for over a day, started before any of the session's `dfdiagnoser`/`dftracer-analyzer` reinstalls. `pip install --force-reinstall` into the shared venv does NOT get picked up by an already-running Python process — the old module is still cached in memory. Multiple "restarts" reported by the user did not actually replace this process (it kept the same PID and start timestamp across supposed restarts) — likely because a different/newer server instance was started on a different port while the old one kept running and answering requests.

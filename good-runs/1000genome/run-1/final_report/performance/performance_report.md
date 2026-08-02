@@ -9,7 +9,7 @@
 - **Attempts:** 5 tries, 2 retries, 0 failed
 - **Tools:** 0 calls (0 MCP), 0 failed, 0.0 s total
 - **API errors:** 0 · **Compactions:** 0
-- **MLflow:** http://127.0.0.1:20002/#/experiments/1/runs/f4557ac75f0840b89fcb9f80cb60ee5e
+- **MLflow:** http://127.0.0.1:20002/#/experiments/1/runs/<flux-jobid>
 
 ## Per-step
 

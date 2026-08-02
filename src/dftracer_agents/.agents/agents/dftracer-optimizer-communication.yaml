@@ -37,6 +37,7 @@ skills:
 - dftracer-profiling
 - dftracer-communication-optimization
 sections:
+- include: skills-first-and-capture-every-qa
 - include: load-your-plan-section-first-do-this-before-anything-else
 - include: optimizer-tool-first-rule
 - include: optimizer-literature-search-pass

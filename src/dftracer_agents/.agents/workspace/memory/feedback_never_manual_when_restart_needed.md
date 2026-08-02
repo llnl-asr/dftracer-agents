@@ -7,6 +7,9 @@ metadata:
   
 ---
 
+**Canonical home:** see the `never-manual-when-a-restart-is-needed` shared section
+in `agents/common-sections.yaml` (already carries this rule in full).
+
 When an agent needs an MCP tool that's missing, broken, or was just added/fixed
 and needs a server restart to take effect, it must STOP and report that
 explicitly — never fall back to manual/hand-rolled work (a regex or AST script

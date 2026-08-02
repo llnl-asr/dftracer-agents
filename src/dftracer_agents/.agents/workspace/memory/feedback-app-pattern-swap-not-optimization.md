@@ -5,6 +5,10 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `optimizer-never-change-the-pattern` shared section in
+`agents/common-sections.yaml` and the `dftracer-io-optimization` skill — both already
+persist this standing rule.
+
 **What happened:** During the IOR HDF5 optimization session (`ior/20260710_172024`), an early optimization pass reported bumping IOR's own `-t` transfer size from 4k to 4m (+190% write bandwidth) as "the optimization." The user corrected this: changing the app's own request/transfer size (or flipping its access pattern, e.g. INTERLEAVED→CONTIG) is a workload-pattern swap, not a system-level optimization — it changes what the app actually does rather than making the system serve the SAME real pattern faster, and can silently break correctness since the pattern is often load-bearing.
 
 **Why:** A measurement like "4MB transfers get more bandwidth than 4KB transfers" is a valid DIAGNOSTIC characterization (it bounds how much headroom the small-request pattern leaves on the table) but must never be reported as the "best config" or credited as an optimization win. The real deliverable when every system-level lever (ROMIO data sieving/collective buffering, Lustre striping, etc.) is neutral-to-negative is the honest negative result itself — reporting "no available system-level lever beats the baseline for this access pattern, and here is why (root-caused to file-per-process contiguous I/O + Lustre client-side coalescing)" is a complete and valuable finding, not a failed optimization loop.

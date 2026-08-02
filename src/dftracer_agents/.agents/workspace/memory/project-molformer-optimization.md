@@ -5,6 +5,10 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `software-molformer` skill (full build/annotation/optimization
+lesson set), `system-tuolumne` (ROCm/PyTorch version-match + `lightning_fabric` lessons),
+and `dftracer-annotation-lessons` (PP9, duplicate `initialize_log()`).
+
 Completed a full dftracer pipeline session for IBM MoLFormer (PyTorch + PyTorch Lightning +
 apex, github.com/IBM/molformer) on Tuolumne (AMD MI300A APU, ROCm 6.3.1). Session:
 `<session>` (was `molformer/20260723_235016`).

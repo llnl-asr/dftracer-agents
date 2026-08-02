@@ -5,6 +5,10 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `dftracer-build-dftracer` skill (`pitfalls.md`) alongside
+`bug-dftracer-crayclang-python-abi` — this file supersedes that one's "non-blocking
+for pure C++ apps" framing for Python/PyTorch workloads.
+
 On a Cray PE + toss4 site, a dftracer built with Cray clang (`cce/*`) fails at
 import time for ANY Python workload:
 

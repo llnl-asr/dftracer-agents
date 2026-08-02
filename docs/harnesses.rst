@@ -1,8 +1,9 @@
 Harness setup
 =============
 
-The repository aims to present the same content to three harnesses while only
-changing the model backend selection.
+The repository aims to present the same content to four harnesses (Claude
+Code, OpenCode, GitHub Copilot, and OpenAI Codex CLI) while only changing the
+model backend selection.
 
 The canonical harness instructions and config files live under
 ``src/dftracer_agents/.agents/workspace/``. The project-root files are
@@ -59,11 +60,61 @@ other harnesses.
 The Copilot instruction file and ``.vscode/mcp.json`` are both linked from the
 source workspace so the project root stays thin.
 
+Codex CLI
+---------
+
+Codex CLI reads project instructions from ``AGENTS.md`` (same file OpenCode
+reads), custom subagents from ``.codex/agents/*.toml`` (TOML, not markdown —
+see ``docs/harness-agents.md``), and skills directly from ``.agents/skills/``
+at the repo root — the same path this repo already symlinks for every
+install target, so Codex needs no extra skill wiring at all.
+
+The MCP server is registered in ``.codex/config.toml`` under
+``[mcp_servers.dftracer]``, linked from the source workspace copy like the
+other harnesses' configs.
+
+**Asymmetry to know about**: Codex deliberately ignores ``sandbox_mode`` /
+``approval_policy`` when set in a repo-tracked ``.codex/config.toml`` (a
+cloned repo must not be able to loosen its own sandbox), and only loads
+``.codex/`` config at all for *trusted* projects. Neither of those is
+something this repo can set for you — ``dftracer-configure-mcp`` prints a
+one-line advisory with the exact ``~/.codex/config.toml`` snippet to add
+yourself.
+
+The helper command for configuring the MCP server is the same one used for
+the other three harnesses:
+
+.. code-block:: bash
+
+   dftracer-configure-mcp
+
+Permission tiers
+-----------------
+
+The workspace/project-root/outside permission tiers documented in the
+project's ``CLAUDE.md`` (Permission Tiers table) come from one canonical
+policy file, ``src/dftracer_agents/.agents/workspace/permissions.yaml``,
+rendered per harness by ``src/dftracer_agents/permissions.py``:
+
+* **Claude Code** — full fidelity: ``.claude/settings.json``'s
+  ``permissions.allow`` / ``permissions.deny`` arrays.
+* **OpenCode** — full fidelity: ``.opencode/opencode.jsonc``'s top-level
+  ``permission`` glob map.
+* **Copilot** — not applicable; custom agents only support a per-agent
+  ``tools:`` allowlist (already rendered by ``agents_sync``), not
+  path/command-scoped permissions.
+* **Codex** — not settable from a repo-tracked file (see the asymmetry
+  above); ``render_codex`` sets a fixed ``sandbox_mode = "workspace-write"``
+  per agent instead.
+
+Sync with ``dftracer-sync-permissions`` or the ``permissions_sync`` MCP tool
+after editing ``permissions.yaml``.
+
 Shared bootstrap
 ----------------
 
 The startup bootstrap in ``src/dftracer_agents/bootstrap.py`` materializes the
 project-root instruction files and the harness-discoverable skill/agent links.
-That keeps the content aligned across all three harnesses while allowing the
+That keeps the content aligned across all four harnesses while allowing the
 model choices to vary by backend. It also turns the root harness files into
 symlinks that point at the workspace-owned sources.

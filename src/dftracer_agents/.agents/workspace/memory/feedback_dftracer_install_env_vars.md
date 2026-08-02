@@ -6,6 +6,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `dftracer-install` skill and `tools-dftracer` (CC/CXX/
+env-vars-before-pip-install section) for the generic version of this rule.
+
 Installing dftracer (llnl/dftracer @develop) with MPI/HDF5 on Tuolumne.
 
 **Why:** dftracer's `setup.py` reads build options from **environment variables**

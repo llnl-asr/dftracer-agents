@@ -6,6 +6,9 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `workload-flashx` skill (this session's findings are
+persisted there in full, alongside `software-mpi`/`software-hdf5`/`system-tuolumne`).
+
 Flash-X (git@github.com:Flash-X/Flash-X.git) dftracer annotate→optimize on Tuolumne.
 
 ## COMPLETED 2026-07-08 — session `flash_x/20260708_201403`

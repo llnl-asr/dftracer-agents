@@ -6,6 +6,8 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `software-hdf5` skill (RPATH/patchelf consistency rules).
+
 # h5py + dftracer HDF5 Library Stack
 
 Keep the library stack consistent across all C-extension packages. Validated on Tuolumne with ScaFFold HDF5 benchmarks.

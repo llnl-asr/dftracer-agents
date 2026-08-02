@@ -6,6 +6,10 @@ metadata:
 ---
 
 
+**Canonical home:** see the `workload-ior` skill ("HDF5 1.14.5 reconfirmation" section
+— align1m factorial results, tracing-state-must-match-across-arms methodology rule,
+and the `session_detect`/`session_final_report` tool fixes are now persisted there).
+
 ## Latest session: `<session>` (IOR 4.0.0, HDF5 1.14.5 built from source, Tuolumne AMD MI300A / Cray PE)
 
 **Status:** Complete. Full pipeline (session-setup -> annotate-c -> build-smoke ->

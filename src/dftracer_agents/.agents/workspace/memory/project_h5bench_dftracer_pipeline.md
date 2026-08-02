@@ -7,6 +7,10 @@ metadata:
   
 ---
 
+**Canonical home:** see the `workload-h5bench` skill (build/annotation/config quirks
+and the known-good baseline configs table) and `software-mpifileutils` (the `drm`
+cleanup pattern).
+
 Ongoing session (2026-07-10): full dftracer annotation + exhaustive optimization
 pipeline for the hariharan-devarajan/h5bench fork, targeting 8-node/96ppn
 (768-rank) runs on Tuolumne's `/p/lustre5`, using 8 flux allocations

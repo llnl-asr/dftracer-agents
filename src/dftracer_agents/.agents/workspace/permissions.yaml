@@ -1,0 +1,76 @@
+# Harness-neutral permission policy — the single source of truth for the
+# Permission Tiers table in CLAUDE.md (workspaces/ auto, project root edit
+# with confirmation, outside the project root denied).
+#
+# Rendered per harness by src/dftracer_agents/permissions.py:
+#   claude    -> .claude/settings.json  permissions.allow / permissions.deny
+#                (deny always wins; unlisted paths fall through to Claude's
+#                own default "ask" — so the project-root "ask" tier below is
+#                a no-op for claude, not rendered as an explicit rule)
+#   opencode  -> .opencode/opencode.jsonc top-level "permission" block
+#                (glob map, evaluated in order, LAST MATCH WINS — list the
+#                catch-all first, more specific overrides after)
+#   copilot   -> not applicable; GitHub Copilot custom agents have no
+#                path/command-scoped permission mechanism, only the
+#                per-agent tools: allowlist agent_templates.py already
+#                renders from each template's `tools:` list
+#   codex     -> not settable from a repo-tracked file at all (Codex ignores
+#                sandbox_mode/approval_policy in project-scoped config as an
+#                anti-supply-chain-attack measure); render_codex sets a
+#                fixed sandbox_mode="workspace-write" per agent instead, and
+#                mcp_setup.configure_project_codex prints an advisory for
+#                the trust_level the user must set in their OWN
+#                ~/.codex/config.toml
+#
+# Edit this file, then run `dftracer-sync-permissions` (or the
+# `permissions_sync` MCP tool) to re-render every harness's copy.
+
+paths:
+  - glob: "**"
+    mode: ask
+  - glob: "workspaces/**"
+    mode: allow
+  - glob: "src/dftracer_agents/.agents/skills/**"
+    mode: allow
+
+# Outside the project root: never. Rendered as Write(...) deny entries for
+# claude; opencode has no path outside the project's own tree to speak of
+# under its edit tool, so this only affects claude's render.
+deny_write_prefixes:
+  - "/etc/*"
+  - "/usr/*"
+  - "/var/*"
+  - "/tmp/*"
+  - "/home/*"
+  - "/root/*"
+
+bash:
+  deny:
+    - "sudo *"
+    - "sudo"
+    - "rm -rf /*"
+    - "rm -rf ~*"
+    - "find /"
+    - "find /etc*"
+    - "find /var*"
+    - "find /home*"
+    - "find /root*"
+    - "find /tmp*"
+    - "find /opt*"
+  allow:
+    - "git add src/dftracer_agents/.agents/skills/*"
+    - "git commit *"
+    - "ls workspaces/*"
+    - "mkdir -p workspaces/*"
+    - "cp * workspaces/*"
+    - "mv * workspaces/*"
+    - "find workspaces/*"
+    - "cat workspaces/*"
+    - "rm -rf workspaces/*"
+    - "rm -rf $PROJECT_ROOT/workspaces/*"
+    - "mv workspaces/* workspaces/*"
+
+# "all_dftracer": every mcp__dftracer__<tool> the MCP server registers,
+# discovered by permissions.py statically scanning mcp_tools/tools/**/*.py
+# for @mcp.tool() defs rather than hand-maintained (which drifts).
+mcp_tools: all_dftracer

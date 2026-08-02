@@ -2,7 +2,12 @@
 #
 # The four levels below are the shared source of truth. Harness-specific
 # startup files can point at this document and replace the level values with
-# provider-specific choices for Ollama, Claude, or Copilot-backed sessions.
+# provider-specific choices for Ollama, Claude, Copilot, or Codex-backed
+# sessions.
+#
+# NOTE: "copilot" and "codex" share the same model ids (gpt-5-codex family) —
+# both surfaces run OpenAI's Codex models, just via different auth/
+# subscription paths (GitHub Copilot vs. the standalone Codex CLI).
 
 levels:
   level_1:
@@ -12,6 +17,7 @@ levels:
       ollama: qwen3.5:9b
       claude: claude-haiku-4-20250514
       copilot: gpt-5-codex-mini
+      codex: gpt-5-codex-mini
   level_2:
     purpose: routing, planning, and limited reasoning
     default: sonnet
@@ -19,6 +25,7 @@ levels:
       ollama: qwen3.5:32b
       claude: claude-sonnet-4-20250514
       copilot: gpt-5-codex
+      codex: gpt-5-codex
   level_3:
     purpose: analysis, diagnosis, and stage-to-stage decisions
     default: sonnet
@@ -26,6 +33,7 @@ levels:
       ollama: qwen3-coder:480b-cloud
       claude: claude-sonnet-4-20250514
       copilot: gpt-5-codex
+      codex: gpt-5-codex
   level_4:
     purpose: deep synthesis, optimization, and cross-stage reasoning
     default: opus
@@ -33,6 +41,7 @@ levels:
       ollama: deepseek-v3.2:cloud
       claude: claude-opus-4-20250514
       copilot: gpt-5-codex-pro
+      codex: gpt-5-codex-pro
 
 harness_mapping:
   claude_code:
@@ -47,5 +56,10 @@ harness_mapping:
   copilot:
     instructions: copilot-instructions.md
     config: .vscode/mcp.json
+    model_file: src/dftracer_agents/.agents/workspace/models.yaml
+    levels: [level_1, level_2, level_3, level_4]
+  codex:
+    instructions: AGENTS.md
+    config: .codex/config.toml
     model_file: src/dftracer_agents/.agents/workspace/models.yaml
     levels: [level_1, level_2, level_3, level_4]

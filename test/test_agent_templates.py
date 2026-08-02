@@ -505,6 +505,16 @@ class TestRenderCrossHarness:
 # ---------------------------------------------------------------------------
 
 class TestHarnessModels:
+    @pytest.fixture(autouse=True)
+    def _isolated_workspace(self, tmp_path):
+        """Every harness_models function falls back to the REAL bundled
+        workspace's active-models.json when target_root has no
+        src/dftracer_agents/.agents/workspace subdir — without this, tests
+        that pass tmp_path as target_root silently corrupt the git-tracked
+        file instead of writing to their own tmp_path copy.
+        """
+        (tmp_path / "src" / "dftracer_agents" / ".agents" / "workspace").mkdir(parents=True, exist_ok=True)
+
     def test_fallback_level_map(self):
         from dftracer_agents.harness_models import FALLBACK_LEVEL_MAP, LEVELS
         for level in LEVELS:

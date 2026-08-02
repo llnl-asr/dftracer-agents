@@ -5,6 +5,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `system-tuolumne` skill (Step 4 of "Canonical Python
+environment setup" was simplified to this rule) and `tools-dftracer`.
+
 Compiler selection rule for every build/install step that needs MPI (app build, dftracer build, any C/C++ compile): first load the site modules, then resolve the compilers off PATH with backticks:
 
 ```

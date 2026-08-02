@@ -5,6 +5,10 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `software-pecan` skill (full build/DDP-launch/optimization
+lesson set, including the `dftracer_service`/flux fix now corrected there) and
+`dftracer-compute-optimization`/`system-tuolumne-spindle` for the rejected candidates.
+
 Session pecan_milan/20260720_153336 on Tuolumne (PyTorch+PyG EGNN DDP, HDF5 shard data, PDBspheres_v2_split8) — annotate/build/trace/analyze/optimize pipeline COMPLETE, final_report/ assembled.
 
 **Final result:** baseline5 (4N DDP, 2 epochs) epoch-2 wall time 31.54s -> final_all_opt 27.90s, **-11.5%** (comparator-corroborated: cpu-gpu-transfer -36 to -57%, data-load-h5 -57 to -59%, metadata-load-h5 -27 to -28%).

@@ -5,6 +5,11 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `dftracer-privacy-guard` skill (the `final_report/`
+gitignore-blindspot fix this session's finding #7 relies on) — the `final_report.py`
+tooling fixes themselves live only in the tool source and the `dftracer-report`/
+`dftracer-pipeline-planner` agent templates, not a dedicated skill file.
+
 # Ray MoLFormer dftracer pipeline — session complete
 
 Session `ray_molformer/20260725_000436` (Tuolumne, Ray 2.48.0 / MI300A) is fully complete: all 13 pipeline steps done, `final_report/` validated (independent reproduction within noise), completeness-checked (`ok: true`), README-smoke-tested (`ok: true`), and privacy-clean.

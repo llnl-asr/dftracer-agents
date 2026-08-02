@@ -5,6 +5,10 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `dftracer-privacy-guard` skill and the `redact-before-you-persist`
+shared section in `agents/common-sections.yaml`, plus the `dftracer-lessons` skill's
+Redaction gate.
+
 Memory, lessons, skills and agent definitions are git-tracked and ship to whoever
 installs this package. **We learn from experience but never record who ran it.**
 

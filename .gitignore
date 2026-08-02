@@ -34,6 +34,7 @@ workspaces/
 .claude/agents
 # rendered agent copies (generated from src/dftracer_agents/.agents/agents/*.yaml)
 .github/agents/
+.codex/agents/
 .claude/settings.json
 /.opencode/
 .vscode/mcp.json
@@ -52,4 +53,4 @@ workspaces/_graph/
 # Personal / machine-local. Never commit: these embed absolute user paths.
 .env
 src/dftracer_agents/.agents/workspace/setup-state.json
-.github/agents/dftracer-optimizer.agent.md
+.codex/config.toml

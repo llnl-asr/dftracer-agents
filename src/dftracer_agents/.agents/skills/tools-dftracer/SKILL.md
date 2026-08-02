@@ -110,6 +110,40 @@ event counts/timing look right. Set this alongside the standard
 run where per-event tags matter (which is most runs — `comp=` classification,
 custom key/value context, node/rank grouping tags, etc. all depend on it).
 
+## `pip uninstall dftracer` leaves a stale cmake-installed brahma tree behind
+
+**Symptom:** upgrading an existing session venv's dftracer to a newer
+`develop` fails at COMPILE time (not install time) with a wall of errors like:
+
+```
+src/dftracer/core/brahma/posix.h:231: error: only virtual member functions can be marked 'override'
+  ssize_t readv(int fd, const struct iovec* iov, int iovcnt) override;
+```
+
+**Root cause:** `pip uninstall dftracer` removes only the files pip itself
+recorded. dftracer's build ALSO cmake-installs its C dependencies straight
+into the package prefix (`<venv>/lib/pythonX.Y/site-packages/dftracer/
+{include,lib64,bin,etc,share}`), and those are left behind by a plain `pip
+uninstall`. dftracer's `setup.py` then passes
+`-DCMAKE_PREFIX_PATH=<that same prefix>` on the next install, so the NEW
+build compiles against the OLD `brahma/interface/posix.h`. A newer dftracer
+that overrides `readv`/`writev`/`pread64`/etc. crashes against the stale
+brahma base class that never declared those virtuals — nothing in the error
+mentions a stale dependency, so it reads like a compiler/toolchain problem
+and easily burns a debug cycle down the wrong path.
+
+**Fix:** before reinstalling or upgrading dftracer into an EXISTING venv,
+delete the leftover cmake tree explicitly, then uninstall/reinstall normally:
+
+```bash
+rm -rf <venv>/lib/pythonX.Y/site-packages/dftracer <venv>/bin/dftracer_service
+pip uninstall -y dftracer pydftracer dftracer-utils
+```
+
+Confirm the diagnosis first — on the stale copy,
+`grep -c readv <venv>/.../site-packages/dftracer/include/brahma/interface/posix.h`
+returns 0 (the old header has no `readv` declaration at all).
+
 ## Session-local vs shared venv (MANDATORY)
 
 Never install or repair dftracer inside the shared framework venv

@@ -30,6 +30,16 @@
         "level_4": "opus"
       },
       "model_by_level": {}
+    },
+    "codex": {
+      "provider": "codex",
+      "class_by_level": {
+        "level_1": "haiku",
+        "level_2": "sonnet",
+        "level_3": "sonnet",
+        "level_4": "opus"
+      },
+      "model_by_level": {}
     }
   }
 }

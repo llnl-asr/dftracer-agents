@@ -1,0 +1,13 @@
+# Codex CLI project-scoped MCP config for dftracer-agents.
+#
+# Codex only loads this file for TRUSTED projects. That trust decision is
+# deliberately not settable from here (a cloned repo must not be able to
+# mark itself trusted) — add this yourself to your own ~/.codex/config.toml:
+#
+#   [projects."/abs/path/to/this/project"]
+#   trust_level = "trusted"
+#
+# See docs/harnesses.rst for the full Codex CLI notes.
+
+[mcp_servers.dftracer]
+url = "http://127.0.0.1:10000/mcp"

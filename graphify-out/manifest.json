@@ -5,13 +5,13 @@
     "semantic_hash": ""
   },
   "_version.py": {
-    "mtime": 1784733885.46191,
-    "ast_hash": "60b11f56255ef5b880d5e5bff45a20e5",
+    "mtime": 1785523629.875455,
+    "ast_hash": "32f0f3b143d65917d13c4d8552eaf0e3",
     "semantic_hash": ""
   },
   "agent_templates.py": {
-    "mtime": 1784249979.066469,
-    "ast_hash": "84450c9f4d029a91b919511ae3737aa7",
+    "mtime": 1785658666.30716,
+    "ast_hash": "49bc395dfbc2c01ce144207913219af2",
     "semantic_hash": ""
   },
   "agents.py": {
@@ -20,8 +20,8 @@
     "semantic_hash": ""
   },
   "bootstrap.py": {
-    "mtime": 1784249979.070455,
-    "ast_hash": "c782b22150273fe04cb8806f431d11f2",
+    "mtime": 1785658728.097259,
+    "ast_hash": "edd2437a66a06576b9069511bc12608e",
     "semantic_hash": ""
   },
   "env_setup.py": {
@@ -30,18 +30,18 @@
     "semantic_hash": ""
   },
   "harness_models.py": {
-    "mtime": 1783645699.550101,
-    "ast_hash": "8264964a37819a5442945b4fe11f10b2",
+    "mtime": 1785658700.771283,
+    "ast_hash": "f790a333ac47ddc28dc1c90185a10355",
     "semantic_hash": ""
   },
   "mcp_server.py": {
-    "mtime": 1783872421.025826,
-    "ast_hash": "c813935bd540b4d6779fa59002f13402",
+    "mtime": 1785658933.994319,
+    "ast_hash": "773694491df157ea339fd472459f6d61",
     "semantic_hash": ""
   },
   "mcp_setup.py": {
-    "mtime": 1783645699.574144,
-    "ast_hash": "00d8b1eef9cb15e6a22294d47a4feda4",
+    "mtime": 1785658754.571261,
+    "ast_hash": "f12c10ef029cad78cade521fb63040e4",
     "semantic_hash": ""
   },
   "mcp_tools/__init__.py": {
@@ -85,22 +85,22 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/dftracer/_flux_exec.py": {
-    "mtime": 1784928442.477248,
+    "mtime": 1785091305.744158,
     "ast_hash": "236458f5e4ca1d2c1e05617f1314bc1e",
     "semantic_hash": ""
   },
   "mcp_tools/tools/dftracer/dfanalyzer_service.py": {
-    "mtime": 1785037652.870668,
+    "mtime": 1785091973.067827,
     "ast_hash": "11b0b3fd92a0689ae08d1c96f37af137",
     "semantic_hash": ""
   },
   "mcp_tools/tools/dftracer/dfdiagnoser_service.py": {
-    "mtime": 1785037688.089959,
+    "mtime": 1785091973.070792,
     "ast_hash": "f968185b0151aa5a54546196407d5c21",
     "semantic_hash": ""
   },
   "mcp_tools/tools/dftracer/dftracer_plot_service.py": {
-    "mtime": 1783311791.313794,
+    "mtime": 1785522706.402165,
     "ast_hash": "5d1b662b547ce34148cf0a4a9ba6bfbf",
     "semantic_hash": ""
   },
@@ -110,8 +110,8 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/dftracer/dftracer_utils_service.py": {
-    "mtime": 1784929147.749081,
-    "ast_hash": "15605ce90ec695562ec8bcc9fd01d8b0",
+    "mtime": 1785581331.338242,
+    "ast_hash": "1b7e3d378dff5e9d21a033f69b6628dc",
     "semantic_hash": ""
   },
   "mcp_tools/tools/dftracer/docs_service.py": {
@@ -120,8 +120,8 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/dftracer/skills_service.py": {
-    "mtime": 1783645699.604946,
-    "ast_hash": "d2a7cecf9aec992d1c388b21efc95c1e",
+    "mtime": 1785658907.99976,
+    "ast_hash": "01ceeb023dd7214318a07e473cf4b865",
     "semantic_hash": ""
   },
   "mcp_tools/tools/optimizations/__init__.py": {
@@ -135,22 +135,22 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/optimizations/diagnose.py": {
-    "mtime": 1785037672.533854,
+    "mtime": 1785091973.072445,
     "ast_hash": "e06ab34d98c277d7eafb1b22a1fd0837",
     "semantic_hash": ""
   },
   "mcp_tools/tools/optimizations/iteration.py": {
-    "mtime": 1783872417.619501,
+    "mtime": 1785522706.408408,
     "ast_hash": "50d67b5059b3e8649cfe5dca54bfc8d4",
     "semantic_hash": ""
   },
   "mcp_tools/tools/optimizations/knowledge_base.py": {
-    "mtime": 1784249979.077374,
+    "mtime": 1785522706.414388,
     "ast_hash": "c04d8931964947c999079dbd0a8bab50",
     "semantic_hash": ""
   },
   "mcp_tools/tools/optimizations/levels.py": {
-    "mtime": 1783645699.634764,
+    "mtime": 1785522706.421393,
     "ast_hash": "c8015bdeba2dd3888ddb4559d47263ab",
     "semantic_hash": ""
   },
@@ -175,7 +175,7 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/papers/academic_service.py": {
-    "mtime": 1783872421.046421,
+    "mtime": 1785522706.429227,
     "ast_hash": "060a026d9dd779844579751e6f658449",
     "semantic_hash": ""
   },
@@ -195,7 +195,7 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/annotation.py": {
-    "mtime": 1785024062.935787,
+    "mtime": 1785091973.076085,
     "ast_hash": "bb3036df769a416f58cbee242f32f3a3",
     "semantic_hash": ""
   },
@@ -215,7 +215,7 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/annotation_python.py": {
-    "mtime": 1784960217.662255,
+    "mtime": 1785522706.436755,
     "ast_hash": "658dd3ed1cf8dd45a9f9b11fbe061e27",
     "semantic_hash": ""
   },
@@ -240,17 +240,17 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/detection.py": {
-    "mtime": 1784915897.111341,
+    "mtime": 1785091305.760309,
     "ast_hash": "1ab63b5bbf25474a0c518435357fabb1",
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/final_report.py": {
-    "mtime": 1785010764.608712,
-    "ast_hash": "d7608bd8944df0276e22976767b054b3",
+    "mtime": 1785522706.442702,
+    "ast_hash": "22ad01d64058a77bfdd94a560746fc4f",
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/install.py": {
-    "mtime": 1785020490.433357,
+    "mtime": 1785091973.081115,
     "ast_hash": "4929634ff35b2ef9634e112e96f18875",
     "semantic_hash": ""
   },
@@ -290,17 +290,17 @@
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/session_tools.py": {
-    "mtime": 1785037701.924284,
+    "mtime": 1785522706.449667,
     "ast_hash": "b3ee2ff3397babc42a109bd3eaf90069",
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/source_parser.py": {
-    "mtime": 1784850319.559201,
+    "mtime": 1785522706.457665,
     "ast_hash": "733ff5247e4af5c45970cbcd25f805f7",
     "semantic_hash": ""
   },
   "mcp_tools/tools/session/workspace.py": {
-    "mtime": 1785037712.760238,
+    "mtime": 1785091973.087137,
     "ast_hash": "bc96175e204221dcc0d7d77e98a463fb",
     "semantic_hash": ""
   },
@@ -390,8 +390,8 @@
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-annotate-general/SKILL.md": {
-    "mtime": 1784850319.339148,
-    "ast_hash": "6c04d8731fdbe4517f19d89e3372e90a",
+    "mtime": 1785657580.286487,
+    "ast_hash": "a6ec2f7a2c5eb6588546d31c62d110f0",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-annotate-process/SKILL.md": {
@@ -425,8 +425,8 @@
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-annotate-python/SKILL.md": {
-    "mtime": 1784850319.342954,
-    "ast_hash": "2fbc3e8ef8c12b64f2a96e166e197d26",
+    "mtime": 1785657836.423261,
+    "ast_hash": "ddb7e8c9547aefc8bac9d44412ae9749",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-annotation-lessons/LESSONS_LOG.md": {
@@ -435,7 +435,7 @@
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-annotation-lessons/SKILL.md": {
-    "mtime": 1785023970.902788,
+    "mtime": 1785091973.022103,
     "ast_hash": "222bc5441d0153d0e70be975a19521f6",
     "semantic_hash": ""
   },
@@ -500,13 +500,13 @@
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-communication-optimization/SKILL.md": {
-    "mtime": 1784850319.350722,
-    "ast_hash": "28b3b462cc9daffd36aac70983a68c4e",
+    "mtime": 1785522706.30019,
+    "ast_hash": "9b46652774b2cf9702a0ce86999df6bc",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-compute-optimization/SKILL.md": {
-    "mtime": 1784850319.353162,
-    "ast_hash": "cca3c285baeea0cccb8f4da64f57a236",
+    "mtime": 1785522706.306445,
+    "ast_hash": "7b6cf15a7f268b8dd851cefe28bf374c",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-context-economy/SKILL.md": {
@@ -540,47 +540,47 @@
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-install/SKILL.md": {
-    "mtime": 1783645699.034818,
+    "mtime": 1785522706.309423,
     "ast_hash": "0770a12a0bbc1005da2faef3a73f69af",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-io-optimization/SKILL.md": {
-    "mtime": 1785004012.927441,
-    "ast_hash": "7a0a81be2facb9973f5a2904ed8b4f2c",
+    "mtime": 1785522706.320175,
+    "ast_hash": "edab13fa4af53eb213167485e059a314",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-lessons/SKILL.md": {
-    "mtime": 1783645699.040977,
+    "mtime": 1785522706.323154,
     "ast_hash": "8e0e2d73b98888a937e3dee9565a1896",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-memory-optimization/SKILL.md": {
-    "mtime": 1785003897.820648,
-    "ast_hash": "e1a5d43c3d5cb88b9ad4948ec19843cc",
+    "mtime": 1785522706.32875,
+    "ast_hash": "5e928fe581d65861aea5bf7e02c3ced5",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-ml-annotate/SKILL.md": {
-    "mtime": 1783645699.047775,
+    "mtime": 1785522706.336426,
     "ast_hash": "30555dfb792526ab926d85e4ba277a6b",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-optimization-kb/SKILL.md": {
-    "mtime": 1785044789.292224,
+    "mtime": 1785522706.343195,
     "ast_hash": "26245b27c1adf335c039e8823c21a100",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-optimization-kb/software.md": {
-    "mtime": 1785044789.289223,
+    "mtime": 1785522706.349185,
     "ast_hash": "89a00b188e6b99cd63bb3c15d47b6e29",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-optimization-kb/system.md": {
-    "mtime": 1785044789.290283,
+    "mtime": 1785522706.355192,
     "ast_hash": "45b385e5606d0b706b8bf3e519668e13",
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-optimization-kb/workload.md": {
-    "mtime": 1785044789.287242,
+    "mtime": 1785522706.361181,
     "ast_hash": "a9a66f3be184fc748748504b8aac273a",
     "semantic_hash": ""
   },
@@ -685,13 +685,13 @@
     "semantic_hash": ""
   },
   ".agents/skills/dftracer-trace-utils/SKILL.md": {
-    "mtime": 1785038404.401787,
+    "mtime": 1785091973.047247,
     "ast_hash": "2c9f1aa43e5d271459f3f51fefa1aaa7",
     "semantic_hash": ""
   },
   ".agents/skills/flux-alloc/SKILL.md": {
-    "mtime": 1785005901.667024,
-    "ast_hash": "f5e28f8e2a2a25bb4ebdf5ebd133b0c8",
+    "mtime": 1785658979.688291,
+    "ast_hash": "82450be7986cce6ea1e0ebb81ea04185",
     "semantic_hash": ""
   },
   ".agents/skills/software-autotools/SKILL.md": {
@@ -720,7 +720,7 @@
     "semantic_hash": ""
   },
   ".agents/skills/software-molformer/SKILL.md": {
-    "mtime": 1784994175.101223,
+    "mtime": 1785091305.714137,
     "ast_hash": "0af9244c05d05f80bdba2bb11a872586",
     "semantic_hash": ""
   },
@@ -735,12 +735,12 @@
     "semantic_hash": ""
   },
   ".agents/skills/software-pecan/SKILL.md": {
-    "mtime": 1784850319.47597,
+    "mtime": 1785522706.369327,
     "ast_hash": "ae0eb589fc5670a08e8c9e0d96f295a1",
     "semantic_hash": ""
   },
   ".agents/skills/software-pegasus/SKILL.md": {
-    "mtime": 1785036904.276638,
+    "mtime": 1785091973.049855,
     "ast_hash": "460d17cf91f5cff88e7ab6327d80a036",
     "semantic_hash": ""
   },
@@ -755,7 +755,7 @@
     "semantic_hash": ""
   },
   ".agents/skills/software-ray/SKILL.md": {
-    "mtime": 1785003992.707233,
+    "mtime": 1785091305.71913,
     "ast_hash": "a21ab0d4a6b5c9d163a14efbf954ba0c",
     "semantic_hash": ""
   },
@@ -780,7 +780,7 @@
     "semantic_hash": ""
   },
   ".agents/skills/system-tuolumne/SKILL.md": {
-    "mtime": 1785005913.284102,
+    "mtime": 1785522706.376669,
     "ast_hash": "c6b5ba9b2586396b50c8d18744242daf",
     "semantic_hash": ""
   },
@@ -790,12 +790,12 @@
     "semantic_hash": ""
   },
   ".agents/skills/tools-dftracer/SKILL.md": {
-    "mtime": 1784850319.494728,
+    "mtime": 1785522706.379196,
     "ast_hash": "d611031e0d546f4997f60b81cbb98aaf",
     "semantic_hash": ""
   },
   ".agents/skills/tools-pydftracer/SKILL.md": {
-    "mtime": 1784850319.499133,
+    "mtime": 1785522706.384678,
     "ast_hash": "6c9a3d23c2824a1308700c059bf634ab",
     "semantic_hash": ""
   },
@@ -810,12 +810,12 @@
     "semantic_hash": ""
   },
   ".agents/skills/workload-ior/SKILL.md": {
-    "mtime": 1784960378.201877,
+    "mtime": 1785091305.726139,
     "ast_hash": "649ba6015cae8a1181b2c2942708f9a6",
     "semantic_hash": ""
   },
   ".agents/skills/workload-scaffold/SKILL.md": {
-    "mtime": 1783645699.189983,
+    "mtime": 1785522706.388143,
     "ast_hash": "2c7c9d57cdff2de0b10362d3286bc518",
     "semantic_hash": ""
   },
@@ -840,8 +840,8 @@
     "semantic_hash": ""
   },
   ".agents/workspace/memory/MEMORY.md": {
-    "mtime": 1785011041.479669,
-    "ast_hash": "57331035a63cff04cdecfef78bdc467c",
+    "mtime": 1785652060.124504,
+    "ast_hash": "ec644e2f544050d3ed0fc6388ca34e44",
     "semantic_hash": ""
   },
   ".agents/workspace/memory/bug-clang-add-braces-multiline-call-corruption.md": {
@@ -935,8 +935,8 @@
     "semantic_hash": ""
   },
   ".agents/workspace/memory/feedback_analysis_parallel_workers.md": {
-    "mtime": 1785038388.627768,
-    "ast_hash": "4f71d9543065a2d5ddf8d5f8e4e56d04",
+    "mtime": 1785091973.059816,
+    "ast_hash": "9e2a9bb99e519b9796ddf8bdf19d1c70",
     "semantic_hash": ""
   },
   ".agents/workspace/memory/feedback_app_exec_cwd.md": {
@@ -945,7 +945,7 @@
     "semantic_hash": ""
   },
   ".agents/workspace/memory/feedback_confirm_before_skill_updates.md": {
-    "mtime": 1783872420.972819,
+    "mtime": 1785522706.39914,
     "ast_hash": "635a0997450d5a3cecf3d21d544343a5",
     "semantic_hash": ""
   },
@@ -1045,12 +1045,12 @@
     "semantic_hash": ""
   },
   ".agents/workspace/memory/project-ior-hdf5-optimization-dftracer-pipeline.md": {
-    "mtime": 1784961735.865298,
+    "mtime": 1785091305.734105,
     "ast_hash": "5c1a084d4696dade39162ca64f59808c",
     "semantic_hash": ""
   },
   ".agents/workspace/memory/project-molformer-optimization.md": {
-    "mtime": 1784924530.734054,
+    "mtime": 1785091305.737148,
     "ast_hash": "cac9ea743ae4766b7077c2d6d80976bf",
     "semantic_hash": ""
   },
@@ -1060,7 +1060,7 @@
     "semantic_hash": ""
   },
   ".agents/workspace/memory/project-ray-molformer-gcs-diagnostic.md": {
-    "mtime": 1785011041.476631,
+    "mtime": 1785091305.740137,
     "ast_hash": "695799166549b892c47251d59367deff",
     "semantic_hash": ""
   },
@@ -1105,8 +1105,88 @@
     "semantic_hash": ""
   },
   ".agents/workspace/memory/software-ray-molformer.md": {
-    "mtime": 1785006573.838365,
+    "mtime": 1785091305.742147,
     "ast_hash": "029408050cd9761fbb574f3faf33aa71",
+    "semantic_hash": ""
+  },
+  "mcp_tools/tools/dftracer/agent_trace_service.py": {
+    "mtime": 1785611156.625416,
+    "ast_hash": "e9137a69b10e80acd54a53da9243f30b",
+    "semantic_hash": ""
+  },
+  "permissions.py": {
+    "mtime": 1785658920.168081,
+    "ast_hash": "74633e037b5bb328b98c736758acbd2a",
+    "semantic_hash": ""
+  },
+  ".agents/skills/workload-1000genome/SKILL.md": {
+    "mtime": 1785091973.055103,
+    "ast_hash": "bd2325ec633bc6a46279d33250419bc0",
+    "semantic_hash": ""
+  },
+  ".agents/skills/workload-af3/SKILL.md": {
+    "mtime": 1785657893.690577,
+    "ast_hash": "2c97176cd2477abec365c7fe02c1cb4f",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/bug-dftracer-crayclang-rpath-shadows-libstdcxx.md": {
+    "mtime": 1785318857.272581,
+    "ast_hash": "c7a4176f7abb75a310e85a8f39e7f0b8",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/bug-dftracer-hip-tracing-init-ordering.md": {
+    "mtime": 1785310190.678894,
+    "ast_hash": "2248558f56e25de3249dcef84c7e62e3",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/bug-dftracer-service-start-blocks-flux-run.md": {
+    "mtime": 1785309584.751183,
+    "ast_hash": "e3cdfa9352019e5a3dae5814d5b3bf1b",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/bug-dftracer-stale-brahma-after-pip-uninstall.md": {
+    "mtime": 1785318737.26558,
+    "ast_hash": "f1d60623e293182ad8ae1292afb8ca02",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/bug-dftracer-torch-profiler-rocprofiler-conflict.md": {
+    "mtime": 1785310208.263785,
+    "ast_hash": "0f8acbe473f8379a0ef661e3b31ecae2",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback-flux-allocation-vs-job.md": {
+    "mtime": 1785655905.505966,
+    "ast_hash": "f3522ecc16494018e2f1a1012096d287",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback-skills-first-and-capture-every-qa.md": {
+    "mtime": 1785309015.485241,
+    "ast_hash": "5f8a1741188586472bf24dd1b00c8ab2",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/feedback_learn_trigger_routes_to_skills.md": {
+    "mtime": 1785657956.21494,
+    "ast_hash": "d49449cf93e2d7fca59fc8385a4581dc",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/project-1000genome-workflow-optimization.md": {
+    "mtime": 1785091973.061808,
+    "ast_hash": "c2f25e990f114e304ff1a6b7bbf9b1cb",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/project-megatron-deepspeed-bert-optimization.md": {
+    "mtime": 1785306785.064016,
+    "ast_hash": "425274b3bfae5084d5ff1ed8abc9c4dc",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/project-scaffold-4node-full-profile-rerun.md": {
+    "mtime": 1785312985.427074,
+    "ast_hash": "7ea976be299e0dcf1febb0c76f96d4c8",
+    "semantic_hash": ""
+  },
+  ".agents/workspace/memory/software-molformer-hip-and-torch-profiler.md": {
+    "mtime": 1785365706.025167,
+    "ast_hash": "4cd5dce2db74189dff8df130d5023de8",
     "semantic_hash": ""
   }
 }

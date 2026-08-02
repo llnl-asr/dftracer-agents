@@ -3,6 +3,31 @@ name: dftracer-lessons
 description: How to use and update the lessons-learned cache at .goose/lessons-learned.md — proactive lookup before any build/install/annotate step
 ---
 
+## REQUIRED RULE 0: Skills first, and capture every Q&A as a lesson (MANDATORY)
+
+Before installing, building, annotating, running, tuning, or debugging anything: run
+`skill_search` / `graph_query(mode="docs")` / `skill_load` and act on what the system
+already knows. Never reason from model priors or a web search when a
+`workload-*` / `system-*` / `software-*` / `tools-*` skill already covers the task.
+
+Every question the user answers, and every correction the user gives, is durable
+knowledge — not a session detail. Record it AS YOU GO, not just at the end:
+preferences/"always-never" rules into the relevant skill AND the agent YAML (then
+`agents_sync`); effort/session state via `memory_write(type=project)`; standing
+guidance via `memory_write(type=feedback)` with the why; deterministic reusable
+logic into an MCP tool.
+
+A GENERIC rule (one that should apply to every agent, not just one skill's scope)
+must reach ALL skills and agents: add a shared section in
+`agents/common-sections.yaml`, `include:` it in every agent template that needs it,
+run `agents_sync`, and reflect it in the process skills. A generic rule filed in one
+corner of one skill has not been learned by the system — this is the same shared
+`skills-first-and-capture-every-qa` section every agent template includes.
+
+This governs WHEN and WHAT to capture; the "Confirmation gate" below still governs
+whether a captured lesson gets PERSISTED to a shared skill/tool/agent without the
+user's sign-off first.
+
 ## Lessons-Learned Cache
 
 A structured log of past failures and their fixes lives at `.goose/lessons-learned.md`.
@@ -29,6 +54,35 @@ tags: [<package>, <build-tool>, <error-keyword>, ...]
 ```
 
 Keep entries cumulative — never delete old ones. They are the institutional memory for this project.
+
+## Naming disambiguation: `workload-<app>` vs `software-<app>` (MANDATORY)
+
+Before creating a new per-app skill, decide which family it belongs to —
+this governs ~20 existing skill names and is not otherwise documented in any
+skill or agent:
+
+- **`workload-<app>`** — a scientific/HPC workload dftracer TRACES to study
+  I/O behavior (the thing under study). Examples: `workload-ior`,
+  `workload-h5bench`, `workload-flashx`, `workload-vpic-kokkos`,
+  `workload-scaffold`, `workload-1000genome`.
+- **`software-<app>`** — a tool, service, or DL application that is itself
+  being ANNOTATED/INSTRUMENTED by dftracer as software under test, not a
+  scientific workload in its own right. Examples: `software-flux-fiction`
+  (a Flux scheduling emulator), `software-molformer`, `software-pecan`,
+  `software-ray` (annotated DL training apps use `software-*`, not
+  `workload-*`, even though they are the thing being traced — the
+  distinction is "scientific/HPC I/O workload" vs "software application").
+
+**Why:** an auto-created `workload-flux-fiction` skill was corrected by the
+user, who clarified flux-fiction is software annotated by dftracer, not a
+workload. The same distinction applies to every annotated app in this
+project, not just that one instance.
+
+**How to apply:** before creating a new per-app skill during a build/annotate
+session, judge whether the target is a traced scientific workload
+(`workload-*`) or a tool/service/DL-training-app being instrumented
+(`software-*`), and ask the user if genuinely ambiguous rather than
+defaulting to `workload-*`.
 
 ## Growing the skills every session (generic vs specific routing)
 

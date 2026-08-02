@@ -8,6 +8,9 @@ metadata:
   modified: 2026-07-29T06:42:41.794Z
 ---
 
+**Canonical home:** see the `software-pecan` and `workload-scaffold` skills (both now
+carry the corrected `flux submit`-detached recipe) and the `flux-alloc` skill.
+
 `flux run -N<n> -n<n> -c1 dftracer_service start <dir>` **never returns**. The daemon is
 forked but remains a child of the flux task, so the task holds its node until the daemon
 dies. A run wrapper that calls it this way blocks forever at that line and the application

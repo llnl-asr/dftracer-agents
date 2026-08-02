@@ -6,6 +6,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** codified in CLAUDE.md Pipeline Policy rule 11, and see
+`workload-scaffold` (the Lustre-vs-workspace pattern applied end-to-end).
+
 # I/O placement for AI/ML workloads on Tuolumne
 
 **App data** (fractals, datasets, benchmark runs, checkpoints) must target Lustre (`/p/lustre5/$USER/...`), not NFS.

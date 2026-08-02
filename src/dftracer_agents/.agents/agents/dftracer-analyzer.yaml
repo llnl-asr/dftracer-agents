@@ -27,6 +27,7 @@ skills:
 - dftracer-trace-utils
 - dftracer-profiling
 sections:
+- include: skills-first-and-capture-every-qa
 - title: Use allocated compute resources for large-trace tool calls
   body: "This agent\u2019s tools (analyze, diagnose, session_analyze_traces, comparator,\nreader, event_count) scan/merge/analyze large .pfw/.pfw.gz trace directories.\nBefore calling any of them on a compact trace directory of non-trivial size:\n1. Check whether this session already has a live Flux allocation (session state,\n   or a JOBID the main thread gave you) \u2014 see the flux-alloc skill.\n2. Pass it explicitly as allocation_id=<jobid> on the tool call. This runs the\n   underlying binary on the allocated compute node via flux proxy/flux run\n   instead of the MCP server\u2019s own host, and avoids ambiguity when more than\n   one allocation might be running under the same user.\n3. If no allocation exists and the trace is large, ask the main thread/user for\n   one rather than silently falling back to running on the MCP server\u2019s host.\n4. Small/quick checks (a single small file, an already-tiny compact trace) do not\n   need to wait on an allocation \u2014 use judgment.\n"
 - title: Load your plan section first (do this before anything else)

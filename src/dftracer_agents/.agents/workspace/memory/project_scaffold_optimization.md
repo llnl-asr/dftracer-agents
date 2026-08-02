@@ -6,6 +6,9 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `workload-scaffold` skill (this session's full findings,
+build recipe, and measured optimizations are persisted there).
+
 Annotation + optimization pipeline for **ScaFFold** (https://github.com/LBANN/ScaFFold.git),
 LBANN's scale-free fractal deep-learning benchmark: a 3D U-Net doing semantic
 segmentation on procedurally generated 3D fractal volumes. Pure Python/PyTorch

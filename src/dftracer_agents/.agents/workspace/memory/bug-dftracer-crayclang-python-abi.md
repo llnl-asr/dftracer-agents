@@ -5,6 +5,9 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `dftracer-build-dftracer` skill (`pitfalls.md`, which
+already cross-references this fix) and `workload-ior`.
+
 FULLY RESOLVED (2026-07-14, vpic-kokkos session on Tuolumne). Root cause: `/usr/lib64/libstdc++.so.6` on this system (every node) lacks `GLIBCXX_3.4.26`, `GLIBCXX_3.4.29`, `CXXABI_1.3.13` that Cray-clang-built dftracer binaries require, AND `libdftracer_core.so`/`dftracer_service` also dynamically link the TCE-Python-provided `libyaml-cpp.so` (itself missing the same symbols).
 
 **Fix (3 parts, all required together):**

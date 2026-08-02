@@ -6,6 +6,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `system-tuolumne` skill (already carries the module
+compatibility/inactive-module rules in full).
+
 Always check for "Inactive Modules" after any `module load` on Tuolumne. An inactive module was silently disabled due to stack incompatibility — do not assume it is usable.
 
 **Known incompatibility**: `cce/21.0.0 + cray-mpich/9.1.0 + rocm/7.1.1 + rccl/fast-env-slows-mpi` deactivates `cray-hdf5-parallel/1.14.3.7`.

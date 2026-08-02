@@ -369,10 +369,11 @@ def _register_skill_tools(mcp: FastMCP) -> None:
         under ``src/dftracer_agents/.agents/agents/*.yaml`` (shared prose in
         ``common-sections.yaml``). The files each harness actually reads —
         ``.claude/agents/*.md``, ``.opencode/agents/*.md``,
-        ``.github/agents/*.agent.md`` — are generated build artifacts.
+        ``.github/agents/*.agent.md``, ``.codex/agents/*.toml`` — are
+        generated build artifacts.
 
         Call this after ANY self-learning edit to a template (or to
-        ``common-sections.yaml``) so all three harnesses pick up the change.
+        ``common-sections.yaml``) so all four harnesses pick up the change.
         It is one-way and lossless: templates are the only source of truth,
         rendered copies are never merged back.
 
@@ -397,6 +398,35 @@ def _register_skill_tools(mcp: FastMCP) -> None:
             "changed": result["changed"],
             "conflicts": result["conflicts"],
         }, indent=2)
+
+    @mcp.tool()
+    def permissions_sync() -> str:
+        """Re-render the packaged permission templates from the canonical policy.
+
+        The canonical policy is
+        ``src/dftracer_agents/.agents/workspace/permissions.yaml`` (the same
+        workspace/project-root/outside tiers documented in CLAUDE.md's
+        Permission Tiers table). This regenerates the ``permissions`` key in
+        the packaged ``.claude/settings.json`` and the ``permission`` key in
+        the packaged ``.opencode/opencode.jsonc`` — both symlinked into every
+        install target by ``dftracer-bootstrap-workspace``. Copilot has no
+        equivalent path-scoped mechanism (only the per-agent tools:
+        allowlist ``agents_sync`` already renders) and Codex intentionally
+        can't accept sandbox/approval settings from a repo-tracked file, so
+        neither is touched here — see ``permissions.py`` for why.
+
+        Call this after editing ``permissions.yaml`` so both harnesses pick
+        up the change.
+
+        Returns JSON: {claude, opencode, mcp_tool_count, changed, summary}.
+        """
+        from dftracer_agents.permissions import sync_permissions
+
+        try:
+            result = sync_permissions()
+        except Exception as exc:
+            return json.dumps({"status": "error", "error": str(exc)})
+        return json.dumps(result, indent=2)
 
 
     @mcp.tool()

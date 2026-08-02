@@ -6,6 +6,8 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `software-hdf5` skill (already codifies this rule in full).
+
 Always build HDF5 from source into the session workspace (`<ws>/install_hdf5`) and
 point the app + dftracer at it. Never load or link the Cray `cray-hdf5` /
 `cray-hdf5-parallel` module (or any site HDF5 module) as the HDF5 the app builds against.

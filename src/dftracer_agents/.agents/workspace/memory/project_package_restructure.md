@@ -6,6 +6,10 @@ metadata:
   type: project
 ---
 
+**Canonical home:** no dedicated skill — this is pure repo-engineering history (src
+layout, `skills.py` cross-harness installer). The current layout is simply the
+repo's own structure, not documented in a skill; kept here as historical record only.
+
 As of 2026-07-06, dftracer-agents was restructured to be genuinely pip/uv-installable, superseding [[project_skills_reorg]]:
 
 - **Real src-layout package.** `dftracer-agents/` and `mcp-tools/` (hyphenated, not valid Python identifiers) were git-mv'd to `src/dftracer_agents/` and `src/dftracer_agents/mcp_tools/`. `.agents/` (skills) moved physically to `src/dftracer_agents/.agents/` — it is package data now, not a repo-root symlink (the user explicitly said they don't want `.agents` at the project root anymore).

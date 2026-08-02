@@ -84,22 +84,41 @@ directly from the HDF5 files and auto-generates its own index CSV.
   can look completely silent for 1-2 minutes while torch/torch_geometric/h5py/dftracer import
   across the network filesystem on all ranks concurrently; without `-u` you can't tell "slow
   import" from "hung."
-- **`dftracer_service` node-counter daemon — use `-n<n> -c1`, NOT `--tasks-per-node 1`.**
-  `flux run -N<n> --tasks-per-node 1 dftracer_service start <dir>` reserves ALL requested
-  nodes EXCLUSIVELY by default on this flux config (`"exclusive": true` in the resolved
-  jobspec, even with no `--exclusive` flag passed) — it silently blocks the training job
-  (or a later `stop` job) from co-scheduling onto those same nodes. **Fixed recipe
-  (validated 2026-07-20):**
+- **`dftracer_service` node-counter daemon — use `-n<n> -c1`, NOT `--tasks-per-node 1`,
+  AND never launch it with `flux run` at all (corrected 2026-07-29).** The earlier
+  recipe below (`flux run -N<n> -n<n> -c1 dftracer_service start <dir>`) fixed the
+  `--tasks-per-node`-implies-exclusive problem, but `flux run start ...` itself
+  **never returns** — the daemon forks and stays a child of the flux task, so the task
+  holds its node(s) forever and the training-job phase never launches. This looks like
+  it worked (the per-node `dftracer_server_<hostname>.pid` files are written correctly,
+  zero errors), but the wrapper script just hangs at that line. See
+  `bug-dftracer-service-start-blocks-flux-run` for the full incident (observed on
+  dftracer 2.1.0.dev16, Tuolumne/Flux: inner job sat `R` for 5+ minutes, all 4 pid files
+  present, zero progress).
+
+  **Correct, validated recipe: `flux submit` (detached) + poll for the pid files, then
+  `flux submit` again to stop:**
   ```bash
-  flux run -N<n> -n<n> -c1 dftracer_service start <dir>   # 1 task/node, 1 core each — NOT exclusive
-  flux run -N<n> -n<n> -c1 dftracer_service stop <dir>    # same pattern to stop
+  # start (detached — returns immediately, does NOT block the wrapper)
+  SVC_JOB=$(flux submit -N<n> -n<n> -c1 dftracer_service start <dir>)
+  for _ in $(seq 1 30); do
+    [ "$(ls <dir>/dftracer_server_*.pid 2>/dev/null | wc -l)" -ge <n> ] && break
+    sleep 2
+  done
+  # ... run the training job phase here ...
+  # stop, same detached pattern, in an EXIT trap so it always runs
+  flux submit -N<n> -n<n> -c1 dftracer_service stop <dir>
   ```
-  Verify with `flux job info <id> jobspec` (no `"exclusive": true`) and `flux resource
-  list` before assuming co-location works. Also confirmed: the per-hostname `.pid` file
-  fix in dftracer's `3e6fc42` develop commit (`dftracer_server_<hostname>.pid`, replacing
-  a single shared `dftracer_server.pid` that used to cause "No running server found") is
-  real — `stop` now cleanly sends SIGINT to every node's server once combined with the
-  non-exclusive invocation above.
+  The `-n<n> -c1` part (never `--tasks-per-node`, which silently reserves the nodes
+  exclusively) is still correct and still required — only the `flux run` -> `flux submit`
+  change is new. `DFTRACER_ENABLE` and `DFTRACER_LOG_FILE` must still be exported in the
+  same invocation or the daemon silently no-ops, and a non-empty per-node trace must be
+  verified afterwards. Verify with `flux job info <id> jobspec` (no `"exclusive": true`)
+  and `flux resource list` before assuming co-location works. Also confirmed: the
+  per-hostname `.pid` file fix in dftracer's `3e6fc42` develop commit
+  (`dftracer_server_<hostname>.pid`, replacing a single shared `dftracer_server.pid` that
+  used to cause "No running server found") is real — `stop` cleanly sends SIGINT to every
+  node's server once combined with the non-exclusive, detached invocation above.
 - **Before crediting any optimization-variant wall-time delta, verify the variant run matches
   the baseline's SCALE (rank/process count) and actually COMPLETED (no `job.exception cancel`
   in its event log).** A half-scale or cancelled run's wall time is worthless for comparison —

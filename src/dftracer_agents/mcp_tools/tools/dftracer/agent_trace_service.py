@@ -1211,7 +1211,7 @@ def is_command_line(name: str) -> bool:
 
     A command is told from a path by its first word: `ls`, `readlink`, `cd` and
     `source` are bare names, while a path that happens to contain a space still
-    starts with `/`. That keeps `/home/me/My Notes/a.txt` a file.
+    starts with `/`. That keeps `/data/My Notes/a.txt` a file.
 
     Args:
         name: The hashed name to judge.

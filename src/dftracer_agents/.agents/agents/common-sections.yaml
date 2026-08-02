@@ -355,6 +355,35 @@ sections:
       Flash-X, ROMIO hints bought 18% while one rank still wrote 91% of the bytes, and 7.6x
       only arrived after the L1 rebuild removed the single-writer funnel.
 
+  skills-first-and-capture-every-qa:
+    title: "Skills first, and capture every Q&A as a lesson (MANDATORY, user instruction 2026-07-28/29)"
+    body: |
+      Three-part standing rule, enforced as this shared section (included by every agent
+      template) and as REQUIRED RULE 0 in the `dftracer-lessons` skill:
+
+      1. **Skills first.** Before installing, building, annotating, running, tuning, or
+         debugging anything, run `skill_search` / `graph_query(mode="docs")` / `skill_load`
+         and act on what the system already knows. Never reason from model priors or a web
+         search when a `workload-*` / `system-*` / `software-*` / `tools-*` skill already
+         covers the task.
+      2. **Every question asked and answer given is a lesson.** A user's answer is durable
+         knowledge, not a session detail. Record it AS YOU GO — preferences/"always-never"
+         into the relevant skill AND the agent YAML (then `agents_sync`); effort/session state
+         via `memory_write(type=project)`; standing guidance via `memory_write(type=feedback)`
+         with the why; deterministic reusable logic into an MCP tool. Review the list with the
+         user in the final report rather than asking permission first.
+      3. **Generic learning propagates everywhere.** App/system/library-scoped lessons go in
+         that one skill, but a GENERIC rule must reach ALL skills and agents: add a shared
+         section here in `common-sections.yaml`, include it in every agent template that
+         needs it, run `agents_sync`, and reflect it in the process skills. A generic rule
+         filed in one corner of one skill has not been learned by the system.
+
+      **Why:** the goal is that the system keeps learning from the conversation itself, not
+      just from run failures — and that a lesson recorded in one place is invisible to every
+      other agent until it is propagated. This supersedes the earlier "confirm before skill
+      updates" gate for skills-first lookups and Q&A capture specifically; the self-learning
+      confirmation gate above still governs whether a captured lesson gets PERSISTED to a
+      shared skill/tool/agent without the user's sign-off.
   optimizer-return-and-confirmation-gate:
     title: Return
     body: |

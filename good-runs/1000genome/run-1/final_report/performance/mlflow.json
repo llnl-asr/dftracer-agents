@@ -2,7 +2,7 @@
   "enabled": true,
   "tracking_uri": "http://127.0.0.1:20002",
   "experiment": "dftracer-agents",
-  "parent_run_id": "f4557ac75f0840b89fcb9f80cb60ee5e",
-  "ui_url": "http://127.0.0.1:20002/#/experiments/1/runs/f4557ac75f0840b89fcb9f80cb60ee5e",
+  "parent_run_id": "<flux-jobid>",
+  "ui_url": "http://127.0.0.1:20002/#/experiments/1/runs/<flux-jobid>",
   "error": ""
 }

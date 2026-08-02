@@ -300,6 +300,45 @@ Baseline (2026-07-06, Lustre, 8 nodes × 64 ranks, `-a HDF5 -b 64m -t 16m -s 8 -
 (read is the weaker path). Annotated trace confirmed annotated spans +
 MPI interception (MPI_Reduce/Barrier/Bcast) + POSIX interception (lseek/write/read).
 
+## HDF5 1.14.5 reconfirmation (session `<session>`, IOR 4.0.0, HDF5 1.14.5 built from source)
+
+Re-ran the full pipeline under HDF5 1.14.5 (built from source, per `feedback_always_source_hdf5`)
+to check whether the newer collective-metadata API
+(`H5Pset_all_coll_metadata_ops`/`H5Pset_coll_metadata_write`) changes the prior negative
+I/O-optimization finding (no lever beats the plain 4 KiB-real-transfer baseline for
+`-a HDF5 -b 16m -t 4k -s 32 -C -F`, file-per-process, 512 ranks/8 nodes). **Answer: no** — both
+write and read deltas stayed within measurement noise under 1.14.5 too.
+
+**Full N-way comparator result** (untraced, n=7 interleaved reps, fresh dirs per rep — see
+`feedback-app-pattern-swap-not-optimization` methodology): v0 baseline write median
+28905 MiB/s, read 17143 MiB/s. Five variants tested — HDF5 `align1m` (alignment=1m), HDF5
+collective-metadata-ops, ROMIO collective buffering, MPI shared-memory collectives, NIC/NUMA
+affinity — NONE beat v0 outside its own noise band. `align1m` showed an attractive +10% write
+gain but it was NOT range-clean (1/7 reps overlapped v0) and paired with a clean -6.3% read
+regression, so it was rejected rather than credited. An `align1m` x Lustre-striping factorial
+sweep, and a 15-20 replicate confirmation run of `align1m`'s write-side gain, remain unmeasured
+(a future round's natural next step — blocked this session by pdebug's 60-min wall limit).
+
+**Methodology bug found and fixed mid-session — tracing state must match across every arm
+(generalizable, not IOR-specific).** Comparing a FUNCTION-mode-*traced* baseline against
+*untraced* optimization variants inflated the untraced arms' apparent gain by ~60%, purely from
+removed dftracer tracing overhead (measured independently at ~37% of apparent write bandwidth
+for this 4 KiB-transfer workload). The affected campaign was retracted and fully re-run with
+`DFTRACER_ENABLE` identical across every arm. **Rule for future sessions: verify tracing state
+is identical across every arm of any A/B before crediting a delta** — this is a standing
+methodology check, not a one-off fix.
+
+**Pipeline-tooling bugs found and fixed this session:**
+- `session_detect` build-tool misdetection: a vendored `testing/libnfs/CMakeLists.txt` inside
+  IOR's own source tree caused a false "cmake" classification for this Autotools project.
+  Fixed in `detection.py` by scoping detection to the repo root.
+- `session_final_report` run-discovery gap: it only recognized the fixed
+  `baseline`/`annotated`/`opt<N>` naming ladder, silently dropping this session's free-form
+  `tmp/*.sh` optimizer-variant scripts. Fixed to incrementally discover any non-ladder
+  `tmp/*.sh` (mtime order) too.
+- `session_final_report` no longer copies raw run/build logs into `final_report/logs/` by
+  default (logs stay in the session's own `artifacts/`).
+
 ## Trace analysis speed + diagnose tool bug
 
 - `mcp__dftracer__analyze` with MANY per-rank .pfw.gz files: `cluster_n_workers>1`

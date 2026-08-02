@@ -6,6 +6,12 @@ metadata:
   type: project
 ---
 
+**Canonical home:** no dedicated skill — superseded in part by
+`project_package_restructure` (the `.agents/skills` canonical layout described here
+is now `src/dftracer_agents/.agents/skills/`). Session-structure enforcement details
+live in the `dftracer-cheatsheet` skill's S0 section it mentions below. Otherwise
+pure repo-engineering history.
+
 As of 2026-07-05, dftracer-agents skills and session-structure enforcement were consolidated:
 
 - **Canonical source:** `.agents/skills/<name>/SKILL.md` (28 skills). `setup.py` symlinks this into the package at build; nested `dftracer-agents/agents/.agents/skills` and `build/` copies are derived, not sources.

@@ -7,6 +7,12 @@ metadata:
   
 ---
 
+**Canonical home:** see the `dftracer-lessons` skill (Confirmation gate section) and
+the `self-learning-confirmation-gate` shared section in `agents/common-sections.yaml`.
+Note: this gate is narrowed by the later `feedback-skills-first-and-capture-every-qa`
+rule for skills-first lookups and Q&A capture specifically — it still governs whether
+a captured lesson gets PERSISTED without the user's sign-off.
+
 Before updating ANY skill, MCP tool, agent definition, or lessons file, always
 check with the user that your observation/diagnosis for the fix is correct. Do
 NOT auto-write self-learning entries during a run without user confirmation.

@@ -57,6 +57,7 @@ dftracer-install-agents = "dftracer_agents.agents:main"
 dftracer-bootstrap-workspace = "dftracer_agents.bootstrap:main"
 dftracer-configure-harness = "dftracer_agents.harness_models:main"
 dftracer-configure-env  = "dftracer_agents.env_setup:main"
+dftracer-sync-permissions = "dftracer_agents.permissions:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -76,6 +77,7 @@ where = ["src"]
     ".agents/workspace/.claude/*.json",
     ".agents/workspace/.opencode/*.jsonc",
     ".agents/workspace/.vscode/*.json",
+    ".agents/workspace/.codex/*.toml",
     # Claude Code's project MCP config. A leading-dot FILE at the workspace root
     # is matched by no glob above, so it must be named outright.
     ".agents/workspace/.mcp.json",

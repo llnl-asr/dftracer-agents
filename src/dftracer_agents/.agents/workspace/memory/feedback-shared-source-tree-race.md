@@ -5,6 +5,10 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `shared-source-tree-parallel-dispatch` shared section in
+`agents/common-sections.yaml` and the `software-pecan` skill (documents this real
+incident in full).
+
 Symptom: an in-flight multi-rank DDP training job crashed with NCCL `remote process exited`
 partway through a validation run.
 

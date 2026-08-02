@@ -6,6 +6,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `tools-pydftracer` and `dftracer-ml-annotate` skills, and
+`workload-scaffold` (shared-venv pattern applied end-to-end).
+
 # dftracer AI/ML venv and FUNCTION mode
 
 For AI/ML Python apps, dftracer must be installed into the **same venv as the app** (`ws/install/`). Do NOT create a separate `ws/venv/` for dftracer and then copy dftracer into the app venv post-hoc.

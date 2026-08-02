@@ -5,6 +5,10 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see CLAUDE.md Pipeline Policy rule 13 and the `dftracer-preload-run`
+skill (documents when PRELOAD/HYBRID is a legitimate distinct mode vs. a forbidden
+workaround for a build issue).
+
 Always integrate dftracer via FUNCTION mode — i.e. actual source-level annotation with `DFTRACER_C_FUNCTION_START`/`END` (or language-equivalent) macros compiled directly into the app — never fall back to PRELOAD/`LD_PRELOAD`-based interception as the tracing mechanism, even when it looks like a convenient workaround (e.g. to sidestep a build/link/ABI issue).
 
 **Why:** User stated this as a standing rule. FUNCTION mode gives accurate, code-level function boundaries and lets annotation carry `comp=` tags and app metadata; PRELOAD mode only intercepts library-call boundaries and loses that semantic richness.

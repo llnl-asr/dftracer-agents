@@ -30,6 +30,7 @@ skills:
 - dftracer-annotation-lessons
 - dftracer-profiling
 sections:
+- include: skills-first-and-capture-every-qa
 - title: ''
   body: |
     You validate an annotated **C** tree BEFORE it is built. You do not annotate;

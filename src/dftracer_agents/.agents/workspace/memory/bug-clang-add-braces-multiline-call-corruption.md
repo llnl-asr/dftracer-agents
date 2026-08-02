@@ -7,6 +7,11 @@ metadata:
   
 ---
 
+**Canonical home:** see the `dftracer-annotate-c` skill (general C/C++ annotation
+pitfalls on macro-heavy code) — the fix itself lives only in
+`source_parser.py`/`bug-clang-add-braces-overlap-corruption`, there is no separate
+skill write-up of this specific overlap shape yet.
+
 **Confirmed root cause (2026-07-16):** `_insert_braces()` in
 `src/dftracer_agents/mcp_tools/tools/session/source_parser.py` collected a
 duplicate/overlapping AST range for the same `if`-statement body: one

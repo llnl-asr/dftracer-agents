@@ -15,8 +15,12 @@
 #   * healthy and identical      → left alone (nothing is restarted needlessly)
 #   * healthy but configured differently, or dead, or not answering its port
 #                                → stopped and started again
-#   * port held by a process that is not ours
-#                                → refuses to touch it and tells you which pid
+#   * configured port held by a process that is not ours
+#                                → started on a random free port instead (see
+#                                  port_of/find_free_port); the port actually
+#                                  used is persisted in workspaces/_stack/*.port
+#                                  so status/stop/client/env — each a fresh
+#                                  invocation of this script — agree on it too
 #
 # So `start` doubles as `refresh`: run it after editing config or reinstalling,
 # and only what actually changed gets bounced. The collector is exempt from
@@ -101,7 +105,10 @@ WORKSPACES="${DFTRACER_WORKSPACES:-$REPO_ROOT/workspaces}"
 MLFLOW_DIR="$WORKSPACES/_mlflow"
 MLFLOW_DB="$MLFLOW_DIR/mlflow.db"
 MLFLOW_ARTIFACTS="$MLFLOW_DIR/artifacts"
-MLFLOW_URL="http://$HOST:$MLFLOW_PORT"
+# MLFLOW_URL used to be a static "http://$HOST:$MLFLOW_PORT" computed here, but
+# a service's actual port can now diverge from its configured default (see
+# port_of/resolve below) — it is a function further down instead, so every use
+# site reads whatever port mlflow actually ended up on.
 EXPERIMENT="${MLFLOW_EXPERIMENT_NAME:-dftracer-agents}"
 
 # All daemon bookkeeping lives under the workspaces root — never /tmp, never
@@ -148,10 +155,42 @@ fi
 mkdir -p "$RUN_DIR" "$LOG_DIR" "$MLFLOW_DIR" "$MLFLOW_ARTIFACTS"
 
 # ── process helpers ────────────────────────────────────────────────────────
-pid_file() { echo "$RUN_DIR/$1.pid"; }
-sig_file() { echo "$RUN_DIR/$1.sig"; }
-log_file() { echo "$LOG_DIR/$1.log"; }
-port_of()  { case "$1" in mlflow) echo "$MLFLOW_PORT";; collector) echo "$COLLECTOR_PORT";; mcp) echo "$MCP_PORT";; esac; }
+pid_file()  { echo "$RUN_DIR/$1.pid"; }
+sig_file()  { echo "$RUN_DIR/$1.sig"; }
+log_file()  { echo "$LOG_DIR/$1.log"; }
+port_file() { echo "$RUN_DIR/$1.port"; }
+
+_default_port() { case "$1" in mlflow) echo "$MLFLOW_PORT";; collector) echo "$COLLECTOR_PORT";; mcp) echo "$MCP_PORT";; esac; }
+
+# The port a service actually uses: whatever `start` last resolved it to (see
+# ensure_daemon below), persisted in a .port file, falling back to the
+# configured default. Every other command (status/stop/client/env/logs) is a
+# FRESH invocation of this script, so reading from a file — not just the
+# *_PORT variable — is what lets them agree with a `start` that had to pick a
+# different port because the configured one was already taken.
+port_of() {
+  local f; f="$(port_file "$1")"
+  if [[ -s "$f" ]]; then
+    cat "$f"
+  else
+    _default_port "$1"
+  fi
+}
+
+mlflow_url() { echo "http://$HOST:$(port_of mlflow)"; }
+
+# OS-assigned free port on $HOST. Bind-to-0-and-release, same idiom every
+# "find a free port" tool uses; the tiny release-to-rebind race is standard
+# and acceptable here (we are not fighting an adversary for the port).
+find_free_port() {
+  "$PY" - "$HOST" <<'EOF'
+import socket, sys
+s = socket.socket()
+s.bind((sys.argv[1], 0))
+print(s.getsockname()[1])
+s.close()
+EOF
+}
 
 pid_of() { cat "$(pid_file "$1")" 2>/dev/null || true; }
 
@@ -249,7 +288,7 @@ stop_daemon() {
   pid="$(pid_of "$name")"
   if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
     _reap_orphan "$name"
-    rm -f "$(pid_file "$name")" "$(sig_file "$name")"
+    rm -f "$(pid_file "$name")" "$(sig_file "$name")" "$(port_file "$name")"
     [[ "${2:-}" == "quiet" ]] || echo "[stack] $name not running"
     return 0
   fi
@@ -263,6 +302,10 @@ stop_daemon() {
   done
   _kill_tree "$pid" KILL
   rm -f "$(pid_file "$name")" "$(sig_file "$name")"
+  # Forget any port this run was bumped to because the configured one was
+  # taken — a clean stop means the next start should try the configured
+  # default again, in case whatever was holding it is gone by then.
+  rm -f "$(port_file "$name")"
 }
 
 # A dead supervisor can leave a child still bound to the port. If that child is
@@ -280,6 +323,7 @@ _reap_orphan() {
 # The idempotent core: converge one service onto the requested configuration.
 ensure_daemon() {
   local name="$1"; shift
+  local -a cmdargs=("$@")
   local sig; sig="$(signature "$*")"
 
   if is_healthy "$name" && sig_matches "$name" "$sig"; then
@@ -300,14 +344,25 @@ ensure_daemon() {
     _reap_orphan "$name"
     rm -f "$(pid_file "$name")" "$(sig_file "$name")"
     if port_open "$(port_of "$name")"; then
-      echo "[stack] REFUSING to start $name: :$(port_of "$name") is held by a process" >&2
-      echo "[stack]   this stack did not start. Free it, or set a different port:" >&2
-      echo "[stack]   $(echo "$name" | tr '[:lower:]' '[:upper:]')_PORT=... $SELF start" >&2
-      return 1
+      # Not ours to kill, so pick a free port instead of refusing to start.
+      # Persisted to a .port file (see port_of) so status/stop/client/env — all
+      # separate invocations of this script — agree on the port this run
+      # actually used, and the args this specific $name was about to be
+      # spawned with are rewritten to match (the old port number was baked
+      # into cmdargs as a literal --port value when the caller built it).
+      local old new i
+      old="$(port_of "$name")"
+      new="$(find_free_port)"
+      echo "[stack] :$old is held by another process — using :$new for $name instead" >&2
+      echo "$new" >"$(port_file "$name")"
+      for i in "${!cmdargs[@]}"; do
+        [[ "${cmdargs[$i]}" == "$old" ]] && cmdargs[$i]="$new"
+      done
+      sig="$(signature "${cmdargs[*]}")"
     fi
   fi
 
-  _spawn "$name" "$sig" "$@"
+  _spawn "$name" "$sig" "${cmdargs[@]}"
   if wait_port "$(port_of "$name")"; then
     return 0
   fi
@@ -321,17 +376,22 @@ ensure_daemon() {
 # would send it. The 5 s log interval bounds how much of a finished step's cost
 # is still buffered inside Claude Code when `profile_report` runs.
 print_env() {
+  # `env` is typically run as its own fresh invocation of this script (e.g.
+  # `eval "$(dftracer_agents_stack env)"`), so port_of/mlflow_url — which
+  # read the persisted .port files — are what let it agree with a `start`
+  # that had to pick a different port in a prior invocation.
+  local collector_port; collector_port="$(port_of collector)"
   cat <<EOF
 export CLAUDE_CODE_ENABLE_TELEMETRY=1
 export OTEL_LOGS_EXPORTER=otlp
 export OTEL_METRICS_EXPORTER=otlp
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/json
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://$HOST:$COLLECTOR_PORT
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://$HOST:$collector_port
 export OTEL_LOGS_EXPORT_INTERVAL=5000
 export OTEL_METRIC_EXPORT_INTERVAL=15000
-export DFTRACER_PROFILE_ENDPOINT=http://$HOST:$COLLECTOR_PORT
+export DFTRACER_PROFILE_ENDPOINT=http://$HOST:$collector_port
 export DFTRACER_WORKSPACES=$WORKSPACES
-export MLFLOW_TRACKING_URI=$MLFLOW_URL
+export MLFLOW_TRACKING_URI=$(mlflow_url)
 export MLFLOW_EXPERIMENT_NAME=$EXPERIMENT
 EOF
 }
@@ -349,18 +409,20 @@ cmd_start() {
   ensure_daemon mlflow "${BIN}/mlflow" server \
     --backend-store-uri "sqlite:///$MLFLOW_DB" \
     --default-artifact-root "$MLFLOW_ARTIFACTS" \
-    --host "$HOST" --port "$MLFLOW_PORT" || failed=1
-  is_healthy mlflow && echo "[stack]   mlflow UI  → $MLFLOW_URL"
+    --host "$HOST" --port "$(port_of mlflow)" || failed=1
+  is_healthy mlflow && echo "[stack]   mlflow UI  → $(mlflow_url)"
 
   # 2. Collector. After MLflow, so its client connects on the first try. It
   #    degrades to file-only when MLflow is down, but there is no reason to.
-  MLFLOW_TRACKING_URI="$MLFLOW_URL" DFTRACER_WORKSPACES="$WORKSPACES" \
+  # $(mlflow_url) is read AFTER mlflow's ensure_daemon call above, so it
+  # reflects whatever port mlflow actually ended up on, not just its default.
+  MLFLOW_TRACKING_URI="$(mlflow_url)" DFTRACER_WORKSPACES="$WORKSPACES" \
   ensure_daemon collector "$BIN/dftracer-profile-collector" \
-    --host "$HOST" --port "$COLLECTOR_PORT" \
-    --mlflow-uri "$MLFLOW_URL" \
+    --host "$HOST" --port "$(port_of collector)" \
+    --mlflow-uri "$(mlflow_url)" \
     --experiment "$EXPERIMENT" \
-    --mlflow-ui "$MLFLOW_URL" || failed=1
-  is_healthy collector && echo "[stack]   collector  → http://$HOST:$COLLECTOR_PORT/v1/logs"
+    --mlflow-ui "$(mlflow_url)" || failed=1
+  is_healthy collector && echo "[stack]   collector  → http://$HOST:$(port_of collector)/v1/logs"
 
   # 3. MCP server (HTTP, auto-reloading on source edits).
   #    Its startup wants an interactive harness/model choice the first time. A
@@ -376,11 +438,11 @@ sys.exit(0 if has_setup_state() else 1)" 2>/dev/null; then
   fi
 
   DFTRACER_WORKSPACES="$WORKSPACES" \
-  DFTRACER_PROFILE_ENDPOINT="http://$HOST:$COLLECTOR_PORT" \
+  DFTRACER_PROFILE_ENDPOINT="http://$HOST:$(port_of collector)" \
   ensure_daemon mcp "$BIN/dftracer-mcp-server" run \
     --service "$MCP_SERVICE" --transport http \
-    --host "$HOST" --port "$MCP_PORT" --reload || failed=1
-  is_healthy mcp && echo "[stack]   mcp server → http://$HOST:$MCP_PORT/mcp"
+    --host "$HOST" --port "$(port_of mcp)" --reload || failed=1
+  is_healthy mcp && echo "[stack]   mcp server → http://$HOST:$(port_of mcp)/mcp"
 
   # 3b. Point the harnesses at the server we just started, so none of them spawn
   #     a private stdio copy. Idempotent; prints "already up to date" on re-runs.
@@ -418,20 +480,25 @@ cmd_stop() {
 # Reconcile the pid files against /proc. Pid files say what we *believe* is
 # running; only /proc says what is. See dftracer_agents.profiling.procscan.
 _procscan() {
+  # The ACTUAL port per service (port_of), not just its configured default —
+  # procscan uses this to recognize "a process listening on the port we'd use
+  # for this service is ours"; after a port relocation the default no longer
+  # matches, so this must track port_of or a relocated daemon gets reported
+  # as foreign.
   "$PY" -m dftracer_agents.profiling.procscan "$@" \
     --run-dir "$RUN_DIR" --workspaces "$WORKSPACES" \
-    --port "mlflow=$MLFLOW_PORT" \
-    --port "collector=$COLLECTOR_PORT" \
-    --port "mcp=$MCP_PORT"
+    --port "mlflow=$(port_of mlflow)" \
+    --port "collector=$(port_of collector)" \
+    --port "mcp=$(port_of mcp)"
 }
 
 cmd_status() {
   printf '%-10s %-10s %s\n' SERVICE STATE ENDPOINT
   for svc in mlflow collector mcp; do
     case "$svc" in
-      mlflow)    url="$MLFLOW_URL" ;;
-      collector) url="http://$HOST:$COLLECTOR_PORT" ;;
-      mcp)       url="http://$HOST:$MCP_PORT/mcp" ;;
+      mlflow)    url="$(mlflow_url)" ;;
+      collector) url="http://$HOST:$(port_of collector)" ;;
+      mcp)       url="http://$HOST:$(port_of mcp)/mcp" ;;
     esac
     if is_healthy "$svc"; then
       printf '%-10s %-10s %s (pid %s)\n' "$svc" up "$url" "$(pid_of "$svc")"
@@ -459,7 +526,7 @@ cmd_status() {
     echo "[stack] collector:"
     "$PY" -c "
 import json, urllib.request
-d = json.load(urllib.request.urlopen('http://$HOST:$COLLECTOR_PORT/control/status', timeout=3))
+d = json.load(urllib.request.urlopen('http://$HOST:$(port_of collector)/control/status', timeout=3))
 t, a = d['totals'], d['attempts']
 print(f\"  run_id      {d['run_id'] or '(unbound)'}\")
 print(f\"  events      {d['events_seen']}\")
@@ -481,7 +548,7 @@ cmd_client() {
   local dry=()
   [[ "${1:-}" == "--dry-run" ]] && dry=(--dry-run)
   echo "[stack] pointing harness configs at the managed MCP server…"
-  DFTRACER_STACK_ROOT="$REPO_ROOT" "$PY" - "$HOST" "$MCP_PORT" "$REPO_ROOT" "${dry[@]}" <<'EOF'
+  DFTRACER_STACK_ROOT="$REPO_ROOT" "$PY" - "$HOST" "$(port_of mcp)" "$REPO_ROOT" "${dry[@]}" <<'EOF'
 import sys
 from pathlib import Path
 from dftracer_agents.mcp_setup import configure_project_clients

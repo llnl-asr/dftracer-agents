@@ -354,8 +354,15 @@ This is the only way to guarantee that `ldd` of every `.so` shows the same libra
 
 ```
 Step 4 — Set CC/CXX to the correct compiler
-  If MPI is in the stack: export CC=cc CXX=CC   (Cray MPI wrapper)
-  Otherwise:              export CC=gcc CXX=g++
+  Simplified (2026-07-16): after modules are loaded (Step 1), just resolve the
+  MPI compiler wrappers off PATH — no separate Cray-vs-generic branch needed:
+    export CC=$(which mpicc)
+    export CXX=$(which mpic++)
+  This works on Cray too: mpicc/mpic++ resolve to the Cray wrappers (cc/CC) once
+  PrgEnv/cray-mpich modules are on PATH. Only skip this (plain gcc/g++) for a
+  target that truly does not link MPI at all. Do this in the SAME script/tool
+  call as the module load — PATH/module state does not persist across separate
+  Bash calls. See [[feedback-cc-cxx-mpi-selection]].
 
 Step 5 — Install all app + dftracer + dependency packages with a single pip install
   One pip invocation to resolve the full dependency graph consistently.

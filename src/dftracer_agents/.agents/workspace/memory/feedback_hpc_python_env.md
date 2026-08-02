@@ -6,6 +6,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `system-tuolumne` skill ("Canonical Python environment
+setup" section — Step 4 there was simplified per `feedback-cc-cxx-mpi-selection`).
+
 # Canonical Python HPC Environment Setup
 
 Steps 1–3 are **identical for install and run**. This is the only way to guarantee a consistent library stack at both build and execution time.

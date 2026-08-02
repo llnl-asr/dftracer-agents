@@ -62,7 +62,7 @@ claiming any workflow-level speedup.
 
 **Honest prediction validation:** STEP 8 predicted "workflow-level speedup will be much smaller than 193x task-level number, likely dominated by merge barrier + untouched frequency/mutation_overlap tasks". Measured result (29.3%) confirms this was the correct prediction.
 
-**Allocation used:** flux allocation f3NXj3jCbhtK (16 nodes, verified active, 4 nodes utilized for this 4-node run).
+**Allocation used:** flux allocation <flux-jobid> (16 nodes, verified active, 4 nodes utilized for this 4-node run).
 
 **No new failures or rework needed.** Run completed cleanly, traces valid, run record captured.
 

@@ -71,6 +71,15 @@ class MlflowSink:
                           "performance/ dir (pip install 'dftracer-agents[profile]')")
             return
 
+        # MLflow's HTTP client defaults to a 120s timeout and 7 retries with
+        # exponential backoff (~4 minutes worst case) — tuned for a client
+        # tolerating a rate-limited SaaS backend, not for a profiling sidecar
+        # that must never block the collector's own startup/flush loop when
+        # the local mlflow server is simply down. setdefault so an operator's
+        # own explicit configuration always wins.
+        os.environ.setdefault("MLFLOW_HTTP_REQUEST_TIMEOUT", "3")
+        os.environ.setdefault("MLFLOW_HTTP_REQUEST_MAX_RETRIES", "1")
+
         try:
             self._client = MlflowClient(tracking_uri=tracking_uri)
             exp = self._client.get_experiment_by_name(experiment)

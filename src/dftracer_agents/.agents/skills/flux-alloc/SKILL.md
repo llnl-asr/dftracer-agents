@@ -270,9 +270,12 @@ for completion before resubmitting) can runaway into thousands of queued jobs.
 **Why:** on 2026-07-10, a submission loop that didn't wait for job completion (and didn't cancel
 a stale/timed-out job) before retrying left 5 of 8 allocations with 600-760 queued `S`-state jobs
 each (~3,200 total) — all requesting the full allocation, so only one could ever run per
-allocation regardless of how many were queued. Recovered via `flux proxy <alloc> flux cancel
---all` per affected allocation (NOT a global cancel across every allocation — scope it to the
-one instance you're clearing).
+allocation regardless of how many were queued. Recovered via individual, scoped
+`flux proxy <alloc> flux cancel <jobid>` calls, one per stuck job in each affected allocation —
+**never `flux cancel --all`, even scoped to a single allocation** (confirmed separately as its
+own incident in `feedback-h5bench-session-incidents`: bulk cancellation risks destroying other
+jobs sharing that same allocation that were never meant to be touched). See "Cancelling a job or
+allocation" above for the full standing rule.
 
 **How to apply:**
 1. Before submitting, check occupancy: `flux proxy <alloc-id> flux jobs -a | grep -cE ' R | PD | S '`.
@@ -404,30 +407,50 @@ Tuolumne: MemTotal ≈ 502 GiB/node.
 - 2-node job: threshold > 502 GiB total → use `DIM_1=33554432` (768 GiB for 192 ranks) ✓
 - `DIM_1=16777216` gives 384 GiB for 192 ranks → does NOT bypass OS cache ✗
 
-## Cancelling a job or allocation
+## Cancelling a job or allocation (NEVER the allocation itself, NEVER `--all`)
 
-When a job is killed, crashes, or needs to be stopped, always cancel its Flux job ID
-to release resources immediately. **Forgetting to cancel a killed job leaks allocation
-time and may block other runs.**
+When a job is killed, crashes, or needs to be stopped, cancel ONLY that job's own
+Flux job ID — the one submitted *within* an allocation via `flux run`/`flux submit`.
+**Forgetting to cancel a killed job leaks the allocation's concurrent-job slot and
+may block other runs**, but the fix is always scoped to the job, never the
+allocation.
 
 ```bash
 # Cancel a specific job inside the allocation (via proxy):
 flux proxy <ALLOC_JOBID> flux cancel <INNER_JOBID>
 
-# Cancel the entire allocation itself:
-flux cancel <ALLOC_JOBID>
-
 # List running jobs to find IDs:
 flux proxy <ALLOC_JOBID> flux jobs -a
-
-# Cancel ALL running jobs inside the allocation at once:
-flux proxy <ALLOC_JOBID> flux cancel --all
 ```
 
-**When to cancel:**
+**NEVER cancel the allocation itself** (`flux cancel <ALLOC_JOBID>` on a top-level
+`flux batch`/`flux alloc` job, typically shown as `NAME=flux` in `flux jobs -a` with
+the full requested node count). Allocations are the scarce, slow-to-acquire resource
+on a shared HPC scheduler — tearing one down forces requeueing, costs significant
+wait time, and is disruptive to other work sharing the cluster. Confirmed incident:
+the user explicitly corrected an agent that ran `flux cancel` on several top-level
+allocation jobs — including their own pre-existing one — while trying to clean up
+what it thought were stray/duplicate allocations. See
+`feedback-flux-allocation-vs-job` for the full incident. Separately: "run the job on
+N nodes" means an N-node job submitted *inside* an existing allocation, not a fresh
+N-node allocation — use whatever allocation is already available/running (even if
+it has more nodes than N).
+
+**NEVER use `flux cancel --all`**, even to clean up a confirmed runaway
+job-submission loop. Bulk/global cancellation on a shared multi-tenant cluster risks
+destroying other users' or unrelated sessions' jobs and allocations. Confirmed
+incident: a submission loop that didn't wait for job completion before retrying left
+~3,200 queued jobs stacked across 5 allocations; recovery was done via individual,
+scoped `flux cancel <jobid>` calls per stuck job — one call per job, never a bulk
+`--all` sweep even scoped to a single allocation. See
+`feedback-h5bench-session-incidents` for the full incident.
+
+**When to cancel a job (not the allocation):**
 - Any `flux run` or `flux submit` job that was killed with Ctrl-C, `kill`, or crashed
 - Any background job (`&`) whose PID is dead but the flux job is still listed
 - Before re-running a failed benchmark to avoid stale job conflicts
+- A confirmed runaway/duplicate job found via `flux jobs -a` — cancel its specific
+  job ID, one call per stuck job, even if that means many individual calls
 
 
 ## Permissions

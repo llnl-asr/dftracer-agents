@@ -6,6 +6,9 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `workload-ior` skill (VAST ROMIO tuning table, superseded/
+reconfirmed by later IOR sessions in the same skill).
+
 Completed a full dftracer optimization loop for IOR 4.0.0 HDF5 collective I/O on Tuolumne (2026-06-24).
 
 **Session:** `ior/20260625_004605`  

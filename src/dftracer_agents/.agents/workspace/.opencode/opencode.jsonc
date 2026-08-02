@@ -3,12 +3,47 @@
   // See docs/harnesses.rst for harness-specific notes.
   // Model levels are resolved from:
   //   src/dftracer_agents/.agents/workspace/models.yaml
+  // Permission tiers are resolved from:
+  //   src/dftracer_agents/.agents/workspace/permissions.yaml
+
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "dftracer": {
       "type": "remote",
       "url": "http://127.0.0.1:5000/mcp",
       "enabled": true
+    }
+  },
+  "permission": {
+    "edit": {
+      "**": "ask",
+      "workspaces/**": "allow",
+      "src/dftracer_agents/.agents/skills/**": "allow"
+    },
+    "bash": {
+      "*": "ask",
+      "git add src/dftracer_agents/.agents/skills/*": "allow",
+      "git commit *": "allow",
+      "ls workspaces/*": "allow",
+      "mkdir -p workspaces/*": "allow",
+      "cp * workspaces/*": "allow",
+      "mv * workspaces/*": "allow",
+      "find workspaces/*": "allow",
+      "cat workspaces/*": "allow",
+      "rm -rf workspaces/*": "allow",
+      "rm -rf $PROJECT_ROOT/workspaces/*": "allow",
+      "mv workspaces/* workspaces/*": "allow",
+      "sudo *": "deny",
+      "sudo": "deny",
+      "rm -rf /*": "deny",
+      "rm -rf ~*": "deny",
+      "find /": "deny",
+      "find /etc*": "deny",
+      "find /var*": "deny",
+      "find /home*": "deny",
+      "find /root*": "deny",
+      "find /tmp*": "deny",
+      "find /opt*": "deny"
     }
   }
 }

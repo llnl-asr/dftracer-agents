@@ -12,4 +12,4 @@ export IND_ROW_PRECOMPUTE=1
 export IND_TAR_STREAM=1
 export LD_LIBRARY_PATH=/opt/cray/pe/lib64:/opt/cray/pe/cce/20.0.0/cce/x86_64/lib:/opt/cray/pe/cce/20.0.0/cce-clang/x86_64/lib:/opt/cray/pe/cce/20.0.0/cce/x86_64/lib/default64:/usr/lib64
 cd ${WS}/source
-flux proxy f3NXj3jCbhtK flux run -N4 -n32 bash ${WS}/opt1/scripts/pmc_wrapper.sh
+flux proxy <flux-jobid> flux run -N4 -n32 bash ${WS}/opt1/scripts/pmc_wrapper.sh

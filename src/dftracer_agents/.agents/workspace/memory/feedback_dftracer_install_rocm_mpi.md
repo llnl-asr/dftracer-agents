@@ -6,6 +6,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `dftracer-install` skill and `software-rocm` (ROCm-only-
+when-app-uses-it rule, generalized).
+
 When installing dftracer on tuolumne (or corona):
 
 - **ROCProfiler is only needed if the traced app actually uses ROCm/GPU.** Flash-X Sedov 3D (and other CPU-only workloads) do NOT use ROCm, so do NOT enable or require ROCProfiler in the dftracer build. Enabling it forces a ROCm dependency that is unnecessary and can break the install.

@@ -7,6 +7,9 @@ metadata:
   
 ---
 
+**Canonical home:** see the `dftracer-lessons` skill (naming disambiguation section —
+this file's full content is now persisted there).
+
 `workload-<app>` is reserved for scientific/HPC workloads dftracer traces to
 study I/O behavior (IOR, h5bench, Flash-X, VPIC-Kokkos, ScaFFold). A tool or
 service that is itself being annotated/instrumented by dftracer as software

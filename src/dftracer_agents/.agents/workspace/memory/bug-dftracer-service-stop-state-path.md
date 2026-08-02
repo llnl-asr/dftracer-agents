@@ -5,6 +5,11 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `software-pecan` skill (the validated non-exclusive
+`-n<n> -c1` invocation pattern) — superseded in turn by
+`bug-dftracer-service-start-blocks-flux-run` (`flux run` itself must not be used to
+START the daemon; `flux submit` detached is required).
+
 **RESOLVED 2026-07-20.** `dftracer_service stop` reliably reporting "No running server found" even when the daemon was confirmed running was a real upstream bug, now fixed — see [[feedback-dftracer-service-node-counters]] for the full validated fix and the corrected `flux run` invocation pattern.
 
 Two compounding causes, both now fixed:

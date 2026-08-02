@@ -5,6 +5,10 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `software-rocm` skill ("PyTorch profiler + dftracer HIP
+tracing coexist for exactly ONE profiler window" section — this file's full content
+is now persisted there).
+
 pydftracer (develop) ships `dftracer.python.torch.trace_handler`, which replays
 every torch `FunctionEvent` into the dftracer log as `cat="PP"` events anchored
 on kineto's `trace_start_ns`. Wire it as

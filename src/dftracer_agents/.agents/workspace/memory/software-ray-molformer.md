@@ -5,6 +5,11 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `software-ray` skill (jemalloc/`ray start --head` crash,
+multi-node bring-up) and `software-molformer` (app-level build/annotation caveats) —
+the Ray+MoLFormer-specific compute/NaN findings in this file have no separate skill
+and remain the fullest record of that combination.
+
 Continuation of [[software-ray-molformer]] — final pipeline outcome.
 
 ## Pipeline complete: STEPs 1-13 done

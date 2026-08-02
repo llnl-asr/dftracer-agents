@@ -9,11 +9,16 @@ from dftracer_agents.bootstrap import bundled_workspace_dir
 from dftracer_agents.skills import resolve_default_target
 
 LEVELS = ("level_1", "level_2", "level_3", "level_4")
-HARNESSES = ("claude", "opencode", "copilot")
+HARNESSES = ("claude", "opencode", "copilot", "codex")
 MODEL_CLASSES = ("haiku", "sonnet", "opus")
 
 # Fallback map that mirrors src/dftracer_agents/.agents/workspace/models.yaml.
 # Kept in code so model selection works even if YAML parsing is unavailable.
+#
+# NOTE: "copilot" and "codex" share the same model ids (gpt-5-codex family) —
+# both surfaces run OpenAI's Codex models, just via different auth/subscription
+# paths (GitHub Copilot vs. the standalone Codex CLI). Kept as separate
+# provider entries since they're configured through different harness dialects.
 FALLBACK_LEVEL_MAP = {
     "level_1": {
         "class": "haiku",
@@ -21,6 +26,7 @@ FALLBACK_LEVEL_MAP = {
             "ollama": "qwen3.5:9b",
             "claude": "claude-haiku-4-20250514",
             "copilot": "gpt-5-codex-mini",
+            "codex": "gpt-5-codex-mini",
         },
     },
     "level_2": {
@@ -29,6 +35,7 @@ FALLBACK_LEVEL_MAP = {
             "ollama": "qwen3.5:32b",
             "claude": "claude-sonnet-4-20250514",
             "copilot": "gpt-5-codex",
+            "codex": "gpt-5-codex",
         },
     },
     "level_3": {
@@ -37,6 +44,7 @@ FALLBACK_LEVEL_MAP = {
             "ollama": "qwen3-coder:480b-cloud",
             "claude": "claude-sonnet-4-20250514",
             "copilot": "gpt-5-codex",
+            "codex": "gpt-5-codex",
         },
     },
     "level_4": {
@@ -45,6 +53,7 @@ FALLBACK_LEVEL_MAP = {
             "ollama": "deepseek-v3.2:cloud",
             "claude": "claude-opus-4-20250514",
             "copilot": "gpt-5-codex-pro",
+            "codex": "gpt-5-codex-pro",
         },
     },
 }
@@ -53,6 +62,7 @@ DEFAULT_PROVIDER_BY_HARNESS = {
     "claude": "claude",
     "opencode": "ollama",
     "copilot": "copilot",
+    "codex": "codex",
 }
 
 # Curated selectable models by provider for interactive setup.
@@ -71,6 +81,11 @@ AVAILABLE_MODELS_BY_PROVIDER = {
         "claude-opus-4-20250514",
     ],
     "copilot": [
+        "gpt-5-codex-mini",
+        "gpt-5-codex",
+        "gpt-5-codex-pro",
+    ],
+    "codex": [
         "gpt-5-codex-mini",
         "gpt-5-codex",
         "gpt-5-codex-pro",
@@ -313,9 +328,9 @@ def run_interactive_setup(target_root: Optional[Path] = None) -> Path:
         current_provider = str(current.get("provider", DEFAULT_PROVIDER_BY_HARNESS[harness]))
         provider = _choose_from_list(
             f"Select model provider for harness '{harness}':",
-            ["ollama", "claude", "copilot"],
-            default_index=["ollama", "claude", "copilot"].index(current_provider)
-            if current_provider in ("ollama", "claude", "copilot")
+            ["ollama", "claude", "copilot", "codex"],
+            default_index=["ollama", "claude", "copilot", "codex"].index(current_provider)
+            if current_provider in ("ollama", "claude", "copilot", "codex")
             else 0,
         )
 
@@ -477,7 +492,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--provider",
-        choices=["ollama", "claude", "copilot"],
+        choices=["ollama", "claude", "copilot", "codex"],
         default=None,
         help="Model backend provider for the selected harness(es).",
     )

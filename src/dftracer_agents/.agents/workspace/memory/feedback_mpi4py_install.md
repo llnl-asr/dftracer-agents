@@ -6,6 +6,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `software-mpi` skill and `system-tuolumne` for the
+mpi4py install recipe.
+
 On Tuolumne with Python 3.13 + cray-mpich/9.1.0, mpi4py requires a specific install recipe:
 
 1. **Download** the manylinux wheel (don't build from source): `pip download 'mpi4py==4.1.1' --no-deps -d $SESSION/tmp`

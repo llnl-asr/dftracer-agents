@@ -5,6 +5,11 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `dftracer-annotate-c` skill (general C/C++ annotation
+pitfalls on macro-heavy code) and `workload-vpic-kokkos` (where this was first hit)
+— the fix itself lives in `source_parser.py`; see also
+`bug-clang-add-braces-multiline-call-corruption` for the second overlap shape.
+
 Root cause found in the vpic-kokkos annotation session: `_insert_braces` (in `src/dftracer_agents/mcp_tools/tools/session/source_parser.py`) sorts braceless if/for/while body ranges by start-line descending and inserts brace pairs assuming ranges never overlap. For macro-heavy C/C++ (VPIC uses its own custom macros extensively in dump.cc, vpic.cc, advance.cc, checkpt_io.cc, boundary_p.cc), clang's reported AST range `end` for a macro-expanded statement can overshoot into or past a later (higher-start) sibling range — e.g. a bare `if (...) MACRO(...); else other_stmt;` where the then-branch's end line resolves past the else-branch's start line. When ranges overlap like this, processing highest-start-first no longer guarantees earlier insertions don't disturb not-yet-processed indices, corrupting the file: an if/else got split into two disconnected `{ }` blocks with the `else` keyword orphaned (real syntax error), and on other files the same bad line arithmetic produced `IndexError: list index out of range` (line number resolved past the file's actual length, e.g. from an unresolvable macro `spellingLoc`/`expansionLoc`).
 
 **Why:** `_maybe_add` had no bounds check on resolved line numbers, and `_insert_braces` had no overlap detection — both assumed clean, disjoint clang AST ranges, which macro expansion violates.

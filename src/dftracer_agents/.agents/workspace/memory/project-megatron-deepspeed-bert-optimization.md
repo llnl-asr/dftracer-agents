@@ -6,6 +6,11 @@ metadata:
 ---
 
 
+**Canonical home:** see the new `software-megatron-deepspeed` skill (this file's full
+content is now persisted there). The two sibling write-ups this file references
+(`software-megatron-deepspeed-compute-tuning-findings`, `project-megatron-deepspeed-gpt-pipeline`)
+do not exist anywhere in project memory or skills — flagged as dangling, not fabricated.
+
 Session `megatron_deepspeed/20260727_164229` (Megatron-DeepSpeed **BERT-Base**, 110M
 params) — full pipeline complete: annotation (11 files / 231 dftracer decorators),
 multi-replicate A/B baselines, root-cause diagnosis, 4-dimension optimization sweep

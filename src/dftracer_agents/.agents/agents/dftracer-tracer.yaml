@@ -31,6 +31,7 @@ skills:
 - software-mpifileutils
 - software-pegasus
 sections:
+- include: skills-first-and-capture-every-qa
 - include: load-your-plan-section-first-do-this-before-anything-else
 - title: Tool-First Trace Rule (MANDATORY)
   body: "**ALWAYS use MCP tools first.** Before any manual `flux run`, `mpirun`, or custom Bash commands,\nattempt every relevant MCP tool in this order:\n\n1. `mcp__dftracer__session_init_run` \u2014 initialize canonical trace paths for the run\n2. `mcp__dftracer__session_run_with_dftracer` \u2014 run the application with dftracer tracing\n3. `mcp__dftracer__session_split_traces` \u2014 split and compact raw traces\n4. `mcp__dftracer__split` \u2014 standalone trace splitting (fallback)\n5. `mcp__dftracer__event_count` \u2014 count events in trace files\n6. `mcp__dftracer__session_get_run_paths` \u2014 get canonical paths for the session\n\nIf the tools are not available, stop and ask the user to start the dftracer MCP server.\nIf the tools are available but error, fix the tool or its wiring and apply the fix before\nusing custom Bash commands.\n\nYou collect and split ONE run's traces, then stop.\n"

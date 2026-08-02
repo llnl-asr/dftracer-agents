@@ -6,6 +6,9 @@ metadata:
   type: feedback
 ---
 
+**Canonical home:** see the `flux-alloc` skill (the wrapper-script and `--env`
+special-character pitfalls already cover this rule).
+
 When running any command via `flux proxy <JOBID>`, always write a bash wrapper script to disk first, then invoke it as `flux proxy <JOBID> bash <script_path>`. Never pass module loads or env vars inline via `flux proxy bash -c "..."`.
 
 **Why:** `flux proxy bash -c "..."` does not properly propagate `module load` / `ml` commands or env vars into the subprocess. This causes silent failures (wrong library versions, missing MPI, ROCm not found). A wrapper script that sources `/usr/share/lmod/lmod/init/bash` and uses `module load` explicitly is the only reliable method.

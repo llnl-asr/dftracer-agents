@@ -1,9 +1,9 @@
-# One Agent Template, Three Harnesses
+# One Agent Template, Four Harnesses
 
 The dftracer pipeline agents are defined **once**, as harness-neutral YAML
 templates, and **rendered** into the on-disk dialect of each supported harness
-(Claude Code, OpenCode, GitHub Copilot). Git tracks only the templates; the
-rendered files are disposable build artifacts.
+(Claude Code, OpenCode, GitHub Copilot, Codex CLI). Git tracks only the
+templates; the rendered files are disposable build artifacts.
 
 ```
 src/dftracer_agents/.agents/agents/          ← canonical, git-tracked
@@ -17,6 +17,7 @@ src/dftracer_agents/.agents/agents/          ← canonical, git-tracked
 .claude/agents/<name>.md                     ← Claude Code      (gitignored)
 .opencode/agents/<name>.md                   ← OpenCode         (gitignored)
 .github/agents/<name>.agent.md               ← GitHub Copilot   (gitignored)
+.codex/agents/<name>.toml                    ← Codex CLI        (gitignored)
 ```
 
 ## Template schema
@@ -58,17 +59,19 @@ writing its own inline `{title, body}` section instead of the include.
 ## Converters
 
 `src/dftracer_agents/agent_templates.py` holds one converter per harness.
-All three share the same body rendering (`## <title>` markdown, sections in
-order) and differ only in frontmatter:
+All four share the same body rendering (`## <title>` markdown, sections in
+order) and differ only in frontmatter — except Codex, which is TOML, not
+markdown+frontmatter, so it has no shared body at all (`developer_instructions`
+carries the whole rendered body as a single TOML string):
 
-| field | claude (`.claude/agents/*.md`) | opencode (`.opencode/agents/*.md`) | copilot (`.github/agents/*.agent.md`) |
-|---|---|---|---|
-| model | class alias (`haiku`/`sonnet`/`opus`) | `provider/model-id` (e.g. `ollama/qwen3.5:32b`) | bare model id |
-| permission/tools | comma-separated string | `permission:` map `{"*": "deny", <tool>: "allow"}` (allowlist) | YAML list |
-| MCP tool names | `mcp__dftracer__analyze` | `dftracer_analyze` | `dftracer/<tool>` |
-| built-ins | `Read, Bash, Edit, Grep` | `read, bash, edit, grep` | `read, shell, edit, search` |
-| skills | `skills:` frontmatter key | injected "Load your skills first" body section calling `skill_load(...)` | same injected section |
-| extras | `effort`, `isolation`, `model_level` kept | `mode: subagent` added | `name` kept |
+| field | claude (`.claude/agents/*.md`) | opencode (`.opencode/agents/*.md`) | copilot (`.github/agents/*.agent.md`) | codex (`.codex/agents/*.toml`) |
+|---|---|---|---|---|
+| model | class alias (`haiku`/`sonnet`/`opus`) | `provider/model-id` (e.g. `ollama/qwen3.5:32b`) | bare model id | bare model id |
+| permission/tools | comma-separated string | `permission:` map `{"*": "deny", <tool>: "allow"}` (allowlist) | YAML list | none — Codex has no per-tool concept; see `sandbox_mode` below |
+| MCP tool names | `mcp__dftracer__analyze` | `dftracer_analyze` | `dftracer/<tool>` | n/a (MCP server registered project-wide in `.codex/config.toml`, not per-agent) |
+| built-ins | `Read, Bash, Edit, Grep` | `read, bash, edit, grep` | `read, shell, edit, search` | n/a |
+| skills | `skills:` frontmatter key | injected "Load your skills first" body section calling `skill_load(...)` | same injected section | same injected section (in `developer_instructions`) |
+| extras | `effort`, `isolation`, `model_level` kept | `mode: subagent` added | `name` kept | `effort` → `model_reasoning_effort`; fixed `sandbox_mode = "workspace-write"` |
 
 Every rendered file starts with a generation marker comment naming the
 harness and pointing back at the template. The installer refuses to overwrite
@@ -84,6 +87,15 @@ Caveats:
 - Copilot tool names (`shell`, `search`, `dftracer/<tool>`) follow the
   custom-agents reference; if an agent runs with missing tools in Copilot,
   adjust `_COPILOT_BUILTIN` / `_copilot_tool_name` in `agent_templates.py`.
+- Codex's execution permission model is `sandbox_mode` (read-only /
+  workspace-write / danger-full-access) + `approval_policy`, not discrete tool
+  names, and — deliberately, as an anti supply-chain-attack measure — neither
+  key is honored when set in a repo-tracked `.codex/config.toml`. We fix
+  `sandbox_mode = "workspace-write"` per rendered agent as a best-effort
+  default; see `docs/harnesses.rst`'s "Permission tiers" section for the full
+  story and why the workspace/project-root/outside tiers can't be fully
+  reproduced for Codex from a git-tracked file the way they can for Claude and
+  OpenCode.
 
 ## Models: `model_level` → concrete model
 

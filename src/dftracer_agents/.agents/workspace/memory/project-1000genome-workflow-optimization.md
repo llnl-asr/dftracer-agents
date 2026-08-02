@@ -5,6 +5,9 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `workload-1000genome` skill (Pegasus/PMC architecture,
+task-script annotation pitfalls, and the two composed app-level fixes).
+
 Session `1000genome_workflow/20260725_203603`. Full dftracer pipeline against
 pegasus-isi/1000genome-workflow (pure-Python Pegasus/PMC workflow) on
 Tuolumne. Pipeline stages (annotate/baseline/diagnose/optimize-4-dim/validate)

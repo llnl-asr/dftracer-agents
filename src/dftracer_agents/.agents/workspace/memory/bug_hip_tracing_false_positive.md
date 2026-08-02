@@ -7,6 +7,10 @@ metadata:
   
 ---
 
+**Canonical home:** see the `dftracer-system-detect` and `dftracer-ml-annotate` skills
+(both use `session_detect`/`session_detect_ml_workload`'s `hip_tracing_needed` field,
+now app-source-scoped only).
+
 `session_detect` (src/dftracer_agents/mcp_tools/tools/session/detection.py, `_detect_info`)
 set `hip_tracing_needed = features["hip"] or rocm_info["found"]`. On Tuolumne every node
 has ROCm installed (MI300A APU cluster), so `rocm_info["found"]` is always True — this made

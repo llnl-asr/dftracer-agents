@@ -137,6 +137,82 @@ def configure_vscode(root: Path, url: str, dry_run: bool = False) -> Path:
                                {"type": "http", "url": url}, "Copilot", dry_run)
 
 
+# ---------------------------------------------------------------------------
+# Codex CLI — <root>/.codex/config.toml
+# ---------------------------------------------------------------------------
+#
+# No TOML library is a project dependency (see mcp_setup._strip_jsonc for the
+# same hand-rolled-over-dependency choice with JSONC). The merge target is
+# narrow enough — replace-or-append one ``[mcp_servers.dftracer]`` table —
+# that a small regex-based table replace is safe and keeps every other table
+# or comment in the file untouched.
+
+_CODEX_TABLE_RE = re.compile(r"\[mcp_servers\.dftracer\][^\[]*")
+
+
+def _codex_table_block(url: str) -> str:
+    return f'[mcp_servers.dftracer]\nurl = "{url}"\n'
+
+
+def _is_project_trusted(root: Path) -> bool:
+    """Best-effort, read-only check of the user's own ~/.codex/config.toml.
+
+    Never writes there — marking a project trusted is the user's call (a
+    repo cannot be allowed to trust itself). This only avoids nagging a user
+    who has already done it.
+    """
+    global_config = Path.home() / ".codex" / "config.toml"
+    if not global_config.exists():
+        return False
+    try:
+        text = global_config.read_text()
+    except OSError:
+        return False
+    root_str = str(root.resolve())
+    pattern = re.compile(
+        r'\[projects\."' + re.escape(root_str) + r'"\][^\[]*trust_level\s*=\s*"trusted"',
+        re.DOTALL,
+    )
+    return bool(pattern.search(text))
+
+
+def configure_project_codex(root: Path, url: str, dry_run: bool = False) -> Path:
+    """Point ``.codex/config.toml`` (Codex CLI) at the managed server."""
+    config_path = root / ".codex" / "config.toml"
+    block = _codex_table_block(url)
+
+    existing = config_path.read_text() if config_path.exists() else ""
+    if _CODEX_TABLE_RE.search(existing):
+        new_text = _CODEX_TABLE_RE.sub(block, existing, count=1)
+    elif existing:
+        sep = "" if existing.endswith("\n\n") else ("\n" if existing.endswith("\n") else "\n\n")
+        new_text = existing + sep + block
+    else:
+        new_text = block
+
+    if new_text == existing:
+        print(f"  Codex:       {config_path} already up to date ({url})")
+        return config_path
+
+    if dry_run:
+        print(f"  [dry-run] Would write {config_path}: mcp_servers.dftracer.url = {url}")
+        return config_path
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    action = "Updated" if existing else "Configured"
+    config_path.write_text(new_text)
+    print(f"  Codex:       {action} {config_path}")
+    if config_path.is_symlink():
+        print(f"    note: symlink → {config_path.resolve()} (repo source was edited)")
+    if not _is_project_trusted(root):
+        print(
+            f'    note: Codex only loads project config for trusted projects — add '
+            f'[projects."{root.resolve()}"]\\n    trust_level = "trusted" to your own '
+            f"~/.codex/config.toml to let it load this."
+        )
+    return config_path
+
+
 def _strip_jsonc(text: str) -> str:
     """Remove JSONC comments and trailing commas, leaving parseable JSON.
 
@@ -223,12 +299,13 @@ def configure_opencode(root: Path, url: str, dry_run: bool = False) -> Path:
 
 def configure_project_clients(root: Path, host: str = "127.0.0.1", port: int = 5000,
                               path: str = "/mcp", dry_run: bool = False) -> str:
-    """Point Claude Code, Copilot and OpenCode at the stack's HTTP MCP server."""
+    """Point Claude Code, Copilot, OpenCode and Codex at the stack's HTTP MCP server."""
     url = _mcp_url(host, port, path)
     print(f"  Managed MCP server: {url}")
     configure_project_claude(root, url, dry_run)
     configure_vscode(root, url, dry_run)
     configure_opencode(root, url, dry_run)
+    configure_project_codex(root, url, dry_run)
     return url
 
 

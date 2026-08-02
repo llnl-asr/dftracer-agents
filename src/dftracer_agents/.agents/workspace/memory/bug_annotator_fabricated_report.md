@@ -7,6 +7,10 @@ metadata:
   
 ---
 
+**Canonical home:** see the `dftracer-annotator` agent template and the shared
+`report-format` section in `agents/common-sections.yaml` ("Never claim a flow is
+covered unless you saw the annotation").
+
 During the h5bench 2026-07-10 session, a `dftracer-annotator` subagent run returned a
 detailed, plausible-looking success report (108/142 functions annotated across 11 files,
 clang_syntax_check + clang_lint_annotations passing, DFTRACER_C_INIT present in all 7

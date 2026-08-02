@@ -6,10 +6,10 @@
   pure-Python task scripts. No compiled build system; "build" here means
   installing the Pegasus/Condor/PMC toolchain, not compiling the app.
 - **run_id:** `1000genome_workflow/20260725_203603`
-- **Workspace:** `/usr/WS2/haridev/dftracer-agents/workspaces/1000genome_workflow/20260725_203603`
+- **Workspace:** `$PROJECT_ROOT/workspaces/1000genome_workflow/20260725_203603`
   (`source/`, `baseline/`, `annotated/`, `scripts/`, `artifacts/`, `performance/`, `tmp/`)
 - **Dataset symlink (PFS, MANDATORY per Pipeline Policy rule 11):**
-  `/p/lustre5/haridev/workspaces/1000genome-workflow` — all app data (VCF
+  `$LUSTRE_ROOT/workspaces/1000genome-workflow` — all app data (VCF
   inputs, per-individual outputs, tarballs, PNG plots) must land here via
   `<WS>/dataset/<run_name>/`, never inside the workspace itself. dftracer
   TRACES stay under `<WS>/baseline/traces/` or `<WS>/<run_name>/traces/`
@@ -326,7 +326,7 @@ before STEP 6 if the planner wants it as a separate gate).
 - Test data: extracted 293 lines (253 `#`-metadata header lines + 40 real
   data lines) from `source/data/20130502/ALL.chr1.250000.vcf.gz` (chr1) via
   a Python gzip slice, written to
-  `/p/lustre5/haridev/workspaces/1000genome-workflow/smoke/ALL.chr1.tiny.vcf`
+  `$LUSTRE_ROOT/workspaces/1000genome-workflow/smoke/ALL.chr1.tiny.vcf`
   (PFS, per Pipeline Policy rule 11). `source/data/20130502/columns.txt`
   (2504 individuals, tab-separated) copied alongside into the same
   `smoke/` dir since `individuals.py` hardcodes `columfile='columns.txt'`
@@ -334,7 +334,7 @@ before STEP 6 if the planner wants it as a separate gate).
 - Command run (wrapper `<WS>/scripts/smoke_individuals.sh`, sources
   `<WS>/scripts/env.sh` + activates `<WS>/tools/venv/bin/activate`):
   `python3 <WS>/annotated/bin/individuals.py ALL.chr1.tiny.vcf 1 0 293 293`
-  run with cwd = `/p/lustre5/haridev/workspaces/1000genome-workflow/smoke`.
+  run with cwd = `$LUSTRE_ROOT/workspaces/1000genome-workflow/smoke`.
 - Env: `DFTRACER_ENABLE=1 DFTRACER_INIT=FUNCTION DFTRACER_INC_METADATA=1
   DFTRACER_DATA_DIR=all DFTRACER_LOG_FILE=<WS>/annotated/traces/smoke_individuals`.
 - Result: ran to completion in 15.61s, zero Python errors, wrote 2504
@@ -425,7 +425,7 @@ if available, else the plan's coverage list from STEP 4) for the optimizer.
 POSIX call/size histograms, diagnosis notes handed to STEP 8.
 
 **Status: DONE (2026-07-25).** Analyzed via `analyze(analyzer_preset="generic",
-cluster_n_workers=8, allocation_id=f3Mwh7sKgyd1)` against
+cluster_n_workers=8, allocation_id=<flux-jobid>)` against
 `<WS>/baseline_4node/traces/compact/` (`cluster_n_workers=32` caused a
 `DFTUtilsError: Resource temporarily unavailable` from over-threading (32
 workers x 192 io-threads on a shared allocation) -- dropped to 8 workers,
@@ -642,9 +642,9 @@ dftracer-report, dftracer-privacy-guard
 **Solution:** Reduced MPI rank count to `-N4 -n32` (1 master + 31 workers, ~8 workers/node, spanning all 4 nodes). This is a realistic worker pool size for a DAG with 46 tasks and modest concurrency.
 
 **Retry execution:**
-- **Allocation ID:** `f3Mwh7sKgyd1` (same 4-node allocation from original attempt)
-- **Launch command:** `flux proxy f3Mwh7sKgyd1 flux run -N4 -n32 --env LD_LIBRARY_PATH=<...> bash pmc_wrapper.sh`
-- **Run script updated:** `/usr/WS2/haridev/dftracer-agents/workspaces/1000genome_workflow/20260725_203603/baseline_4node/scripts/launch_4node_baseline.sh` (`WORKERS=32`, was 380)
+- **Allocation ID:** `<flux-jobid>` (same 4-node allocation from original attempt)
+- **Launch command:** `flux proxy <flux-jobid> flux run -N4 -n32 --env LD_LIBRARY_PATH=<...> bash pmc_wrapper.sh`
+- **Run script updated:** `$PROJECT_ROOT/workspaces/1000genome_workflow/20260725_203603/baseline_4node/scripts/launch_4node_baseline.sh` (`WORKERS=32`, was 380)
 - **Launch time:** 2026-07-25 20:23 UTC
 - **Completion time:** 2026-07-25 20:29 UTC
 - **Wall time:** 316.5 seconds (5.27 minutes) ✓ — well within the ~10-20 min target
@@ -653,7 +653,7 @@ dftracer-report, dftracer-privacy-guard
 **Workflow progress verification (first 3 minutes active monitoring):**
 - 20:23:30 - PMC startup env dumps from all 32 ranks (expected)
 - 20:23:40+ - MPI initialized: "Master starting with 31 workers" ✓
-- 20:23:45+ - Host allocation across 4 nodes (tuolumne1294, tuolumne1293, tuolumne1869, tuolumne1883) ✓
+- 20:23:45+ - Host allocation across 4 nodes (tuolumne<node>, tuolumne<node>, tuolumne<node>, tuolumne<node>) ✓
 - 20:24:00+ - Task execution starting: create_dir, stage_in tasks completed with exitcode 0 ✓ — **clear sign of progress, unlike the previous hang**
 - 20:24:30+ - Main workload (individuals tasks) being queued and scheduled (16 individual tasks) ✓
 - 20:29:00 - Workflow completed, all tasks succeeded
@@ -668,23 +668,23 @@ dftracer-report, dftracer-privacy-guard
 - **All tasks exited with status 0:** confirmed ✓
 
 **Trace collection:**
-- **Raw traces:** `/usr/WS2/haridev/dftracer-agents/workspaces/1000genome_workflow/20260725_203603/baseline_4node/traces/raw/` 
+- **Raw traces:** `$PROJECT_ROOT/workspaces/1000genome_workflow/20260725_203603/baseline_4node/traces/raw/` 
   - 32 trace files (one per rank/process, ~236 MB total gzip'd)
   - File sizes: 36KB–36MB per rank
   - Large traces (25–36MB): from I/O-heavy tasks (individuals.py, individuals_merge.py)
   - Small traces (36KB–793KB): from master rank and short-running tasks
 - **Splitting:** `mcp__dftracer__split` completed successfully
-- **Compacted traces:** `/usr/WS2/haridev/dftracer-agents/workspaces/1000genome_workflow/20260725_203603/baseline_4node/traces/compact/`
+- **Compacted traces:** `$PROJECT_ROOT/workspaces/1000genome_workflow/20260725_203603/baseline_4node/traces/compact/`
 - **Event count:** **26,207,527 total events** across all compacted traces ✓ — substantial POSIX I/O tracing data confirms dftracer function-mode annotation is working end-to-end
 
 **Resolved facts for downstream steps:**
 1. **Baseline run parameters confirmed:**
-   - 4 nodes (tuolumne1293, tuolumne1294, tuolumne1869, tuolumne1883)
+   - 4 nodes (tuolumne<node>, tuolumne<node>, tuolumne<node>, tuolumne<node>)
    - 32 MPI ranks (31 workers + 1 master)
    - 46 total tasks in DAG (confirmed by PMC task scheduling output)
    - Actual wall time: 5.27 minutes (well within budget)
    - Compacted trace path: `<WS>/baseline_4node/traces/compact/`
-   - Raw run log: `/tmp/haridev/claude-35619/-usr-WS2-haridev-dftracer-agents/8117ceb0-728f-46e6-b7b0-ab25480591e0/tasks/bxs9dm61a.output`
+   - Raw run log: `/tmp/$USER/claude-35619/-usr-WS2-$USER-dftracer-agents/<uuid>/tasks/bxs9dm61a.output`
 
 2. **Lesson for allocation-aware runs (proposed for STEP 7 update, STEP 8 plan, and software-pegasus skill):**
    - **MPI rank count must match actual task parallelism, not just fill available cores:** PMC scheduler is most efficient when worker count ≈ typical concurrent task count. For small DAGs (< 50 tasks), 1-worker-per-node is often overkill; 8 workers/node provides better scheduling flexibility at no performance cost relative to the task-level synchronization bottleneck. For comparison runs on the same hardware, use the same -n value to keep the MPI/PMC overhead constant.
@@ -700,7 +700,7 @@ dftracer-report, dftracer-privacy-guard
 
 ## STEP 9: dftracer-tracer (optimized 4-node validation run)
 
-**Status: DONE (2026-07-26).** OPT1 run completed successfully using the new flux allocation f3NXj3jCbhtK (16 nodes available, 4 nodes used).
+**Status: DONE (2026-07-26).** OPT1 run completed successfully using the new flux allocation <flux-jobid> (16 nodes available, 4 nodes used).
 
 **Configuration (identical to baseline_4node, with optimizations enabled):**
 - 4 nodes, 32 MPI ranks (same as baseline)
@@ -708,7 +708,7 @@ dftracer-report, dftracer-privacy-guard
 - Wrapper script: `<WS>/opt1/scripts/pmc_wrapper.sh`
 - Environment: `IND_ROW_PRECOMPUTE=1 IND_TAR_STREAM=1` (from STEP 8 optimizations)
 - Traces: `<WS>/opt1/traces/raw/` → split to `<WS>/opt1/traces/compact/` (57 files, 227 MB)
-- App data output: `/p/lustre5/haridev/workspaces/1000genome-workflow/opt1/`
+- App data output: `$LUSTRE_ROOT/workspaces/1000genome-workflow/opt1/`
 
 **Wall-Time Comparison (authoritative, measured via PMC's own timer):**
 | Config | Wall Time | vs Baseline |

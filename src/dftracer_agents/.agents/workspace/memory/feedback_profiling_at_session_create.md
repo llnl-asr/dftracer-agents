@@ -7,6 +7,10 @@ metadata:
   
 ---
 
+**Canonical home:** see the `dftracer-profiling` skill (Troubleshooting section now
+carries the OTEL/vscode-server detail from this file in full) and CLAUDE.md Pipeline
+Policy rule 7.
+
 Pipeline self-profiling must start at **session creation**, not at the first
 pipeline step: `profile_bind` is called immediately after `session_create`
 succeeds. Every step agent then brackets its work with `profile_step_begin` /

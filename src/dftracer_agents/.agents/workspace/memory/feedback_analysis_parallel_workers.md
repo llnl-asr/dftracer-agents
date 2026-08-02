@@ -8,6 +8,10 @@ metadata:
   modified: 2026-07-26T03:59:48.615Z
 ---
 
+**Canonical home:** see the `workload-ior` skill ("Trace analysis speed + diagnose
+tool bug" section already carries the `cluster_n_workers` race and sizing findings)
+and the `dftracer-diagnoser` skill.
+
 Trace analysis (dfanalyzer via `mcp__dftracer__analyze`) must complete within a
 few minutes at most. The default single local Dask worker is too slow.
 

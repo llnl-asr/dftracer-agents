@@ -38,6 +38,10 @@ claude        .claude/agents/<name>.md       model: <class>; tools: comma string
 opencode      .opencode/agents/<name>.md     mode: subagent; model: provider/id;
                                              permission: {"*": deny, <tool>: allow} map
 copilot       .github/agents/<name>.agent.md tools: YAML list; mcp as server/tool
+codex         .codex/agents/<name>.toml      TOML: developer_instructions, model,
+                                             model_reasoning_effort, sandbox_mode,
+                                             [mcp_servers.dftracer]; no tools: key —
+                                             Codex has no per-tool allow/deny concept
 ============  =============================  ==========================================
 
 Rendered files are build artifacts: gitignored, stamped with a generation
@@ -52,7 +56,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-HARNESSES = ("claude", "opencode", "copilot")
+HARNESSES = ("claude", "opencode", "copilot", "codex")
 
 GEN_MARKER_FMT = (
     "# generated-by: dftracer-agents ({harness}) — edit the YAML template under "
@@ -65,6 +69,7 @@ HARNESS_OUTPUT = {
     "claude": (".claude/agents", "{name}.md"),
     "opencode": (".opencode/agents", "{name}.md"),
     "copilot": (".github/agents", "{name}.agent.md"),
+    "codex": (".codex/agents", "{name}.toml"),
 }
 
 # Built-in tool-name mapping per harness. Claude names are the neutral form
@@ -213,6 +218,9 @@ def resolve_harness_models(target_root: Optional[Path] = None) -> Dict[str, Dict
 
     cp = resolved.get("copilot", {})
     out["copilot"] = {level: str(cp.get(level, "UNRESOLVED")) for level in LEVELS}
+
+    cx = resolved.get("codex", {})
+    out["codex"] = {level: str(cx.get(level, "UNRESOLVED")) for level in LEVELS}
     return out
 
 
@@ -313,6 +321,75 @@ def _copilot_tool_name(tool: str) -> str:
     return _COPILOT_BUILTIN.get(tool, tool.lower())
 
 
+def _toml_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _toml_multiline(value: str) -> str:
+    """Render *value* as a TOML basic multi-line string (``\"\"\"...\"\"\"``).
+
+    A TOML literal string (``'''...'''``) has no escape mechanism at all, so
+    a literal ``'''`` anywhere in the body would be unrecoverable — not
+    workable for generated markdown bodies we don't fully control the
+    content of. A basic string can represent anything as long as every
+    backslash and quote is individually escaped (escape backslashes FIRST,
+    so quote-escaping doesn't get re-escaped) — more escaping than the TOML
+    spec strictly requires (only 3+ run of quotes actually needs it), but
+    always correct.
+    """
+    body = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"""\n{body}"""'
+
+
+def _toml_dump(fields: Dict[str, Any]) -> str:
+    """Minimal TOML serializer for flat string/list-of-string fields plus one
+    level of ``[table]`` entries (nested dicts). Sufficient for the agent
+    TOML files this module renders — not a general-purpose TOML writer.
+    """
+    lines: List[str] = []
+    tables: List[tuple] = []
+    for key, value in fields.items():
+        if isinstance(value, dict):
+            tables.append((key, value))
+        elif isinstance(value, list):
+            items = ", ".join(f'"{_toml_escape(str(v))}"' for v in value)
+            lines.append(f"{key} = [{items}]")
+        elif key == "developer_instructions":
+            lines.append(f"{key} = {_toml_multiline(str(value))}")
+        else:
+            lines.append(f'{key} = "{_toml_escape(str(value))}"')
+    for name, table in tables:
+        lines.append(f"\n[{name}]")
+        for k, v in table.items():
+            lines.append(f'{k} = "{_toml_escape(str(v))}"')
+    return "\n".join(lines) + "\n"
+
+
+def render_codex(template: Dict[str, Any], level_models: Dict[str, str]) -> str:
+    """Codex CLI custom subagent: TOML, not markdown+frontmatter.
+
+    Codex has no per-tool allow/deny concept (that's ``sandbox_mode`` +
+    ``approval_policy`` instead, neither of which is safely settable from a
+    repo-tracked file — see docs/harnesses.rst), so ``template['tools']`` is
+    intentionally not rendered here. MCP server registration is likewise left
+    to the project-level ``.codex/config.toml`` (see ``mcp_setup.py``) rather
+    than duplicated per-agent.
+    """
+    body = _skill_preamble(template) + _body_markdown(template)
+    fields: Dict[str, Any] = {
+        "name": template["name"],
+        "description": template["description"],
+        "developer_instructions": body,
+        "model": level_models.get(template["model_level"], "gpt-5-codex"),
+    }
+    effort = template.get("effort")
+    if effort:
+        fields["model_reasoning_effort"] = effort
+    fields["sandbox_mode"] = "workspace-write"
+    header = GEN_MARKER_FMT.format(harness="codex")
+    return f"{header}\n\n" + _toml_dump(fields)
+
+
 def render_copilot(template: Dict[str, Any], level_models: Dict[str, str]) -> str:
     fields: Dict[str, Any] = {
         "name": template["name"],
@@ -335,6 +412,7 @@ RENDERERS = {
     "claude": render_claude,
     "opencode": render_opencode,
     "copilot": render_copilot,
+    "codex": render_codex,
 }
 
 

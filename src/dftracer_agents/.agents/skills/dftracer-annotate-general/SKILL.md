@@ -62,6 +62,8 @@ know to pull in dftracer.
 - Is a small utility called in a tight inner loop (would add overhead per iteration)
 - Is a constructor/destructor with no I/O side effects
 - Is already wrapped by a larger annotated function that covers the same work
+  (Python pure-orchestration call chains: see `dftracer-annotate-python` Rule 9
+  for the full pattern and the distinction from Rule A below)
 
 **Always annotate, even if they look small:**
 - Backend lifecycle functions (`*_init`, `*_final`, `*_initialize`, `*_finalize`,

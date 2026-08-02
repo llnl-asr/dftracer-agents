@@ -7,6 +7,9 @@ metadata:
   
 ---
 
+**Canonical home:** codified in CLAUDE.md Pipeline Policy rules 1-6 and the
+`dftracer-lessons` skill.
+
 Design rules for the dftracer agent pipeline (from user, 2026-07-07):
 
 1. **Session first, then plan.** Main thread creates OR resumes a session and asks the user new-vs-resume BEFORE running the planner. The `dftracer-pipeline-planner` requires a `run_id` and never creates a session itself.

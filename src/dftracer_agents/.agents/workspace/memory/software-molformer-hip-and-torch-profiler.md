@@ -5,6 +5,11 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `software-molformer` skill (app-specific findings: build
+recipe, 4-rank/16-GPU DDP SIGABRT, LSF hardcode patch) and the new `software-rocm`
+skill (generic findings: HIP init-ordering, profiler-cycle conflict, ROCm
+base-vs-patched tree matching, RCCL transport selection).
+
 Re-ran IBM MoLFormer (PyTorch Lightning, AMD MI300A) in the existing session
 under the LATEST `develop` dftracer + pydftracer, with **HIP tracing**
 (rocprofiler-sdk) and the **PyTorch profiler** both enabled.
@@ -53,7 +58,8 @@ Established by bisection:
   allocation expired — promising but NOT confirmed to completion.
 - `rccl/working-env` is required, not optional: without it the job hangs
   instead (its `FI_MR_CACHE_MONITOR=userfaultfd` is load-bearing, per
-  [[software-rccl]]).
+  [[software-rocm]]'s "RCCL transport selection" section — RCCL-specific
+  content now lives there, there is no separate `software-rccl` skill).
 
 ## 4-node / 16-GPU scale-out
 

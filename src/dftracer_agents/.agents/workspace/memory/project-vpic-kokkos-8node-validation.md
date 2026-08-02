@@ -5,6 +5,10 @@ metadata:
   type: project
 ---
 
+**Canonical home:** see the `workload-vpic-kokkos` skill (full build/annotation/deck
+notes) plus `dftracer-compute-optimization` (OMP threading fix) and
+`dftracer-communication-optimization` (Allreduce coalescing).
+
 Completed a full annotate → trace → diagnose → optimize → 8-node validate
 pipeline on vpic-kokkos (github.com/lanl/vpic-kokkos) on Tuolumne, and this
 time went further: applied and measured two real optimizations rather than
