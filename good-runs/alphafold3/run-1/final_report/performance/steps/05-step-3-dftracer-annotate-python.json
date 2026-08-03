@@ -1,0 +1,43 @@
+{
+  "run_id": "af3/20260729_044330",
+  "key": "STEP 3: dftracer-annotate-python",
+  "index": 5,
+  "agent": "dftracer-annotate-python",
+  "notes": "AlphaFold3 Python annotation: 20 data-pipeline files + 3 feature-pipeline files + 1 GPU-entry + 1 run entry; cost-gated per-file; rule 0 skip for tight loops + property accessors; C++ parsers out-of-scope",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 461.149,
+  "wall_s": 461.149,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 461.149,
+      "error": "",
+      "start_ns": 1785303213825122598,
+      "end_ns": 1785303674974321231
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

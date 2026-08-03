@@ -1,0 +1,43 @@
+{
+  "run_id": "ray_molformer/20260725_000436",
+  "key": "dftracer-analyzer (baseline_4node)",
+  "index": 1,
+  "agent": "dftracer-analyzer",
+  "notes": "Analyze fresh 4-node/16-GPU baseline_4node trace (225MB, 56 chunks, ~27.3M events), alloc f3Ppem8DiFzP",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 575.039,
+  "wall_s": 575.039,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 575.039,
+      "error": "",
+      "start_ns": 1785661848628577794,
+      "end_ns": 1785662423667195400
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

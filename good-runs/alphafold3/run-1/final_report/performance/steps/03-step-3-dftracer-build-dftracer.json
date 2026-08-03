@@ -1,0 +1,43 @@
+{
+  "run_id": "af3/20260729_044330",
+  "key": "STEP 3: dftracer-build-dftracer",
+  "index": 3,
+  "agent": "dftracer-build-dftracer",
+  "notes": "Install dftracer (pydftracer + dftracer-utils) into AF3 venv; single-process JAX app, no MPI/HDF5, no HIP tracing",
+  "status": "failed",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 1,
+  "successful_attempts": 0,
+  "exec_s": 712.225,
+  "wall_s": 712.225,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "failed",
+      "duration_s": 712.225,
+      "error": "dftracer installed but tracing non-functional: C extension loads but no traces written, likely due to MPI being auto-enabled for a single-process (non-MPI) app. Requires tool enhancement to session_install_dftracer.",
+      "start_ns": 1785301845547327423,
+      "end_ns": 1785302557772530840
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

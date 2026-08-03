@@ -166,6 +166,7 @@
       "mcp__dftracer__session_detect",
       "mcp__dftracer__session_detect_ml_workload",
       "mcp__dftracer__session_diagnose_bottlenecks",
+      "mcp__dftracer__session_edit_file",
       "mcp__dftracer__session_final_report",
       "mcp__dftracer__session_generate_dftracer_pc",
       "mcp__dftracer__session_generate_optimization_proposals",

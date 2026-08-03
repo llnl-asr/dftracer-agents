@@ -9,6 +9,7 @@ tools:
 - mcp__dftracer__session_get_run_paths
 - mcp__dftracer__session_read_file
 - mcp__dftracer__session_write_file
+- mcp__dftracer__session_edit_file
 - mcp__dftracer__comparator
 - mcp__dftracer__opt_kb_lookup
 - mcp__dftracer__opt_kb_render
@@ -126,6 +127,22 @@ sections:
     5. `opt_kb_render()` once, after all four subagents' `opt_kb_record` calls have
        landed, so the rendered `dftracer-optimization-kb` skill reflects the whole
        session, not a partial one.
+    6. **Splice the merged results into `pipeline_plan.md` with
+       `session_edit_file`, not `session_write_file`.** By STEP 8 the plan file
+       is typically thousands of lines; `session_write_file` only overwrites a
+       file in FULL, which means rewriting the entire plan from memory just to
+       insert one section — slow, error-prone, and easy to silently drop earlier
+       steps' content. Instead: `session_edit_file(run_id, filepath="pipeline_plan.md",
+       subfolder=".", old_string="## STEP 9: dftracer-report", new_string="<your
+       merged STEP 8 results>\n\n## STEP 9: dftracer-report")` — this inserts your
+       block immediately before STEP 9 without touching anything else in the file.
+       Append the changelog entry to `pipeline_plan_changelog.md` the same way
+       (anchor on a stable trailing string, e.g. the last line of the file, or use
+       `session_write_file` there only if the changelog is short enough to hold
+       in full). If `session_edit_file` is unavailable for some reason, fall back
+       to writing the block to a scratch file under `artifacts/` and reporting
+       the exact splice point back to the main thread rather than attempting a
+       full-file rewrite from memory.
 - title: Re-diagnose after the loop and ask before iterating (MANDATORY, standing rule)
   body: |
     After every row in the merged table has been applied (or explicitly skipped),

@@ -87,3 +87,14 @@ resolve the actual `FH` paths first: on that same run, 117,920 of the observed `
 calls were the Python interpreter/venv `site-packages` import path being walked repeatedly by
 newly-spawned Ray worker processes (a dynamic-loading/module-import storm, not app I/O) — see
 `dftracer-io-optimization` for the general version of this lesson.
+
+## `plasma_store` path strings in a trace can be `default_worker.py` command-line args, not real spill files
+
+Confirmed on ray_molformer (2026-08-02, 4-node/16-GPU): a raw grep for `plasma_store`/spill
+paths in a trace can false-positive, because Ray embeds
+`--object-store-name=.../plasma_store` in every `default_worker.py` process's command-line
+string, which shows up in trace/process metadata and looks like a file access even when it
+isn't one. Filter out cmdline records before concluding real object spilling occurred, e.g.
+`zcat *.pfw.gz | grep -v default_worker.py | grep '<ray_temp_dir>'`. On ray_molformer the
+filtered result was 337 ops, all logs/sockets/`ports_by_node.json`/artifacts metadata — zero
+real spill activity, confirming the diagnosis was I/O-negligible rather than spill-bound.

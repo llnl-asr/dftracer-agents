@@ -3,7 +3,7 @@ name: dftracer-communication-optimization
 description: Communication-component (MPI/collective/network) bottleneck-to-optimization mappings, papers, and L1/L2/L3 strategies for the dftracer optimization pipeline
 ---
 
-Cross-references: [[dftracer-io-optimization]] [[dftracer-compute-optimization]] [[dftracer-memory-optimization]] [[dftracer-optimization-kb]] [[software-mpi]]
+Cross-references: [[dftracer-io-optimization]] [[dftracer-compute-optimization]] [[dftracer-memory-optimization]] [[dftracer-optimization-kb]] [[software-mpi]] [[software-rocm]]
 
 Communication-component sibling of `dftracer-io-optimization`. The metric key used by the MCP
 optimization tools is `comm_wait` (see `_L1_STRATEGIES`/`_L2_STRATEGIES`/`_L3_STRATEGIES["comm_wait"]`
@@ -160,3 +160,30 @@ DAG's own structure, e.g. narrow serialization barriers between wide fan-out lev
 schedulable inefficiency -- do not "fix" it by changing rank count. Confirmed on this
 workflow: 8-level DAG, max width 17 (individuals fan-out), vs. 31 workers -- the 19.4%
 utilization figure is expected and correct, not a target for optimization.
+
+## RCCL/NCCL collective kernels hide inside `KERNEL_DISPATCH` (compute), not `comm`, when HIP tracing is on
+
+Confirmed on ray_molformer (2026-08-02, 4-node/16-GPU, Ray Train DDP over RCCL,
+`DFTRACER_ENABLE_HIP_TRACING=ON`): with HIP tracing enabled, RCCL device kernels DO appear in
+the trace -- but as `cat=KERNEL_DISPATCH` events named `<n>_Z21ncclDevKern...` (mangled C++
+symbols), which the analyzer's Layer Breakdown attributes entirely to the COMPUTE dimension,
+not `comm`. This is the inverse of the more commonly-documented gap (RCCL time invisible when
+HIP tracing is off) -- here it's visible but mislabeled. Always grep `kernel_dispatch` for
+`ncclDevKern` and subtract that time from the compute bucket before ranking dimensions, or
+you'll systematically under-count communication and over-count compute. Confirmed magnitude:
+541.7s of RCCL collective time was hidden this way (95.4% of the entire 568.0s
+KERNEL_DISPATCH bucket), while the analyzer's own `comm` category (306.9s, pure Ray
+control-plane `Worker.get_objects`/serialization) undercounted the real communication cost by
+roughly 2.8x.
+
+**Diagnose rank/straggler skew vs. bandwidth limitation by kernel-duration percentile before proposing NCCL_ALGO/PROTO tuning:** once RCCL time is correctly attributed, check the
+duration distribution of the collective kernels themselves. A bimodal distribution -- most
+kernels fast (e.g. p50 ~80ms) with a long tail of much slower ones (e.g. max 8.5s) -- is the
+signature of rank/straggler skew (the kernel blocks until the slowest peer arrives at the
+barrier), NOT a transport/bandwidth limitation. If less than ~20% of total collective time
+sits in the fast/sub-200ms kernels, algorithm/protocol/channel tuning (`NCCL_ALGO`,
+`NCCL_PROTO`, buffer sizing) has almost nothing to act on -- the real lever is load-balancing
+the per-rank work (e.g. balanced data sharding, `drop_last=True`) so every rank arrives at
+each collective at the same time. Confirmed on ray_molformer: 87% of collective time sat in a
+long tail of slow kernels; cite arXiv:2505.23523 (*Efficient AllReduce with Stragglers*) for
+this class of fix.

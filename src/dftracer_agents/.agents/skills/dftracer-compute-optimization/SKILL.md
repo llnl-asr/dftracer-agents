@@ -3,7 +3,7 @@ name: dftracer-compute-optimization
 description: Compute-component bottleneck-to-optimization mappings, papers, and L1/L2/L3 strategies for the dftracer optimization pipeline
 ---
 
-Cross-references: [[dftracer-io-optimization]] [[dftracer-communication-optimization]] [[dftracer-memory-optimization]] [[dftracer-optimization-kb]]
+Cross-references: [[dftracer-io-optimization]] [[dftracer-communication-optimization]] [[dftracer-memory-optimization]] [[dftracer-optimization-kb]] [[software-rocm]]
 
 This skill is the compute-component sibling of `dftracer-io-optimization`. Same rules apply
 (citation-backed, never "do less", never change the app's actual computation/algorithm as a
@@ -255,3 +255,14 @@ its absolute savings stay flat, because the denominator (total time) shrank fast
 I/O fix's own cost did (tar-streaming here: -13.2% of the ORIGINAL total standalone, but
 removed 5.5s of the remaining 6.0s once parse cost collapsed -- i.e. it became relatively far
 more important after the compute fix, not less).
+
+**Use `grep -a` on run logs that might contain binary/core-dump bytes.** Confirmed on
+ray_molformer (2026-08-02): a run log containing embedded core-dump/binary bytes (from a
+crashed process's output mixed into the same log file) makes a plain `grep` silently return
+no matches on that section, even when the surrounding text content is exactly what you're
+searching for -- `grep` treats the file as binary once it hits non-text bytes and stops
+matching normally. This can cause a genuinely successful run to be misread as a failure (or
+vice versa) if you're grepping for a success/completion marker downstream of the binary
+content. Always use `grep -a` (treat as text) when scanning run logs for HPC jobs, especially
+ones where a ROCm/HIP/CUDA crash or core dump might have written raw bytes into the same
+stdout/stderr stream as the rest of the log.

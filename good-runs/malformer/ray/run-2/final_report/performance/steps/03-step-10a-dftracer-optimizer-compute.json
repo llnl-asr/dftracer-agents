@@ -1,0 +1,43 @@
+{
+  "run_id": "ray_molformer/20260725_000436",
+  "key": "STEP 10a: dftracer-optimizer-compute",
+  "index": 3,
+  "agent": "dftracer-optimizer-compute",
+  "notes": "second pass: 4-node baseline_4node bring-up attribution (1864.4s molformer_ray_descriptors bucket)",
+  "status": "superseded",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 0,
+  "exec_s": 23.668,
+  "wall_s": 23.668,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 23.668,
+      "error": "",
+      "start_ns": 1785662732980419700,
+      "end_ns": 1785662756648362084
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

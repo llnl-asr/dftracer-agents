@@ -1,0 +1,1164 @@
+Binary files $WS/baseline/source/__pycache__/run_alphafold.cpython-311.pyc and $WS/annotated/source/__pycache__/run_alphafold.cpython-311.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/run_alphafold.py $WS/annotated/source/run_alphafold.py
+--- $WS/baseline/source/run_alphafold.py	2026-07-28 21:43:33.807116000 -0700
++++ $WS/annotated/source/run_alphafold.py	2026-07-28 22:44:03.682473000 -0700
+@@ -52,6 +52,13 @@
+ import jax
+ from jax import numpy as jnp
+ import numpy as np
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("alphafold3")
++_dft_log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=-1)
++# dftracer app-parameter metadata
++_dft_log.log_metadata_event("app", "alphafold3")
++_dft_log.log_metadata_event("scope", "data-pipeline+entry-boundaries")
++_dft_log.log_metadata_event("hypothesis", "CPU MSA parsing dominates over GPU inference")
+ 
+ 
+ #_HOME_DIR = pathlib.Path(os.environ.get('PWD'))
+@@ -297,6 +304,7 @@
+ class ModelRunner:
+   """Helper class to run structure prediction stages."""
+ 
++  @_dft.log_init
+   def __init__(
+       self,
+       config: model.Model.Config,
+@@ -326,6 +334,7 @@
+         jax.jit(forward_fn.apply, device=self._device), self.model_params
+     )
+ 
++  @_dft.log
+   def run_inference(
+       self, featurised_example: features.BatchDict, rng_key: jnp.ndarray
+   ) -> model.ModelResult:
+@@ -348,6 +357,7 @@
+     result['__identifier__'] = identifier
+     return result
+ 
++  @_dft.log
+   def extract_inference_results_and_maybe_embeddings(
+       self,
+       batch: features.BatchDict,
+@@ -389,6 +399,7 @@
+   embeddings: dict[str, np.ndarray] | None = None
+ 
+ 
++@_dft.log
+ def predict_structure(
+     fold_input: folding_input.Input,
+     model_runner: ModelRunner,
+@@ -454,6 +465,7 @@
+   return all_inference_results
+ 
+ 
++@_dft.log
+ def write_fold_input_json(
+     fold_input: folding_input.Input,
+     output_dir: os.PathLike[str] | str,
+@@ -466,6 +478,7 @@
+     f.write(fold_input.to_json())
+ 
+ 
++@_dft.log
+ def write_outputs(
+     all_inference_results: Sequence[ResultsForSeed],
+     output_dir: os.PathLike[str] | str,
+@@ -540,6 +553,7 @@
+   ...
+ 
+ 
++@_dft.log
+ def replace_db_dir(path_with_db_dir: str, db_dirs: Sequence[str]) -> str:
+   """Replaces the DB_DIR placeholder in a path with the given DB_DIR."""
+   template = string.Template(path_with_db_dir)
+@@ -556,6 +570,7 @@
+   return path_with_db_dir
+ 
+ 
++@_dft.log
+ def process_fold_input(
+     fold_input: folding_input.Input,
+     data_pipeline_config: pipeline.DataPipelineConfig | None,
+@@ -636,6 +651,7 @@
+   return output
+ 
+ 
++@_dft.log
+ def main(_):
+   if _JAX_COMPILATION_CACHE_DIR.value is not None:
+     jax.config.update(
+@@ -783,6 +799,7 @@
+     num_fold_inputs += 1
+ 
+   print(f'Done running {num_fold_inputs} fold jobs.')
++  _dft_log.finalize()
+ 
+ 
+ if __name__ == '__main__':
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/common/folding_input.py $WS/annotated/source/src/alphafold3/common/folding_input.py
+--- $WS/baseline/source/src/alphafold3/common/folding_input.py	2026-07-28 21:43:33.923939000 -0700
++++ $WS/annotated/source/src/alphafold3/common/folding_input.py	2026-07-28 22:46:04.942480000 -0700
+@@ -30,6 +30,8 @@
+ from alphafold3.structure import mmcif as mmcif_lib
+ import rdkit.Chem as rd_chem
+ import zstandard as zstd
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("IO")
+ 
+ 
+ BondAtomId: TypeAlias = tuple[str, int, str]
+@@ -48,6 +50,7 @@
+     raise ValueError(f'Unexpected JSON keys in: {", ".join(sorted(bad_keys))}')
+ 
+ 
++@_dft.log
+ def _read_file(path: pathlib.Path, json_path: pathlib.Path | None) -> str:
+   """Reads a maybe compressed (gzip, xz, zstd) file from the given path.
+ 
+@@ -1194,6 +1197,7 @@
+         user_ccd=None,
+     )
+ 
++  @_dft.log
+   @classmethod
+   def from_sequence(cls, name: str, sequence_objects: list, type_list = None, unpaired_msa_list=None, seeds = None) -> Self:
+     sequences = [sequence for sequence in sequence_objects]
+@@ -1474,6 +1478,7 @@
+     )
+ 
+ 
++@_dft.log
+ def load_fold_inputs_from_path(path: pathlib.Path, seeds=None, unpaired_msa_dir=None) -> Iterator[Input]:
+   """Loads multiple fold inputs from a JSON string."""
+  
+Binary files $WS/baseline/source/src/alphafold3/common/__pycache__/base_config.cpython-311.pyc and $WS/annotated/source/src/alphafold3/common/__pycache__/base_config.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/common/__pycache__/folding_input.cpython-311.pyc and $WS/annotated/source/src/alphafold3/common/__pycache__/folding_input.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/common/__pycache__/resources.cpython-311.pyc and $WS/annotated/source/src/alphafold3/common/__pycache__/resources.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/common/testing/__pycache__/data.cpython-311.pyc and $WS/annotated/source/src/alphafold3/common/testing/__pycache__/data.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/constants/converters/__pycache__/ccd_pickle_gen.cpython-311.pyc and $WS/annotated/source/src/alphafold3/constants/converters/__pycache__/ccd_pickle_gen.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/constants/converters/__pycache__/chemical_component_sets_gen.cpython-311.pyc and $WS/annotated/source/src/alphafold3/constants/converters/__pycache__/chemical_component_sets_gen.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/constants/__pycache__/atom_types.cpython-311.pyc and $WS/annotated/source/src/alphafold3/constants/__pycache__/atom_types.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/constants/__pycache__/chemical_components.cpython-311.pyc and $WS/annotated/source/src/alphafold3/constants/__pycache__/chemical_components.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/constants/__pycache__/chemical_component_sets.cpython-311.pyc and $WS/annotated/source/src/alphafold3/constants/__pycache__/chemical_component_sets.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/constants/__pycache__/mmcif_names.cpython-311.pyc and $WS/annotated/source/src/alphafold3/constants/__pycache__/mmcif_names.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/constants/__pycache__/periodic_table.cpython-311.pyc and $WS/annotated/source/src/alphafold3/constants/__pycache__/periodic_table.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/constants/__pycache__/residue_names.cpython-311.pyc and $WS/annotated/source/src/alphafold3/constants/__pycache__/residue_names.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/constants/__pycache__/side_chains.cpython-311.pyc and $WS/annotated/source/src/alphafold3/constants/__pycache__/side_chains.cpython-311.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/featurisation.py $WS/annotated/source/src/alphafold3/data/featurisation.py
+--- $WS/baseline/source/src/alphafold3/data/featurisation.py	2026-07-28 21:43:36.718166000 -0700
++++ $WS/annotated/source/src/alphafold3/data/featurisation.py	2026-07-28 22:35:07.462795000 -0700
+@@ -19,8 +19,11 @@
+ from alphafold3.model import features
+ from alphafold3.model.pipeline import pipeline
+ import numpy as np
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
++@_dft.log
+ def validate_fold_input(fold_input: folding_input.Input):
+   """Validates the fold input contains MSA and templates for featurisation."""
+   for i, chain in enumerate(fold_input.protein_chains):
+@@ -35,6 +38,7 @@
+       raise ValueError(f'RNA chain {i + 1} is missing unpaired MSA.')
+ 
+ 
++@_dft.log
+ def featurise_input(
+     fold_input: folding_input.Input,
+     ccd: chemical_components.Ccd,
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/msa_config.py $WS/annotated/source/src/alphafold3/data/msa_config.py
+--- $WS/baseline/source/src/alphafold3/data/msa_config.py	2026-07-28 21:43:36.721127000 -0700
++++ $WS/annotated/source/src/alphafold3/data/msa_config.py	2026-07-28 22:35:11.524611000 -0700
+@@ -14,6 +14,8 @@
+ import datetime
+ from typing import Self
+ from alphafold3.constants import mmcif_names
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ def _validate_chain_poly_type(chain_poly_type: str) -> None:
+@@ -97,6 +99,7 @@
+   chain_poly_type: str
+   crop_size: int | None
+ 
++  @_dft.log
+   def __post_init__(self):
+     if self.crop_size is not None and self.crop_size < 2:
+       raise ValueError(f'crop_size must be None or >= 2: {self.crop_size}')
+@@ -131,6 +134,7 @@
+   hmmsearch_config: HmmsearchConfig
+   max_a3m_query_sequences: int | None = 300
+ 
++  @_dft.log
+   def __post_init__(self):
+     _validate_chain_poly_type(self.chain_poly_type)
+ 
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/msa_features.py $WS/annotated/source/src/alphafold3/data/msa_features.py
+--- $WS/baseline/source/src/alphafold3/data/msa_features.py	2026-07-28 21:43:36.723097000 -0700
++++ $WS/annotated/source/src/alphafold3/data/msa_features.py	2026-07-28 22:35:13.320676000 -0700
+@@ -14,6 +14,8 @@
+ import re
+ from alphafold3.constants import mmcif_names
+ import numpy as np
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ _PROTEIN_TO_ID = {
+     'A': 0,
+@@ -68,6 +70,7 @@
+ }
+ 
+ 
++@_dft.log
+ def extract_msa_features(
+     msa_sequences: Sequence[str], chain_poly_type: str
+ ) -> tuple[np.ndarray, np.ndarray]:
+@@ -178,6 +181,7 @@
+ )
+ 
+ 
++@_dft.log
+ def extract_species_ids(msa_descriptions: Sequence[str]) -> Sequence[str]:
+   """Extracts species ID from MSA UniProtKB sequence identifiers.
+ 
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/msa.py $WS/annotated/source/src/alphafold3/data/msa.py
+--- $WS/baseline/source/src/alphafold3/data/msa.py	2026-07-28 21:43:36.720113000 -0700
++++ $WS/annotated/source/src/alphafold3/data/msa.py	2026-07-28 22:35:09.858687000 -0700
+@@ -23,6 +23,8 @@
+ from alphafold3.data.tools import msa_tool
+ from alphafold3.data.tools import nhmmer
+ import numpy as np
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ class Error(Exception):
+@@ -52,6 +54,7 @@
+ class Msa:
+   """Multiple Sequence Alignment container with methods for manipulating it."""
+ 
++  @_dft.log_init
+   def __init__(
+       self,
+       query_sequence: str,
+@@ -109,6 +112,7 @@
+           f'First MSA sequence {self.sequences[0]} is not the {query_sequence=}'
+       )
+ 
++  @_dft.log
+   @classmethod
+   def from_multiple_msas(
+       cls, msas: Sequence[Self], deduplicate: bool = True
+@@ -152,6 +156,7 @@
+         deduplicate=deduplicate,
+     )
+ 
++  @_dft.log
+   @classmethod
+   def from_multiple_a3ms(
+       cls, a3ms: Sequence[str], chain_poly_type: str, deduplicate: bool = True
+@@ -243,6 +248,7 @@
+   def __repr__(self) -> str:
+     return f'Msa({self.depth} sequences, {self.chain_poly_type})'
+ 
++  @_dft.log
+   def to_a3m(self) -> str:
+     """Returns the MSA in the A3M format."""
+     a3m_lines = []
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/msa_store.py $WS/annotated/source/src/alphafold3/data/msa_store.py
+--- $WS/baseline/source/src/alphafold3/data/msa_store.py	2026-07-28 21:43:36.725162000 -0700
++++ $WS/annotated/source/src/alphafold3/data/msa_store.py	2026-07-28 22:35:15.050601000 -0700
+@@ -15,6 +15,8 @@
+ 
+ from alphafold3.data import msa
+ from alphafold3.data import msa_config
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ MsaErrors: TypeAlias = Sequence[tuple[msa_config.RunConfig, str]]
+@@ -45,6 +47,7 @@
+ class EmptyMsaProvider:
+   """MSA provider that returns just the query sequence, useful for testing."""
+ 
++  @_dft.log_init
+   def __init__(self, chain_polymer_type: str):
+     self._chain_polymer_type = chain_polymer_type
+ 
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/parsers.py $WS/annotated/source/src/alphafold3/data/parsers.py
+--- $WS/baseline/source/src/alphafold3/data/parsers.py	2026-07-28 21:43:36.727113000 -0700
++++ $WS/annotated/source/src/alphafold3/data/parsers.py	2026-07-28 22:35:21.171593000 -0700
+@@ -15,6 +15,8 @@
+ 
+ from alphafold3.cpp import fasta_iterator
+ from alphafold3.cpp import msa_conversion
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ DeletionMatrix: TypeAlias = Sequence[Sequence[int]]
+@@ -61,6 +63,7 @@
+   return fasta_iterator.parse_fasta_include_descriptions(fasta_string)
+ 
+ 
++@_dft.log
+ def convert_a3m_to_stockholm(a3m: str, max_seqs: int | None = None) -> str:
+   """Converts MSA in the A3M format to the Stockholm format."""
+   sequences, descriptions = parse_fasta(a3m)
+@@ -101,6 +104,7 @@
+   return '\n'.join(stockholm)
+ 
+ 
++@_dft.log
+ def convert_stockholm_to_a3m(
+     stockholm: IO[str],
+     max_sequences: int | None = None,
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/pipeline.py $WS/annotated/source/src/alphafold3/data/pipeline.py
+--- $WS/baseline/source/src/alphafold3/data/pipeline.py	2026-07-28 21:43:36.728150000 -0700
++++ $WS/annotated/source/src/alphafold3/data/pipeline.py	2026-08-02 01:26:20.362067000 -0700
+@@ -23,10 +23,13 @@
+ from alphafold3.data import msa_config
+ from alphafold3.data import structure_stores
+ from alphafold3.data import templates as templates_lib
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ # Cache to avoid re-running template search for the same sequence in homomers.
+ @functools.cache
++@_dft.log
+ def _get_protein_templates(
+     sequence: str,
+     input_msa_a3m: str,
+@@ -68,6 +71,7 @@
+ 
+ # Cache to avoid re-running the MSA tools for the same sequence in homomers.
+ @functools.cache
++@_dft.log
+ def _get_protein_msa_and_templates(
+     sequence: str,
+     run_template_search: bool,
+@@ -153,6 +157,7 @@
+ 
+ # Cache to avoid re-running the Nhmmer for the same sequence in homomers.
+ @functools.cache
++@_dft.log
+ def _get_rna_msa(
+     sequence: str,
+     nt_rna_msa_config: msa_config.NhmmerConfig,
+@@ -262,6 +267,7 @@
+ class DataPipeline:
+   """Runs the alignment tools and assembles the input features."""
+ 
++  @_dft.log_init
+   def __init__(self, data_pipeline_config: DataPipelineConfig):
+     """Initializes the data pipeline with default configurations."""
+     self._uniref90_msa_config = msa_config.RunConfig(
+@@ -432,13 +438,14 @@
+       )
+       unpaired_msa = unpaired_msa.to_a3m()
+       paired_msa = paired_msa.to_a3m()
+-      templates = [
+-          folding_input.Template(
+-              mmcif=struc.to_mmcif(),
+-              query_to_template_map=hit.query_to_hit_mapping,
+-          )
+-          for hit, struc in template_hits.get_hits_with_structures()
+-      ]
++      with DFTracerFn("Data", name="assemble_templates"):
++        templates = [
++            folding_input.Template(
++                mmcif=struc.to_mmcif(),
++                query_to_template_map=hit.query_to_hit_mapping,
++            )
++            for hit, struc in template_hits.get_hits_with_structures()
++        ]
+     elif has_unpaired_msa and has_paired_msa and not has_templates:
+       # Has MSA, but doesn't have templates. Search for templates only.
+       empty_msa = msa.Msa.from_empty(
+@@ -454,13 +461,14 @@
+           templates_config=self._templates_config,
+           pdb_database_path=self._pdb_database_path,
+       )
+-      templates = [
+-          folding_input.Template(
+-              mmcif=struc.to_mmcif(),
+-              query_to_template_map=hit.query_to_hit_mapping,
+-          )
+-          for hit, struc in template_hits.get_hits_with_structures()
+-      ]
++      with DFTracerFn("Data", name="assemble_templates"):
++        templates = [
++            folding_input.Template(
++                mmcif=struc.to_mmcif(),
++                query_to_template_map=hit.query_to_hit_mapping,
++            )
++            for hit, struc in template_hits.get_hits_with_structures()
++        ]
+     else:
+       # Has MSA and templates, don't search for anything.
+       if not has_unpaired_msa or not has_paired_msa or not has_templates:
+Binary files $WS/baseline/source/src/alphafold3/data/__pycache__/featurisation.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/__pycache__/featurisation.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/__pycache__/msa_config.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/__pycache__/msa_config.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/__pycache__/msa.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/__pycache__/msa.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/__pycache__/msa_features.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/__pycache__/msa_features.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/__pycache__/parsers.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/__pycache__/parsers.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/__pycache__/pipeline.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/__pycache__/pipeline.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/__pycache__/structure_stores.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/__pycache__/structure_stores.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/__pycache__/template_realign.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/__pycache__/template_realign.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/__pycache__/templates.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/__pycache__/templates.cpython-311.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/structure_stores.py $WS/annotated/source/src/alphafold3/data/structure_stores.py
+--- $WS/baseline/source/src/alphafold3/data/structure_stores.py	2026-07-28 21:43:36.730127000 -0700
++++ $WS/annotated/source/src/alphafold3/data/structure_stores.py	2026-07-28 22:35:24.615529000 -0700
+@@ -15,6 +15,8 @@
+ import os
+ import pathlib
+ import tarfile
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ class NotFoundError(KeyError):
+@@ -24,6 +26,7 @@
+ class StructureStore:
+   """Handles the retrieval of mmCIF files from a filesystem."""
+ 
++  @_dft.log_init
+   def __init__(
+       self,
+       structures: str | os.PathLike[str] | Mapping[str, str],
+@@ -58,6 +61,7 @@
+         and (path := pathlib.Path(tarinfo.path.lower())).suffix == '.cif'
+     }
+ 
++  @_dft.log
+   def get_mmcif_str(self, target_name: str) -> str:
+     """Returns an mmCIF for a given `target_name`.
+ 
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/template_realign.py $WS/annotated/source/src/alphafold3/data/template_realign.py
+--- $WS/baseline/source/src/alphafold3/data/template_realign.py	2026-07-28 21:43:36.731133000 -0700
++++ $WS/annotated/source/src/alphafold3/data/template_realign.py	2026-07-28 22:35:27.395506000 -0700
+@@ -11,12 +11,15 @@
+ """Realign sequences found in PDB seqres to the actual CIF sequences."""
+ 
+ from collections.abc import Mapping
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ class AlignmentError(Exception):
+   """Failed alignment between the hit sequence and the actual mmCIF sequence."""
+ 
+ 
++@_dft.log
+ def realign_hit_to_structure(
+     *,
+     hit_sequence: str,
+@@ -104,6 +107,7 @@
+   return {q: h + best_start for q, h in best_query_to_hit_mapping.items()}
+ 
+ 
++@_dft.log
+ def _remap_to_struc_seq(
+     *,
+     hit_seq: str,
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/templates.py $WS/annotated/source/src/alphafold3/data/templates.py
+--- $WS/baseline/source/src/alphafold3/data/templates.py	2026-07-28 21:43:36.735095000 -0700
++++ $WS/annotated/source/src/alphafold3/data/templates.py	2026-07-28 22:35:33.820455000 -0700
+@@ -31,6 +31,8 @@
+ from alphafold3.data.tools import hmmsearch
+ from alphafold3.structure import mmcif
+ import numpy as np
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ _POLYMER_FEATURES: Final[Mapping[str, np.float64 | np.int32 | object]] = {
+@@ -86,6 +88,7 @@
+ }
+ 
+ 
++@_dft.log
+ def _encode_restype(
+     chain_poly_type: str,
+     sequence: str,
+@@ -279,6 +282,7 @@
+     """A full name of the hit."""
+     return f'{self.pdb_id}_{self.auth_chain_id}'
+ 
++  @_dft.log
+   def __post_init__(self):
+     if not self.pdb_id.islower() and not self.pdb_id.isdigit():
+       raise ValueError(f'pdb_id must be lowercase {self.pdb_id}')
+@@ -299,6 +303,7 @@
+     if self.full_length < 0:
+       raise ValueError(f'Full length must be non-negative: {self.full_length}')
+ 
++  @_dft.log
+   def keep(
+       self,
+       *,
+@@ -359,6 +364,7 @@
+     return True
+ 
+ 
++@_dft.log
+ def _filter_hits(
+     hits: Iterable[Hit],
+     release_date_cutoff: datetime.date,
+@@ -402,6 +408,7 @@
+   construction and metadata loading.
+   """
+ 
++  @_dft.log_init
+   def __init__(
+       self,
+       *,
+@@ -482,6 +489,7 @@
+         filter_config=filter_config,
+     )
+ 
++  @_dft.log
+   @classmethod
+   def from_hmmsearch_a3m(
+       cls,
+@@ -516,6 +524,7 @@
+       structure_store metadata and a3m alignments.
+     """
+ 
++    @_dft.log
+     def hit_generator(a3m: str):
+       if not a3m:
+         return  # Hmmsearch could return an empty string if there are no hits.
+@@ -641,6 +650,7 @@
+         structure_store=self._structure_store,
+     )
+ 
++  @_dft.log
+   def get_hits_with_structures(
+       self,
+   ) -> Sequence[tuple[Hit, structure.Structure]]:
+@@ -659,6 +669,7 @@
+       results.append((hit, struc.filter(chain_id=label_chain_id)))
+     return results
+ 
++  @_dft.log
+   def featurize(
+       self,
+       include_ligand_features: bool = True,
+@@ -770,6 +781,7 @@
+     raise ValueError(f'Could not parse description "{description}"')
+ 
+ 
++@_dft.log
+ def _parse_hit_metadata(
+     structure_store: structure_stores.StructureStore,
+     pdb_id: str,
+@@ -817,6 +829,7 @@
+   return release_date, sequence, unresolved_res_ids
+ 
+ 
++@_dft.log
+ def get_polymer_features(
+     *,
+     chain: structure.Structure,
+@@ -884,6 +897,7 @@
+   }
+ 
+ 
++@_dft.log
+ def _get_ligand_features(
+     struc: structure.Structure,
+ ) -> Mapping[str, Mapping[str, np.ndarray | bytes]]:
+@@ -910,6 +924,7 @@
+   return ligand_features
+ 
+ 
++@_dft.log
+ def package_template_features(
+     *,
+     hit_features: Sequence[Mapping[str, Any]],
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/template_store.py $WS/annotated/source/src/alphafold3/data/template_store.py
+--- $WS/baseline/source/src/alphafold3/data/template_store.py	2026-07-28 21:43:36.732188000 -0700
++++ $WS/annotated/source/src/alphafold3/data/template_store.py	2026-07-28 22:44:23.192232000 -0700
+@@ -13,6 +13,8 @@
+ from collections.abc import Mapping
+ import datetime
+ from typing import Any, Protocol, TypeAlias
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ TemplateFeatures: TypeAlias = Mapping[str, Any]
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/tools/hmmalign.py $WS/annotated/source/src/alphafold3/data/tools/hmmalign.py
+--- $WS/baseline/source/src/alphafold3/data/tools/hmmalign.py	2026-07-28 21:43:36.738189000 -0700
++++ $WS/annotated/source/src/alphafold3/data/tools/hmmalign.py	2026-07-28 22:35:35.636423000 -0700
+@@ -16,8 +16,11 @@
+ 
+ from alphafold3.data import parsers
+ from alphafold3.data.tools import subprocess_utils
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
++@_dft.log
+ def _to_a3m(sequences: Sequence[str], name_prefix: str = 'sequence') -> str:
+   a3m = ''
+   for i, sequence in enumerate(sequences, 1):
+@@ -28,6 +31,7 @@
+ class Hmmalign:
+   """Python wrapper of the hmmalign binary."""
+ 
++  @_dft.log_init
+   def __init__(self, binary_path: str):
+     """Initializes the Python hmmalign wrapper.
+ 
+@@ -54,6 +58,7 @@
+         extra_flags=extra_flags,
+     )
+ 
++  @_dft.log
+   def align(
+       self,
+       a3m_str: str,
+@@ -108,6 +113,7 @@
+ 
+     return a3m
+ 
++  @_dft.log
+   def align_sequences_to_profile(self, profile: str, sequences_a3m: str) -> str:
+     """Aligns the sequences to profile and returns the alignment in A3M string.
+ 
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/tools/hmmbuild.py $WS/annotated/source/src/alphafold3/data/tools/hmmbuild.py
+--- $WS/baseline/source/src/alphafold3/data/tools/hmmbuild.py	2026-07-28 21:43:36.740095000 -0700
++++ $WS/annotated/source/src/alphafold3/data/tools/hmmbuild.py	2026-07-28 22:35:37.450529000 -0700
+@@ -17,11 +17,14 @@
+ 
+ from alphafold3.data import parsers
+ from alphafold3.data.tools import subprocess_utils
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ class Hmmbuild(object):
+   """Python wrapper of the hmmbuild binary."""
+ 
++  @_dft.log_init
+   def __init__(
+       self,
+       *,
+@@ -65,6 +68,7 @@
+         sto, informat='stockholm', model_construction=model_construction
+     )
+ 
++  @_dft.log
+   def build_profile_from_a3m(self, a3m: str) -> str:
+     """Builds a HHM for the aligned sequences given as an A3M string.
+ 
+@@ -84,6 +88,7 @@
+     msa = ''.join(lines)
+     return self._build_profile(msa, informat='afa')
+ 
++  @_dft.log
+   def _build_profile(
+       self,
+       msa: str,
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/tools/hmmsearch.py $WS/annotated/source/src/alphafold3/data/tools/hmmsearch.py
+--- $WS/baseline/source/src/alphafold3/data/tools/hmmsearch.py	2026-07-28 21:43:36.741115000 -0700
++++ $WS/annotated/source/src/alphafold3/data/tools/hmmsearch.py	2026-07-28 22:35:42.494534000 -0700
+@@ -17,11 +17,14 @@
+ from alphafold3.data import parsers
+ from alphafold3.data.tools import hmmbuild
+ from alphafold3.data.tools import subprocess_utils
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ class Hmmsearch(object):
+   """Python wrapper of the hmmsearch binary."""
+ 
++  @_dft.log_init
+   def __init__(
+       self,
+       *,
+@@ -94,6 +97,7 @@
+       logging.error('Could not find hmmsearch database %s', database_path)
+       raise ValueError(f'Could not find hmmsearch database {database_path}')
+ 
++  @_dft.log
+   def query_with_hmm(self, hmm: str) -> str:
+     """Queries the database using hmmsearch using a given hmm."""
+     with tempfile.TemporaryDirectory() as query_tmp_dir:
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/tools/jackhmmer.py $WS/annotated/source/src/alphafold3/data/tools/jackhmmer.py
+--- $WS/baseline/source/src/alphafold3/data/tools/jackhmmer.py	2026-07-28 21:43:36.742176000 -0700
++++ $WS/annotated/source/src/alphafold3/data/tools/jackhmmer.py	2026-07-28 22:35:44.442360000 -0700
+@@ -17,11 +17,14 @@
+ from alphafold3.data import parsers
+ from alphafold3.data.tools import msa_tool
+ from alphafold3.data.tools import subprocess_utils
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ class Jackhmmer(msa_tool.MsaTool):
+   """Python wrapper of the Jackhmmer binary."""
+ 
++  @_dft.log_init
+   def __init__(
+       self,
+       *,
+@@ -73,6 +76,7 @@
+     self.filter_f2 = filter_f2
+     self.filter_f3 = filter_f3
+ 
++  @_dft.log
+   def query(self, target_sequence: str) -> msa_tool.MsaToolResult:
+     """Queries the database using Jackhmmer."""
+     logging.info('Query sequence: %s', target_sequence)
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/tools/msa_tool.py $WS/annotated/source/src/alphafold3/data/tools/msa_tool.py
+--- $WS/baseline/source/src/alphafold3/data/tools/msa_tool.py	2026-07-28 21:43:36.744099000 -0700
++++ $WS/annotated/source/src/alphafold3/data/tools/msa_tool.py	2026-07-28 22:44:31.016154000 -0700
+@@ -12,6 +12,8 @@
+ 
+ import dataclasses
+ from typing import Protocol
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/tools/nhmmer.py $WS/annotated/source/src/alphafold3/data/tools/nhmmer.py
+--- $WS/baseline/source/src/alphafold3/data/tools/nhmmer.py	2026-07-28 21:43:36.745125000 -0700
++++ $WS/annotated/source/src/alphafold3/data/tools/nhmmer.py	2026-07-28 22:35:48.302332000 -0700
+@@ -21,6 +21,8 @@
+ from alphafold3.data.tools import hmmbuild
+ from alphafold3.data.tools import msa_tool
+ from alphafold3.data.tools import subprocess_utils
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ _SHORT_SEQUENCE_CUTOFF: Final[int] = 50
+ 
+@@ -28,6 +30,7 @@
+ class Nhmmer(msa_tool.MsaTool):
+   """Python wrapper of the Nhmmer binary."""
+ 
++  @_dft.log_init
+   def __init__(
+       self,
+       binary_path: str,
+@@ -83,6 +86,7 @@
+     self._alphabet = alphabet
+     self._strand = strand
+ 
++  @_dft.log
+   def query(self, target_sequence: str) -> msa_tool.MsaToolResult:
+     """Query the database using Nhmmer."""
+     logging.info('Query sequence: %s', target_sequence)
+Binary files $WS/baseline/source/src/alphafold3/data/tools/__pycache__/hmmalign.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/tools/__pycache__/hmmalign.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/tools/__pycache__/hmmbuild.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/tools/__pycache__/hmmbuild.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/tools/__pycache__/hmmsearch.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/tools/__pycache__/hmmsearch.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/tools/__pycache__/jackhmmer.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/tools/__pycache__/jackhmmer.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/tools/__pycache__/msa_tool.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/tools/__pycache__/msa_tool.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/tools/__pycache__/nhmmer.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/tools/__pycache__/nhmmer.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/tools/__pycache__/rdkit_utils.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/tools/__pycache__/rdkit_utils.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/data/tools/__pycache__/subprocess_utils.cpython-311.pyc and $WS/annotated/source/src/alphafold3/data/tools/__pycache__/subprocess_utils.cpython-311.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/tools/rdkit_utils.py $WS/annotated/source/src/alphafold3/data/tools/rdkit_utils.py
+--- $WS/baseline/source/src/alphafold3/data/tools/rdkit_utils.py	2026-07-28 21:43:36.747098000 -0700
++++ $WS/annotated/source/src/alphafold3/data/tools/rdkit_utils.py	2026-07-28 22:35:51.103422000 -0700
+@@ -18,6 +18,8 @@
+ import numpy as np
+ import rdkit.Chem as rd_chem
+ from rdkit.Chem import AllChem as rd_all_chem
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
+ _RDKIT_MMCIF_TO_BOND_TYPE: Mapping[str, rd_chem.BondType] = {
+@@ -47,6 +49,7 @@
+   """Raised when we try to handle unsupported RDKit bonds."""
+ 
+ 
++@_dft.log
+ def _populate_atoms_in_mol(
+     mol: rd_chem.Mol,
+     atom_names: Sequence[str],
+@@ -101,6 +104,7 @@
+     assert atom_index == atom_name_to_idx[atom_name]
+ 
+ 
++@_dft.log
+ def _populate_bonds_in_mol(
+     mol: rd_chem.Mol,
+     atom_names: Sequence[str],
+@@ -152,6 +156,7 @@
+         raise
+ 
+ 
++@_dft.log
+ def mol_from_ccd_cif(
+     mol_cif: cif_dict.CifDict,
+     *,
+@@ -242,6 +247,7 @@
+   return mol
+ 
+ 
++@_dft.log
+ def mol_to_ccd_cif(
+     mol: rd_chem.Mol,
+     component_id: str,
+@@ -381,6 +387,7 @@
+     )
+ 
+ 
++@_dft.log
+ def parse_atom_data(
+     mol_cif: cif_dict.CifDict | Mapping[str, Sequence[str]], force_parse: bool
+ ) -> tuple[Sequence[str], Sequence[str], Sequence[int], Sequence[str]]:
+@@ -402,6 +409,7 @@
+   return atom_names, atom_types, atom_charges, atom_leaving_flags
+ 
+ 
++@_dft.log
+ def parse_bond_data(
+     mol_cif: cif_dict.CifDict | Mapping[str, Sequence[str]], force_parse: bool
+ ) -> tuple[
+@@ -427,6 +435,7 @@
+   return begin_atoms, end_atoms, bond_types, is_aromatic
+ 
+ 
++@_dft.log
+ def _parse_ideal_conformer(mol_cif: cif_dict.CifDict) -> rd_chem.Conformer:
+   """Builds a conformer containing the ideal coordinates from the CCD.
+ 
+@@ -474,6 +483,7 @@
+   return rd_chem.RenumberAtoms(mol, new_order)
+ 
+ 
++@_dft.log
+ def assign_atom_names_from_graph(
+     mol: rd_chem.Mol,
+     keep_existing_names: bool = False,
+@@ -522,6 +532,7 @@
+   return mol
+ 
+ 
++@_dft.log
+ def get_random_conformer(
+     mol: rd_chem.Mol,
+     random_seed: int,
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/data/tools/subprocess_utils.py $WS/annotated/source/src/alphafold3/data/tools/subprocess_utils.py
+--- $WS/baseline/source/src/alphafold3/data/tools/subprocess_utils.py	2026-07-28 21:43:36.748124000 -0700
++++ $WS/annotated/source/src/alphafold3/data/tools/subprocess_utils.py	2026-07-28 22:35:57.584395000 -0700
+@@ -17,8 +17,11 @@
+ from typing import Any
+ 
+ from absl import logging
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Data")
+ 
+ 
++@_dft.log
+ def create_query_fasta_file(sequence: str, path: str, linewidth: int = 80):
+   """Creates a fasta file with the sequence with line width limit."""
+   with open(path, 'w') as f:
+@@ -36,6 +39,7 @@
+     raise RuntimeError(f'{name} binary not found at {path}')
+ 
+ 
++@_dft.log
+ def run(
+     cmd: Sequence[str],
+     cmd_name: str,
+Binary files $WS/baseline/source/src/alphafold3/jax/attention/__pycache__/attention_base.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/attention/__pycache__/attention_base.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/attention/__pycache__/attention_call_arg_specs.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/attention/__pycache__/attention_call_arg_specs.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/attention/__pycache__/attention.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/attention/__pycache__/attention.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/attention/__pycache__/flash_attention.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/attention/__pycache__/flash_attention.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/attention/__pycache__/xla_attention.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/attention/__pycache__/xla_attention.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/common/__pycache__/array_view.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/common/__pycache__/array_view.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/common/__pycache__/precision.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/common/__pycache__/precision.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/common/__pycache__/triton_utils.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/common/__pycache__/triton_utils.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/gated_linear_unit/__pycache__/block.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/gated_linear_unit/__pycache__/block.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/gated_linear_unit/__pycache__/gated_linear_unit_base.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/gated_linear_unit/__pycache__/gated_linear_unit_base.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/gated_linear_unit/__pycache__/gated_linear_unit.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/gated_linear_unit/__pycache__/gated_linear_unit.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/gated_linear_unit/__pycache__/matmul_config.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/gated_linear_unit/__pycache__/matmul_config.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/gated_linear_unit/__pycache__/matmul_ext.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/gated_linear_unit/__pycache__/matmul_ext.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/geometry/__pycache__/__init__.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/geometry/__pycache__/__init__.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/geometry/__pycache__/rigid_matrix_vector.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/geometry/__pycache__/rigid_matrix_vector.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/geometry/__pycache__/rotation_matrix.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/geometry/__pycache__/rotation_matrix.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/geometry/__pycache__/struct_of_array.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/geometry/__pycache__/struct_of_array.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/geometry/__pycache__/utils.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/geometry/__pycache__/utils.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/jax/geometry/__pycache__/vector.cpython-311.pyc and $WS/annotated/source/src/alphafold3/jax/geometry/__pycache__/vector.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/atom_layout/__pycache__/atom_layout.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/atom_layout/__pycache__/atom_layout.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/components/__pycache__/haiku_modules.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/components/__pycache__/haiku_modules.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/components/__pycache__/mapping.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/components/__pycache__/mapping.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/components/__pycache__/utils.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/components/__pycache__/utils.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/network/__pycache__/atom_cross_attention.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/network/__pycache__/atom_cross_attention.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/network/__pycache__/confidence_head.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/network/__pycache__/confidence_head.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/network/__pycache__/diffusion_head.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/network/__pycache__/diffusion_head.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/network/__pycache__/diffusion_transformer.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/network/__pycache__/diffusion_transformer.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/network/__pycache__/distogram_head.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/network/__pycache__/distogram_head.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/network/__pycache__/evoformer.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/network/__pycache__/evoformer.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/network/__pycache__/featurization.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/network/__pycache__/featurization.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/network/__pycache__/modules.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/network/__pycache__/modules.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/network/__pycache__/template_modules.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/network/__pycache__/template_modules.cpython-311.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/model/pipeline/inter_chain_bonds.py $WS/annotated/source/src/alphafold3/model/pipeline/inter_chain_bonds.py
+--- $WS/baseline/source/src/alphafold3/model/pipeline/inter_chain_bonds.py	2026-07-28 21:43:36.856114000 -0700
++++ $WS/annotated/source/src/alphafold3/model/pipeline/inter_chain_bonds.py	2026-08-02 00:54:55.451231000 -0700
+@@ -18,6 +18,8 @@
+ from alphafold3.constants import mmcif_names
+ from alphafold3.model.atom_layout import atom_layout
+ import numpy as np
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Pipeline")
+ 
+ 
+ BOND_THRESHOLD_GLYCANS_ANGSTROM: Final[float] = 1.7
+@@ -48,6 +50,7 @@
+ 
+ 
+ @functools.lru_cache(maxsize=1)
++@_dft.log
+ def get_polymer_ligand_and_ligand_ligand_bonds(
+     struct: structure.Structure,
+     only_glycan_ligands: bool,
+@@ -100,6 +103,7 @@
+   return polymer_ligand_bonds, ligand_ligand_bonds
+ 
+ 
++@_dft.log
+ def _remove_multi_bonds(
+     bond_layout: atom_layout.AtomLayout,
+ ) -> atom_layout.AtomLayout:
+@@ -199,6 +203,7 @@
+   )
+ 
+ 
++@_dft.log
+ def get_bond_layout(
+     bond_threshold: float = BOND_THRESHOLD_ALL_ANGSTROM,
+     *,
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/model/pipeline/pipeline.py $WS/annotated/source/src/alphafold3/model/pipeline/pipeline.py
+--- $WS/baseline/source/src/alphafold3/model/pipeline/pipeline.py	2026-07-28 21:43:36.857146000 -0700
++++ $WS/annotated/source/src/alphafold3/model/pipeline/pipeline.py	2026-07-28 22:36:02.259221000 -0700
+@@ -25,11 +25,14 @@
+ from alphafold3.model.pipeline import structure_cleaning
+ from alphafold3.structure import chemical_components as struc_chem_comps
+ import numpy as np
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Pipeline")
+ 
+ 
+ _DETERMINISTIC_FRAMES_RANDOM_SEED = 12312837
+ 
+ 
++@_dft.log
+ def calculate_bucket_size(
+     num_tokens: int, buckets: Sequence[int] | None
+ ) -> int:
+@@ -135,6 +138,7 @@
+     deterministic_frames: bool = True
+     conformer_max_iterations: int | None = None
+ 
++  @_dft.log_init
+   def __init__(
+       self,
+       *,
+@@ -147,6 +151,7 @@
+     """
+     self._config = config
+ 
++  @_dft.log
+   def process_item(
+       self,
+       fold_input: folding_input.Input,
+Binary files $WS/baseline/source/src/alphafold3/model/pipeline/__pycache__/inter_chain_bonds.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/pipeline/__pycache__/inter_chain_bonds.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/pipeline/__pycache__/inter_chain_bonds.cpython-36.pyc and $WS/annotated/source/src/alphafold3/model/pipeline/__pycache__/inter_chain_bonds.cpython-36.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/pipeline/__pycache__/pipeline.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/pipeline/__pycache__/pipeline.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/pipeline/__pycache__/structure_cleaning.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/pipeline/__pycache__/structure_cleaning.cpython-311.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/model/pipeline/structure_cleaning.py $WS/annotated/source/src/alphafold3/model/pipeline/structure_cleaning.py
+--- $WS/baseline/source/src/alphafold3/model/pipeline/structure_cleaning.py	2026-07-28 21:43:36.858182000 -0700
++++ $WS/annotated/source/src/alphafold3/model/pipeline/structure_cleaning.py	2026-07-28 22:36:04.774340000 -0700
+@@ -22,8 +22,11 @@
+ from alphafold3.model.scoring import covalent_bond_cleaning
+ from alphafold3.structure import sterics
+ import numpy as np
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Pipeline")
+ 
+ 
++@_dft.log
+ def _get_leaving_atom_mask(
+     struc: structure.Structure,
+     polymer_ligand_bonds: atom_layout.AtomLayout | None,
+@@ -65,6 +68,7 @@
+   return drop_atom_filter_atoms
+ 
+ 
++@_dft.log
+ def clean_structure(
+     struc: structure.Structure,
+     ccd: chemical_components.Ccd,
+@@ -291,6 +295,7 @@
+   return struc, metadata
+ 
+ 
++@_dft.log
+ def create_empty_output_struc_and_layout(
+     struc: structure.Structure,
+     ccd: chemical_components.Ccd,
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/model/post_processing.py $WS/annotated/source/src/alphafold3/model/post_processing.py
+--- $WS/baseline/source/src/alphafold3/model/post_processing.py	2026-07-28 21:43:36.860120000 -0700
++++ $WS/annotated/source/src/alphafold3/model/post_processing.py	2026-07-28 22:44:49.146581000 -0700
+@@ -19,6 +19,8 @@
+ from alphafold3.model import mmcif_metadata
+ from alphafold3.model import model
+ import numpy as np
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("IO")
+ 
+ 
+ @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+@@ -86,6 +88,7 @@
+   )
+ 
+ 
++@_dft.log
+ def write_output(
+     inference_result: model.InferenceResult,
+     output_dir: os.PathLike[str] | str,
+@@ -113,6 +116,7 @@
+       f.write(terms_of_use)
+ 
+ 
++@_dft.log
+ def write_embeddings(
+     embeddings: dict[str, np.ndarray],
+     output_dir: os.PathLike[str] | str,
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/confidences.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/confidences.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/confidence_types.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/confidence_types.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/data3.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/data3.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/data_constants.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/data_constants.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/feat_batch.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/feat_batch.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/features.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/features.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/merging_features.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/merging_features.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/mmcif_metadata.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/mmcif_metadata.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/model_config.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/model_config.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/model.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/model.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/msa_pairing.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/msa_pairing.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/params.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/params.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/post_processing.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/post_processing.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/__pycache__/protein_data_processing.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/__pycache__/protein_data_processing.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/scoring/__pycache__/alignment.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/scoring/__pycache__/alignment.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/scoring/__pycache__/covalent_bond_cleaning.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/scoring/__pycache__/covalent_bond_cleaning.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/model/scoring/__pycache__/scoring.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model/scoring/__pycache__/scoring.cpython-311.pyc differ
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/src/alphafold3/model_class/alphafold3.py $WS/annotated/source/src/alphafold3/model_class/alphafold3.py
+--- $WS/baseline/source/src/alphafold3/model_class/alphafold3.py	2026-07-28 21:43:36.883745000 -0700
++++ $WS/annotated/source/src/alphafold3/model_class/alphafold3.py	2026-07-28 22:43:50.881614000 -0700
+@@ -57,6 +57,8 @@
+ import jax
+ from jax import numpy as jnp
+ import numpy as np
++from dftracer.python import dftracer, dft_fn as DFTracerFn
++_dft = DFTracerFn("Compute")
+ 
+ _DEFAULT_MODEL_DIR = pathlib.Path("/p/vast1/$USER/alphafold_data/params_af3")
+ DEFAULT_DB_DIR = pathlib.Path("/p/vast1/$USER/alphafold_data")
+@@ -122,6 +124,7 @@
+ class ModelRunner:
+   """Helper class to run structure prediction stages."""
+ 
++  @_dft.log_init
+   def __init__(
+       self,
+       config: model.Model.Config,
+@@ -151,6 +154,7 @@
+         jax.jit(forward_fn.apply, device=self._device), self.model_params
+     )
+ 
++  @_dft.log
+   def run_inference(
+       self, featurised_example: features.BatchDict, rng_key: jnp.ndarray
+   ) -> model.ModelResult:
+@@ -173,6 +177,7 @@
+     result['__identifier__'] = identifier
+     return result
+ 
++  @_dft.log
+   def extract_inference_results_and_maybe_embeddings(
+       self,
+       batch: features.BatchDict,
+@@ -217,6 +222,7 @@
+ 
+ 
+ 
++@_dft.log
+ def predict_structure(
+     fold_input: folding_input.Input,
+     model_runner: ModelRunner,
+@@ -283,6 +289,7 @@
+ 
+ 
+ 
++@_dft.log
+ def write_fold_input_json(
+     fold_input: folding_input.Input,
+     output_dir: os.PathLike[str] | str,
+@@ -297,6 +304,7 @@
+ 
+ 
+ 
++@_dft.log
+ def write_outputs(
+     all_inference_results: Sequence[ResultsForSeed],
+     output_dir: os.PathLike[str] | str,
+@@ -372,6 +380,7 @@
+   ...
+ 
+ 
++@_dft.log
+ def replace_db_dir(path_with_db_dir: str, db_dirs: Sequence[str]) -> str:
+   """Replaces the DB_DIR placeholder in a path with the given DB_DIR."""
+   template = string.Template(path_with_db_dir)
+@@ -389,6 +398,7 @@
+ 
+ 
+ 
++@_dft.log
+ def process_fold_input(
+     fold_input: folding_input.Input,
+     data_pipeline_config: pipeline.DataPipelineConfig | None,
+@@ -470,6 +480,7 @@
+ 
+ 
+ class AlphaFold3():
++    @_dft.log_init
+     def __init__(self, output_dir, save_embeddings=False):
+         jax.config.update('jax_compilation_cache_dir', None)
+         self.output_dir = output_dir
+@@ -489,6 +500,7 @@
+     )       
+     
+ 
++    @_dft.log
+     def run_inference(self, fold_inputs, run_data_pipeline=False):
+       # Make sure we can create the output directory before running anything.
+         try:
+Binary files $WS/baseline/source/src/alphafold3/model_class/__pycache__/alphafold3.cpython-311.pyc and $WS/annotated/source/src/alphafold3/model_class/__pycache__/alphafold3.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/__pycache__/build_data.cpython-311.pyc and $WS/annotated/source/src/alphafold3/__pycache__/build_data.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/__pycache__/__init__.cpython-311.pyc and $WS/annotated/source/src/alphafold3/__pycache__/__init__.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/__pycache__/version.cpython-311.pyc and $WS/annotated/source/src/alphafold3/__pycache__/version.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/structure/__pycache__/bioassemblies.cpython-311.pyc and $WS/annotated/source/src/alphafold3/structure/__pycache__/bioassemblies.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/structure/__pycache__/bonds.cpython-311.pyc and $WS/annotated/source/src/alphafold3/structure/__pycache__/bonds.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/structure/__pycache__/chemical_components.cpython-311.pyc and $WS/annotated/source/src/alphafold3/structure/__pycache__/chemical_components.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/structure/__pycache__/__init__.cpython-311.pyc and $WS/annotated/source/src/alphafold3/structure/__pycache__/__init__.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/structure/__pycache__/mmcif.cpython-311.pyc and $WS/annotated/source/src/alphafold3/structure/__pycache__/mmcif.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/structure/__pycache__/parsing.cpython-311.pyc and $WS/annotated/source/src/alphafold3/structure/__pycache__/parsing.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/structure/__pycache__/sterics.cpython-311.pyc and $WS/annotated/source/src/alphafold3/structure/__pycache__/sterics.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/structure/__pycache__/structure.cpython-311.pyc and $WS/annotated/source/src/alphafold3/structure/__pycache__/structure.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/structure/__pycache__/structure_tables.cpython-311.pyc and $WS/annotated/source/src/alphafold3/structure/__pycache__/structure_tables.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/structure/__pycache__/table.cpython-311.pyc and $WS/annotated/source/src/alphafold3/structure/__pycache__/table.cpython-311.pyc differ
+Binary files $WS/baseline/source/src/alphafold3/structure/__pycache__/test_utils.cpython-311.pyc and $WS/annotated/source/src/alphafold3/structure/__pycache__/test_utils.cpython-311.pyc differ

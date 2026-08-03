@@ -77,6 +77,27 @@ profile_step_begin(step="STEP 3: dftracer-annotator", agent="dftracer-annotator"
    job; rebinding mid-pipeline splits the MLflow parent run.
 5. **Telemetry before `profile_bind` is kept** and attributed to the session — the
    planning and routing that led up to it is part of what the run cost.
+6. **KNOWN BUG — the single-open-step model breaks for PARALLEL component
+   dispatch, not just sequential retries (confirmed, AF3 optimizer session,
+   2026-08-02).** Rule 2's "superseded" behavior is correct and intentional
+   for a sequential retry (same agent, same step, reopened after a failure).
+   It is NOT correct when the orchestrator dispatches several subagents
+   CONCURRENTLY against the same nominal step (e.g. `dftracer-optimizer`
+   fanning out `-io`/`-compute`/`-memory`/`-communication` in parallel, all
+   calling `profile_step_begin` around roughly the same time): whichever
+   subagent calls `profile_step_begin` LAST silently force-closes every
+   sibling's still-open step as `superseded`, and every sibling's own
+   `profile_step_end` then returns "no open step to end" — reproduced
+   independently by three of four component subagents AND the orchestrator
+   itself in the same session. There is currently only ONE global open-step
+   slot, not one per calling agent/step-id. **Until this is fixed at the tool
+   level** (either concurrently-open steps keyed by a per-agent identity, or
+   the profiler tracking multiple simultaneously-open steps), do not trust
+   individual timing attribution for parallel-dispatched component subagents
+   — the orchestrator should bracket the WHOLE fan-out step itself
+   (`profile_step_begin`/`_end` once, around dispatching + collecting all N
+   subagents) rather than relying on each subagent's own begin/end pair to
+   produce a correct per-component number.
 
 ## Reading the result
 

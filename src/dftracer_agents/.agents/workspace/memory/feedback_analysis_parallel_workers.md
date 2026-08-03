@@ -4,8 +4,8 @@ description: Always run dfanalyzer/analysis with a multi-worker cluster; analysi
 metadata: 
   node_type: memory
   type: feedback
+  modified: 2026-08-02T09:21:15.129Z
   
-  modified: 2026-07-26T03:59:48.615Z
 ---
 
 **Canonical home:** see the `workload-ior` skill ("Trace analysis speed + diagnose
@@ -37,3 +37,10 @@ crashed with `DFTUtilsError: Resource temporarily unavailable` (32 workers ×
 ~192 io-threads over-subscribed the node); `cluster_n_workers=8` completed
 successfully. Reinforces staying low — don't scale workers up to "match"
 rank count on a shared/login-adjacent node.
+
+**Reconfirmed (2026-08-02, ray_molformer session):** identical failure mode on a
+27.3M-event/56-chunk trace — `cluster_n_workers=32` hit the same
+`DFTUtilsError: Resource temporarily unavailable`; `cluster_n_workers=8`
+succeeded cleanly. Not workload-specific — treat 8 as the safe default ceiling
+on this system regardless of app, and only go lower (1) if correctness (not
+just resource exhaustion) is also a concern per the RocksDB race above.

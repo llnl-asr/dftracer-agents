@@ -1,0 +1,17 @@
+diff -ruN --no-dereference $WS/opt4/record/meta.json $WS/opt5/record/meta.json
+--- $WS/opt4/record/meta.json	2026-08-02 03:28:04.178876000 -0700
++++ $WS/opt5/record/meta.json	2026-08-02 03:28:05.545823000 -0700
+@@ -1,9 +1,9 @@
+ {
+-  "run_name": "opt4",
+-  "prev_run_name": "baseline_4node",
+-  "captured_at": "2026-08-02T10:28:04.179209+00:00",
++  "run_name": "opt5",
++  "prev_run_name": "opt4",
++  "captured_at": "2026-08-02T10:28:05.546076+00:00",
+   "source_path": "$WS/annotated/source",
+-  "notes": "Compute L2: targeted system ROCm module libs to cut hipModuleLoad relocation cost \u2014 mistargeted (wrong libs), measured null, superseded by opt5.",
++  "notes": "Compute L2: retargeted at PyTorch's bundled ROCm libs (torch/lib/*.so on NFS) instead of system ROCm module. Measured +1.1% (null, within noise) vs baseline_4node.",
+   "captured": {
+     "build_config": [],
+     "params": [],

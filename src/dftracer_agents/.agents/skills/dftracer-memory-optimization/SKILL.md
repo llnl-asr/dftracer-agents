@@ -3,7 +3,14 @@ name: dftracer-memory-optimization
 description: Memory-component bottleneck-to-optimization mappings, papers, and L1/L2/L3 strategies for the dftracer optimization pipeline
 ---
 
-Cross-references: [[dftracer-io-optimization]] [[dftracer-compute-optimization]] [[dftracer-communication-optimization]] [[dftracer-optimization-kb]]
+Cross-references: [[dftracer-io-optimization]] [[dftracer-compute-optimization]] [[dftracer-communication-optimization]] [[dftracer-optimization-kb]] [[software-rocm]]
+
+**MI300A APU note:** see `software-rocm`'s "unified memory is INTRA-PACKAGE
+only" and "`XLA_PYTHON_CLIENT_PREALLOCATE=false`" sections before assuming
+unified-memory systems make allocator/pool-reservation levers inert —
+pinned-memory/NUMA levers are inert there, but framework preallocation levers
+can matter MORE, not less, because the reserved pool competes with the CPU
+side for the same physical HBM.
 
 Memory-component sibling of `dftracer-io-optimization`. The metric key used by the MCP
 optimization tools is `mem_bw` (see `_L1_STRATEGIES`/`_L2_STRATEGIES`/`_L3_STRATEGIES["mem_bw"]`
@@ -133,3 +140,15 @@ removing any real collection cost. Before proposing `gc.disable()` as a fix, con
 object graph actually contains reference cycles (e.g. via `gc.get_stats()` collection counts
 or object graph inspection) -- for interpreter-heavy workloads with no cycles, this lever has
 negative expected value.
+
+## Verify a checkpoint file actually exists before proposing shared/mmap weight loading
+
+Confirmed on ray_molformer (2026-08-02, 4-node/16-GPU): "shared/mmap model weights across N
+worker actors" looks like an obvious lever whenever N workers each construct the same model,
+but it has no target if the model is built from config rather than loaded from a checkpoint
+file. Before proposing it, grep the trace for any weight-file read:
+`zcat *.pfw.gz | grep -oE '"[^"]*\.(bin|safetensors|pt|pth|ckpt)"' | sort | uniq -c`. On
+ray_molformer this returned zero matches across 27.3M events -- the model is constructed
+in-process from a HF `PretrainedConfig`, so there is no file to mmap, dedupe, or pass
+zero-copy through Ray's object store. Confirming absence first avoids proposing a lever with
+no possible mechanism.

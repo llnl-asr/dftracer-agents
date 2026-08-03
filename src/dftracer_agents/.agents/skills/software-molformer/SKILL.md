@@ -329,3 +329,20 @@ above) hits several distinct, non-obvious multi-node bring-up bugs on Tuolumne. 
    `__run_exit_handlers`) even with the fix — that's fine as long as it happens AFTER training
    and trace-writing complete, which the fix ensures (confirmed via `HEAD NODE - exit: 0` and
    all traces present after the crash line in the log).
+
+9. **The "bring-up bottleneck" (1864.4s `molformer_ray_descriptors` category) is `hipModuleLoad`
+   GPU code-object relocation, NOT per-actor HF model loading — tested and disproved TWICE
+   (2026-08-02, `opt4`/`opt5`).** Per-worker span attribution: HF model load
+   (`setup_model_with_regression`) is only 7.4s/worker (3.2% of the 230s outer span) — not the
+   bottleneck. The real one-time cost is the first forward pass (75-81s), of which 58.9s is 252
+   `hipModuleLoad` calls @ 234ms each (GPU code-object relocation/ISA load). Two variants
+   attempted to remove this via page-cache prewarming: `opt4` prewarmed the wrong files (system
+   `/opt/rocm` — PyTorch's ROCm build actually bundles and loads its own ~9.7GB of ROCm libs
+   from `<venv>/torch/lib/`, ignoring `/opt/rocm` entirely, see `system-tuolumne` skill);
+   `opt5` correctly targeted `torch/lib/` and still measured NULL (+1.1%, within a ~6.3%
+   run-to-run noise band measured on unmodified controls in the same session). Conclusion:
+   `hipModuleLoad` cost is per-process relocation work, not filesystem/page-cache-bound — no
+   staging/prewarm strategy at any level can remove it from user space on ROCm 6.2.1. Do not
+   re-propose page-cache prewarming for this bucket; the remaining lever would be ROCm-runtime
+   lazy module loading or a persistent code-object cache, neither of which is user-tunable
+   here.

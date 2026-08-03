@@ -1,0 +1,51 @@
+{
+  "run_id": "af3/20260729_044330",
+  "key": "## STEP 4: dftracer-annotator",
+  "index": 4,
+  "agent": "dftracer-annotator",
+  "notes": "finalize: verification, phase-boundary extension, cost-gate cleanup",
+  "status": "ok",
+  "tries": 2,
+  "retries": 1,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 124.194,
+  "wall_s": 975.578,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "superseded",
+      "duration_s": 120.475,
+      "error": "",
+      "start_ns": 1785303093349903256,
+      "end_ns": 1785303213825079398
+    },
+    {
+      "number": 2,
+      "status": "ok",
+      "duration_s": 3.719,
+      "error": "",
+      "start_ns": 1785304065208857427,
+      "end_ns": 1785304068927742842
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

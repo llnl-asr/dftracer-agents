@@ -13,6 +13,7 @@ tools:
 - mcp__dftracer__session_get_run_paths
 - mcp__dftracer__session_read_file
 - mcp__dftracer__session_write_file
+- mcp__dftracer__session_edit_file
 - mcp__dftracer__system_detect
 - mcp__dftracer__skill_search
 - mcp__dftracer__docs_search

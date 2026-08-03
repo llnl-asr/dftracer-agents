@@ -102,6 +102,51 @@ variant at all (e.g. `rocm/7.1.1` on Tuolumne, where the torch wheel is pinned t
 `+rocm710`) sidesteps this entirely — check whether a patched variant even exists
 before assuming one must be chosen.
 
+## MI300A "unified memory" is INTRA-PACKAGE only, not node-wide
+
+An MI300A APU's zero-copy/unified-address property is that ONE package's CPU
+cores and GPU XCDs share that package's own HBM stack — this is what removes
+the host↔device copy penalty within a single APU. It does **NOT** mean data
+movement is free BETWEEN the several APUs on one node: that traffic still
+crosses Infinity Fabric and is a real bandwidth/latency-bounded transfer.
+Confirmed reasoning (AF3/JAX session, 2026-08-02, evaluating a proposal to
+shard one inference across 4 APUs): sharding a single unit of work across
+APUs would introduce cross-package Infinity-Fabric exchanges on the critical
+path where none exist today, plus RCCL/collective initialization cost and the
+risk of collective time being mislabeled as compute in a trace with HIP
+tracing off (it only shows up as `KERNEL_DISPATCH`/`ncclDevKern` when HIP
+tracing is on). By contrast, running independent units of work (e.g.
+independent inference seeds) across the 4 APUs — one per device, no
+gradient, no collective — costs ~0 extra communication, because there is
+nothing to synchronize. **Never justify a multi-APU model-sharding proposal
+with "unified memory makes it free"** — check whether the proposed data
+movement is intra-package (free) or inter-package (real cost) first. Refs:
+Bertolli et al., SC24-W (zero-copy OpenMP on MI300A, per-package scope);
+Kuncham, Zhang & Panda, IPDPS 2026, *One Memory–Many Paths* (allocation/copy
+path taxonomy on MI300A).
+
+## `XLA_PYTHON_CLIENT_PREALLOCATE=false` is a real win on MI300A APUs, unlike on discrete GPUs
+
+JAX's default behavior reserves ~75% of the visible device memory pool up
+front (`XLA_PYTHON_CLIENT_PREALLOCATE` defaults to `true`). On a discrete GPU
+this is a genuinely free reservation — it just claims device-only VRAM the
+CPU side never touches. **On an MI300A APU it is not free**, because the
+preallocated pool is carved out of the SAME unified HBM the CPU-side pipeline
+(featurization, tokenization, any host-side numpy/RDKit work) allocates from.
+Measured (AF3 inference, JAX/ROCm, 2026-08-02, small-structure probe, 3
+replicates/side, disjoint ranges): setting `XLA_PYTHON_CLIENT_PREALLOCATE=false`
+cut peak node memory from 122.8 GiB to 28.4 GiB (**-77%**) AND cut wall time
+by **-4.9%**, with model output confidence metrics (`ptm`/`iptm`) unchanged.
+Env-var only, zero source edits. **Always test this env var explicitly on
+APU (unified-memory) systems** — the classic discrete-GPU tuning advice
+("preallocation avoids fragmentation, always leave it on") does not transfer.
+Caveat: measured at small scale only (~110s job); may dilute at a
+GPU-inference-dominated scale where the pool-vs-CPU contention is a smaller
+fraction of total memory pressure — verify before assuming it holds at every
+scale. A secondary, unmeasured candidate in the same family:
+`XLA_PYTHON_CLIENT_MEM_FRACTION` (a smaller explicit fraction instead of
+`false`) may recover part of the win with less allocator churn.
+
 ## RCCL transport selection
 
 - `rccl/working-env` (or the site's equivalent RCCL environment module) is required,

@@ -55,9 +55,27 @@ in `env_extra` unless you have a specific override reason**:
 |---|---|---|
 | `DFTRACER_ENABLE` | `1` | Activate tracing (required) |
 | `DFTRACER_INC_METADATA` | `1` | Include process/thread metadata |
-| `DFTRACER_LOG_FILE` | `workspaces/<run_id>/traces/<run_id>` | Trace file prefix |
+| `DFTRACER_LOG_FILE` | `workspaces/<run_id>/traces/raw/<run_name>/<run_name>` | Trace file prefix |
 | `DFTRACER_DATA_DIR` | **`all`** (always) | Which paths to record POSIX/HDF5 I/O for |
 | `DFTRACER_INIT` | `FUNCTION` *(see note below)* | Auto-initialise without an explicit API call |
+
+**HARD RULE — segregate each run's raw trace into its OWN subfolder (user
+instruction, 2026-08-02).** Set `DFTRACER_LOG_FILE` to
+`<WS>/<run-name-or-baseline>/traces/raw/<run_name>/<run_name>` — a dedicated
+subfolder per `run_name` under `traces/raw/`, NOT
+`<WS>/.../traces/raw/<run_name>` sitting flat alongside every other run's
+files with only a filename prefix distinguishing them. Create the subfolder
+before launching (`mkdir -p <WS>/.../traces/raw/<run_name>`) — dftracer logs
+`unable to create log file ... errno=2` and produces a 0-byte trace if the
+directory doesn't exist yet. This mirrors the pattern `traces/compact/` already
+uses (one subfolder per `run_name`) — apply the same segregation to `traces/raw/`
+so multiple baseline/replicate/optimization-variant runs can each be located,
+diffed, and fed into `session_split_traces`/analysis tools independently
+without grep-matching filenames in a shared directory. When multiple
+independent runs execute in the same session (e.g. several baseline
+replicates or N-node parallel probes), this is not optional — a shared flat
+directory makes it easy to accidentally point an analysis step at the wrong
+run's trace once there are more than one or two files in it.
 
 **HARD RULE — always set `DFTRACER_DATA_DIR=all`.** `DFTRACER_DATA_DIR` is a
 path *filter*: dftracer only records POSIX/HDF5 events whose file paths fall under
@@ -102,16 +120,17 @@ or corrupted trace file. Pass `env_extra='{"DFTRACER_INIT":"FUNCTION"}'` in that
 Heuristic: `grep -r "DFTRACER_C_INIT\|DFTRACER_CPP_INIT" annotated/` — if any matches,
 set `DFTRACER_INIT=FUNCTION`.
 
-**`DFTRACER_LOG_FILE` must always be an absolute path inside the workspace run directory.**
-Trace files land at `workspaces/<run_id>/traces/<run_id>.<pid>.pfw`.
+**`DFTRACER_LOG_FILE` must always be an absolute path inside the workspace run directory, in a per-run subfolder.**
+Trace files land at `workspaces/<run_id>/traces/raw/<run_name>/<run_name>.<pid>.pfw`.
 
 **Never set `DFTRACER_LOG_FILE` to `/tmp/` or any path outside the workspace.**
 
 If running the application manually outside the MCP tool:
 ```bash
+mkdir -p /absolute/path/to/workspaces/<run_id>/traces/raw/<run_name>
 export DFTRACER_ENABLE=1
 export DFTRACER_INC_METADATA=1
-export DFTRACER_LOG_FILE=/absolute/path/to/workspaces/<run_id>/traces/<run_id>
+export DFTRACER_LOG_FILE=/absolute/path/to/workspaces/<run_id>/traces/raw/<run_name>/<run_name>
 export DFTRACER_DATA_DIR=all   # use 'all' when I/O lands outside the source dir (checkpoints/datasets on Lustre)
 export DFTRACER_INIT=FUNCTION  # FUNCTION for annotated binaries; only use PRELOAD for un-annotated apps
 ```

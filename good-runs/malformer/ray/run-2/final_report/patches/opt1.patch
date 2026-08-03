@@ -1,0 +1,164 @@
+--- $WS/annotated/src/molformer_ray_descriptors.py	2026-08-02 01:23:53.966444000 -0700
++++ $WS/annotated/src/molformer_ray_descriptors_opt1.py	2026-07-25 11:18:48.058620000 -0700
+@@ -1,6 +1,5 @@
+ import os
+ import atexit
+-import time
+ os.environ["RAY_DATA_DISABLE_PROGRESS_BARS"] = "1"
+ import ray
+ import gc
+@@ -22,10 +21,6 @@
+ import numpy as np
+ import concurrent.futures
+ from dftracer.python import dftracer, dft_fn as DFTracerFn
+-from dftracer.python.torch import trace_handler as dft_torch_trace_handler
+-from torch.profiler import ProfilerActivity
+-from torch.profiler import profile as torch_profile
+-from torch.profiler import schedule as torch_schedule
+ _dft = DFTracerFn("molformer_ray_descriptors")
+ 
+ 
+@@ -57,47 +52,13 @@
+ # without also bumping the venv's Python version.
+ MOLFORMER_REMOTE_CODE_REVISION = "7b12d946c181a37f6012b9dc3b002275de070314"
+ 
+-# HF OFFLINE-MODE ENV GUARD + RETRY (2026-08-02): from_pretrained() was
+-# intermittently raising LocalEntryNotFoundError on ~1-of-16 Ray Train
+-# actors, persistently (all 5 retry attempts over ~20s failed identically
+-# for the same actor), even though HF_HOME/HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE
+-# are exported before `ray start` in the launch script and a single-process
+-# manual test with the same env always succeeds. Retries alone didn't help,
+-# which rules out a transient filesystem race and points at the affected
+-# actor's process simply not having these vars in os.environ at all -- Ray
+-# Train's TorchTrainer sets up its own per-actor runtime_env for DDP
+-# coordination (MASTER_ADDR/PORT, RANK, WORLD_SIZE, etc.) which does not
+-# reliably re-inherit every var exported in the shell that called
+-# `ray start`, especially for actors placed on non-head nodes. Fix: set
+-# these explicitly in Python, inside the actor process itself, right before
+-# the only network-reachable calls in this codebase (from_pretrained),
+-# guaranteeing correctness regardless of what env Ray's actor runtime_env
+-# did or didn't inherit. Retry kept as defense-in-depth for genuine
+-# transient filesystem hiccups (see huggingface/transformers issues #44,
+-# #27421, #31019 for the same symptom class in other distributed setups).
+-def _from_pretrained_with_retry(cls, *args, max_attempts=5, base_delay=2.0, **kwargs):
+-    os.environ["HF_HOME"] = "/p/lustre5/ice4hpc/drug-discovery/ray_molformer/hf_cache"
+-    os.environ["HF_HUB_OFFLINE"] = "1"
+-    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+-    last_exc = None
+-    for attempt in range(1, max_attempts + 1):
+-        try:
+-            return cls.from_pretrained(*args, **kwargs)
+-        except (OSError, EnvironmentError) as exc:
+-            last_exc = exc
+-            if attempt == max_attempts:
+-                break
+-            time.sleep(base_delay * attempt)
+-    raise last_exc
+-
+-
+ @_dft.log
+ def setup_model_with_regression(base_model_name, descriptor_dim):
+-    tokenizer = _from_pretrained_with_retry(
+-        AutoTokenizer, base_model_name, trust_remote_code=True, revision=MOLFORMER_REMOTE_CODE_REVISION
++    tokenizer = AutoTokenizer.from_pretrained(
++        base_model_name, trust_remote_code=True, revision=MOLFORMER_REMOTE_CODE_REVISION
+     )
+-    molformer_config = _from_pretrained_with_retry(
+-        AutoConfig, base_model_name, trust_remote_code=True, revision=MOLFORMER_REMOTE_CODE_REVISION
++    molformer_config = AutoConfig.from_pretrained(
++        base_model_name, trust_remote_code=True, revision=MOLFORMER_REMOTE_CODE_REVISION
+     )
+     model = AutoModelForMaskedLM.from_config(
+         molformer_config, trust_remote_code=True, code_revision=MOLFORMER_REMOTE_CODE_REVISION
+@@ -165,16 +126,6 @@
+     try:
+         return _train_func_per_worker_impl(config)
+     finally:
+-        # Stop the torch profiler BEFORE dftracer.finalize(): trace_handler
+-        # writes its PP events through the dftracer logger, so finalizing
+-        # first would drop the last active window's events on the floor.
+-        try:
+-            _prof = globals().get("_ACTIVE_TORCH_PROF")
+-            if _prof is not None:
+-                _prof.stop()
+-                globals()["_ACTIVE_TORCH_PROF"] = None
+-        except Exception:
+-            pass
+         try:
+             dftracer.get_instance().finalize()
+         except Exception:
+@@ -249,46 +200,8 @@
+ 
+         return input_dict, descriptors
+ 
+-    # --- PyTorch-profiler -> dftracer bridge (emits cat="PP" events) --------
+-    # dftracer.python.torch.trace_handler replays every torch FunctionEvent
+-    # into the dftracer log anchored on kineto's trace_start_ns, so PP events
+-    # land INSIDE the enclosing dftracer regions. record_shapes=True is
+-    # REQUIRED (handler derives input_size from it); profile_memory=True
+-    # feeds cpu_memory/device_memory_usage; with_stack stays OFF.
+-    #
+-    # repeat=1 with wait=0/warmup=0 and a very large `active` (2026-08-02,
+-    # per bug-dftracer-torch-profiler-rocprofiler-conflict): a SECOND
+-    # profiler cycle (repeat>=2) tears down and re-arms kineto's GPU
+-    # collection while dftracer's rocprofiler-sdk HIP-tracing context is
+-    # live, tripping a rocprofiler assertion that aborts the whole process
+-    # (`F ... agent.cpp:640] Check failed: '_v' Must be non nullptr`). To get
+-    # PP coverage for every training step (not just a sampled window) without
+-    # re-arming, use exactly ONE window sized to outlast the whole run.
+-    _torch_prof = torch_profile(
+-        activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+-        schedule=torch_schedule(
+-            wait=0,
+-            warmup=0,
+-            active=int(os.environ.get("DFT_PROF_ACTIVE", "1000000")),
+-            repeat=1,
+-        ),
+-        on_trace_ready=dft_torch_trace_handler,
+-        record_shapes=True,
+-        profile_memory=True,
+-        with_stack=False,
+-    )
+-    # start()/stop() rather than a `with` block purely to avoid re-indenting
+-    # the training loop below; stop() is also re-asserted defensively in
+-    # train_func_per_worker's finally.
+-    _torch_prof.start()
+-    globals()["_ACTIVE_TORCH_PROF"] = _torch_prof
+-
+     for epoch in range(epoch_num, num_epochs):
+         for i, batch in enumerate(dataset.iter_batches(batch_size=batch_size, batch_format="pandas")):
+-            # Delimits one profiler step. Placed at the TOP of the body so a
+-            # `continue` below can never skip it and desynchronise the
+-            # wait/warmup/active schedule.
+-            _torch_prof.step()
+             if epoch == epoch_num and i < iteration:
+                 if i % 1000 == 0 and train.get_context().get_world_rank() == 0:
+                     print(i)
+@@ -303,11 +216,22 @@
+             
+ 
+             encodings, targets = collate_fn(batch)
+-            # outputs = model(**encodings, regression_targets=targets)
+-            mlm_outputs, preds = model(**encodings, regression_targets=targets)
+-            mlm_loss = mlm_outputs.loss
+-            reg_loss = nn.functional.mse_loss(preds, targets)
+-            loss = mlm_loss + reg_loss
++            # OPT1: compute-bound workload (STEP 9 diagnosis: ~92% of wall
++            # time is GPU forward/backward compute, POSIX I/O 0.26%, Ray
++            # comm 7.4%). No autocast/mixed precision was used anywhere in
++            # the original loop. MI300A supports bf16 natively at full
++            # throughput without a GradScaler (unlike fp16, bf16 has fp32's
++            # exponent range so it does not need loss scaling) -- this is
++            # the highest-confidence, lowest-risk compute optimization for
++            # this workload. Wrap only the forward pass (loss compute
++            # included) in torch.autocast; backward()/optimizer.step() stay
++            # outside so gradients/master weights remain fp32.
++            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
++                # outputs = model(**encodings, regression_targets=targets)
++                mlm_outputs, preds = model(**encodings, regression_targets=targets)
++                mlm_loss = mlm_outputs.loss
++                reg_loss = nn.functional.mse_loss(preds, targets)
++                loss = mlm_loss + reg_loss
+ 
+ 
+ 

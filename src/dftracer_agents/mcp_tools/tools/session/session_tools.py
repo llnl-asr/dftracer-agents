@@ -1637,6 +1637,93 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         return _ok(f"Wrote {len(content)} bytes to {subfolder}/{filepath}")
 
     @mcp.tool()
+    def session_edit_file(
+        run_id: str,
+        filepath: str,
+        old_string: str,
+        new_string: str,
+        subfolder: str = "annotated",
+        replace_all: bool = False,
+    ) -> str:
+        """Apply a targeted find-and-replace edit to a file already in the workspace.
+
+        Companion to ``session_write_file`` for agents whose toolset lacks a
+        native ``Edit``/patch tool: ``session_write_file`` only overwrites a
+        file in full, which is wasteful and risky for a small change to a large
+        file (e.g. splicing one section into a multi-thousand-line
+        ``pipeline_plan.md``). This tool reads the file, performs an exact
+        string substitution, and writes the result back — no full-file
+        round-trip through the caller required.
+
+        Matching is exact (no regex). Exactly one occurrence of *old_string*
+        must exist unless *replace_all* is set — this mirrors the safety
+        behavior of the CLI ``Edit`` tool so a caller cannot silently mutate
+        the wrong occurrence of a common string. Provide enough surrounding
+        context in *old_string* to make it unique rather than setting
+        *replace_all* on a string that also occurs where it shouldn't.
+
+        Side effects:
+            * Overwrites ``<workspace>/<subfolder>/<filepath>`` on disk with the
+              substituted content.
+
+        Args:
+            run_id: Session identifier returned by ``session_create``.
+            filepath: Path to the file relative to *subfolder* (e.g.
+                ``"pipeline_plan.md"``). The file must already exist.
+            old_string: Exact text to locate and replace. Must be non-empty and
+                must not equal *new_string*.
+            new_string: Replacement text.
+            subfolder: Workspace sub-folder containing the file. Defaults to
+                ``"annotated"`` for consistency with ``session_write_file``;
+                pass ``"."`` for session-root files like ``pipeline_plan.md``.
+            replace_all: If ``True``, replace every occurrence of *old_string*
+                instead of requiring exactly one. Defaults to ``False``.
+
+        Returns:
+            JSON string with keys:
+                * ``status`` (``"ok"`` or ``"error"``).
+                * ``message`` — on success, ``"Replaced <N> occurrence(s) in
+                  <subfolder>/<filepath>"``; on error, why the edit was rejected
+                  (file not found, *old_string* not found, *old_string* found
+                  more than once with ``replace_all=False``, or *old_string*
+                  equal to *new_string*).
+                * ``occurrences`` — number of replacements made (only on success).
+
+        Raises:
+            Returns ``{"status": "error"}`` — never raises — when the file does
+            not exist, *old_string* is empty, *old_string* equals *new_string*,
+            *old_string* is not found, or *old_string* occurs more than once
+            while *replace_all* is ``False``.
+        """
+        if not old_string:
+            return _err("old_string must be non-empty")
+        if old_string == new_string:
+            return _err("old_string and new_string must differ")
+        try:
+            p = _safe_session_path(_ws(run_id), f"{subfolder}/{filepath}")
+        except ValueError as exc:
+            return _err(str(exc))
+        if not p.exists():
+            return _err(f"File not found: {subfolder}/{filepath}")
+        content = p.read_text(errors="replace")
+        count = content.count(old_string)
+        if count == 0:
+            return _err(f"old_string not found in {subfolder}/{filepath}")
+        if count > 1 and not replace_all:
+            return _err(
+                f"old_string found {count} times in {subfolder}/{filepath} — "
+                "pass replace_all=True or make old_string unique with more "
+                "surrounding context"
+            )
+        new_content = content.replace(old_string, new_string, -1 if replace_all else 1)
+        p.write_text(new_content)
+        replaced = count if replace_all else 1
+        return _ok(
+            f"Replaced {replaced} occurrence(s) in {subfolder}/{filepath}",
+            occurrences=replaced,
+        )
+
+    @mcp.tool()
     def session_remove_path(
         run_id: str,
         relpath: str,

@@ -870,7 +870,21 @@ def _index_guard(directory: str):
     with _index_lock(directory):
         handle = open(path, "a+")
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            # Acquiring cleanly is the common case and silent. Only when
+            # another process (or a stuck one) already holds it is a wait
+            # worth announcing -- otherwise a genuinely long build looks
+            # identical to a lock nobody will ever release.
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                began = time.monotonic()
+                _log.info("waiting on index lock: %s", directory)
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                _log.info(
+                    "acquired index lock: %s (waited %.1fs)",
+                    directory,
+                    time.monotonic() - began,
+                )
             yield
         finally:
             try:
@@ -945,7 +959,9 @@ def _open_indexer(trace_dir: str, force_rebuild: bool = False, index_dir: str = 
     return indexer
 
 
-def _aggregate(indexer, group_by: List[str], query: str = "") -> List[Dict[str, Any]]:
+def _aggregate(
+    indexer, group_by: List[str], query: str = "", trace_dir: str = ""
+) -> List[Dict[str, Any]]:
     """Run one grouped aggregation scan and return it as plain dict rows.
 
     Args:
@@ -954,13 +970,35 @@ def _aggregate(indexer, group_by: List[str], query: str = "") -> List[Dict[str, 
         query: Optional native filter, applied during the scan rather than
             after it. This is what makes a filtered view cheap: the events that
             would be thrown away are never decoded.
+        trace_dir: The directory ``indexer`` was opened against. Used only to
+            tell a real failure apart from the race below.
     """
     import pyarrow as pa
 
     kwargs: Dict[str, Any] = {"group_by": group_by}
     if query:
         kwargs["query"] = query
-    batches = indexer.iter_arrow_dfanalyzer_all(**kwargs)["events"]
+
+    # iter_arrow_dfanalyzer_all re-resolves the index path itself rather than
+    # reusing what ensure_indexed() saw, so a compactor archiving this
+    # directory's files between the two calls leaves nothing to resolve and
+    # this raises "No index path available". That data is not lost -- done/
+    # files move to compact/ on archival, not away entirely -- so a directory
+    # that has gone empty in the meantime contributes zero rows here rather
+    # than failing; the same events surface from compact/ on the next call.
+    batches = None
+    for attempt in range(INDEX_RETRIES):
+        try:
+            batches = indexer.iter_arrow_dfanalyzer_all(**kwargs)["events"]
+            break
+        except RuntimeError as exc:
+            if "No index path" not in str(exc):
+                raise
+            if trace_dir and not _trace_files(trace_dir):
+                return []
+            if attempt == INDEX_RETRIES - 1:
+                raise
+            time.sleep(INDEX_RETRY_SECONDS)
     records = [pa.record_batch(capsule) for capsule in batches]
     if not records:
         return []
@@ -1003,7 +1041,7 @@ def _aggregate_session(
     rows: List[Dict[str, Any]] = []
     for directory in directories:
         indexer = _open_indexer(directory, force_rebuild=force_rebuild, index_dir=index_dir)
-        rows.extend(_aggregate(indexer, group_by, query=query))
+        rows.extend(_aggregate(indexer, group_by, query=query, trace_dir=directory))
     return rows
 
 

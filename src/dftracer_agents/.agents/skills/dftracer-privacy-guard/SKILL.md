@@ -98,6 +98,32 @@ Never hand-edit around the tools.
    file allowed to carry the session's real resolved values (per Pipeline
    Policy rule 15), everything else in `final_report/` must be placeholder-only
    so the package is portable off this machine.
+
+   **KNOWN BUG — `session_final_report` regenerates several files from
+   boilerplate on EVERY call, silently discarding customizations and undoing
+   a prior redaction pass (confirmed, AF3 session, 2026-08-02).**
+   `install.sh`/`run_all.sh`/`config.ini`/`plan/*.md`/`PERFORMANCE.md`/
+   `performance/mlflow.json` are all rewritten fresh each time the tool is
+   called — including its OWN generated boilerplate, which itself leaked the
+   real absolute workspace path (in `install.sh`'s comment) and baked a
+   literal flux jobid into `run_all.sh`'s default argument. Consequence: if
+   you hand-customize any of these files (adding a missing script, fixing a
+   packaging gap found during validation) and then call
+   `session_final_report` again — e.g. to set `validated=True` after a real
+   validation run — your customization is silently lost AND any earlier
+   `privacy_redact()` pass on those regenerated files is undone. **Sequence
+   around it:** do ALL hand-customization of `final_report/` scripts/content
+   FIRST, call `session_final_report` to get the completeness/PDF/README
+   gates, do your real validation run, then make any final customization the
+   validation revealed was needed, run `privacy_redact()`/`privacy_scan()`
+   LAST — after the LAST `session_final_report` call — and do not call
+   `session_final_report` again after that final redaction pass (calling it
+   again to only flip `validated=True` would re-leak the paths it just
+   cleaned). This is a real fix target in
+   `src/dftracer_agents/mcp_tools/tools/session/final_report.py` (the
+   regeneration should be idempotent/additive, and its own boilerplate should
+   emit placeholders, not real paths) — not yet fixed, this is a documented
+   workaround.
 3. **Redaction is not history rewriting.** These tools clean the working tree.
    Content already committed remains in git history; if that matters, say so
    explicitly rather than implying the repo is clean.

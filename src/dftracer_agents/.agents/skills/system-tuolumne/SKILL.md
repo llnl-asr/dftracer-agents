@@ -868,3 +868,27 @@ tuning.
 client on Tuolumne compute nodes. `max_read_ahead_per_file_mb` is admin-only (`lctl set_param`
 returns Permission denied for unprivileged users). Don't propose user-space readahead tuning as
 an L3 optimization here — there is no headroom to gain and no permission to change it anyway.
+
+### Check `stat -f <venv>` before crediting an I/O finding on a Python-heavy multi-node workload
+
+Confirmed on ray_molformer (2026-08-02, 4-node/16-GPU): a session's Python virtualenv living
+under `/usr/WS2/...` resolves to NFS (`stat -f` → `Type: nfs`), not Lustre, even though
+`dataset/`-style symlinks correctly point at `/p/lustre5`. A venv on NFS causes a large POSIX
+metadata-op storm from every Ray/multi-process worker's `import` machinery walking
+`site-packages` independently (measured: 81.3% of total I/O time, 691K ops) — always
+`stat -f` the venv path before attributing an I/O bottleneck finding, since the fix (stage the
+venv to node-local storage or Lustre) is completely different from an app-data I/O fix. In
+this case the venv-on-NFS traffic was bounded to <=5.8% of the actual (compute-side)
+bottleneck, so it did not warrant action — but the bound has to be measured, not assumed.
+
+### PyTorch's ROCm build bundles its own ROCm libraries and ignores `/opt/rocm`
+
+Confirmed on ray_molformer (2026-08-02): a PyTorch-ROCm wheel installed into a session venv
+ships its own copies of `librocblas.so`, `librocsolver.so`, `libMIOpen.so`, `librocsparse.so`,
+`libtorch_hip.so`, `librccl.so` (~9.7GB total) under `<venv>/lib/python*/site-packages/torch/
+lib/`, and the running process loads THESE, not the system `/opt/rocm` module's libraries —
+confirmed via `ldd`/loaded-library inspection, not assumption. An optimization attempt that
+prewarms/stages `/opt/rocm` libraries (e.g. to cut GPU code-object load time) will silently
+target the wrong files and measure a null result. Before proposing any ROCm-library
+prewarm/staging/caching optimization, verify which library files the actual process loads
+(check `torch/lib/*.so` first, not the module-loaded system ROCm tree).

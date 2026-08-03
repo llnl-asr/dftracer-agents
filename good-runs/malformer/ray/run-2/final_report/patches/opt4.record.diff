@@ -1,0 +1,17 @@
+diff -ruN --no-dereference $WS/baseline_4node/record/meta.json $WS/opt4/record/meta.json
+--- $WS/baseline_4node/record/meta.json	2026-08-02 03:28:02.755460000 -0700
++++ $WS/opt4/record/meta.json	2026-08-02 03:28:04.178876000 -0700
+@@ -1,9 +1,9 @@
+ {
+-  "run_name": "baseline_4node",
+-  "prev_run_name": null,
+-  "captured_at": "2026-08-02T10:28:02.754486+00:00",
++  "run_name": "opt4",
++  "prev_run_name": "baseline_4node",
++  "captured_at": "2026-08-02T10:28:04.179209+00:00",
+   "source_path": "$WS/annotated/source",
+-  "notes": "Fresh 4-node/16-GPU baseline, 6 bugs fixed (dataset symlink, HF cache on PFS, HF revision pin, transformers dynamic-module race, worker-join success-string mismatch, HIP-tracing init-ordering before torch import). Full-run PP torch-profiler coverage ported into v1 entry script. 12 iterations, exit 0, 27.3M events, all 9 categories confirmed.",
++  "notes": "Compute L2: targeted system ROCm module libs to cut hipModuleLoad relocation cost \u2014 mistargeted (wrong libs), measured null, superseded by opt5.",
+   "captured": {
+     "build_config": [],
+     "params": [],
