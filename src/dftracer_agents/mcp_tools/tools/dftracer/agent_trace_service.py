@@ -959,50 +959,64 @@ def _open_indexer(trace_dir: str, force_rebuild: bool = False, index_dir: str = 
     return indexer
 
 
+#: This project's group-by vocabulary translated to the aggregation index's
+#: own column names (``fhash``/``name``) — kept distinct so callers can ask
+#: for the raw hash/function name and resolve them separately.
+_NATIVE_GROUP_BY = {"file_hash": "fhash", "func_name": "name"}
+_AGENT_GROUP_BY = {native: agent for agent, native in _NATIVE_GROUP_BY.items()}
+
+#: Every aggregation scan asks for the same metrics beyond its group-by keys.
+_AGG_METRICS = ("count", "sum:dur", "min:ts", "max:te")
+
+
+def _agent_row(row: Dict[str, Any], native_keys: List[str]) -> Dict[str, Any]:
+    """Map one aggregation row from the index's native columns to this
+    project's (``file_hash``/``func_name`` instead of ``fhash``/``name``)."""
+    out = {_AGENT_GROUP_BY.get(key, key): row.get(key) for key in native_keys}
+    out["count"] = row.get("count")
+    out["time"] = (row.get("sum_dur") or 0) / 1e6
+    out["time_start"] = row.get("min_ts")
+    out["time_end"] = row.get("max_te")
+    return out
+
+
 def _aggregate(
-    indexer, group_by: List[str], query: str = "", trace_dir: str = ""
+    trace_dir: str, group_by: List[str], query: str = "", index_dir: str = ""
 ) -> List[Dict[str, Any]]:
     """Run one grouped aggregation scan and return it as plain dict rows.
 
     Args:
-        indexer: An indexer whose aggregation tier is ready.
-        group_by: Columns to collapse the scan onto.
+        trace_dir: Directory whose already-built index this scans.
+        group_by: Columns to collapse the scan onto, in this project's own
+            vocabulary (``file_hash``/``func_name``); translated to the
+            aggregation index's own columns (``fhash``/``name``) before the
+            scan.
         query: Optional native filter, applied during the scan rather than
             after it. This is what makes a filtered view cheap: the events that
             would be thrown away are never decoded.
-        trace_dir: The directory ``indexer`` was opened against. Used only to
-            tell a real failure apart from the race below.
+        index_dir: Override the ``.dftindex`` location, matching whatever
+            ``_open_indexer`` built against.
+
+    Returns:
+        One row per group, with this project's column names. A directory
+        whose index went missing mid-scan (a compactor archived it) comes
+        back with zero rows rather than raising — the same events surface
+        from compact/ on the next call.
     """
     import pyarrow as pa
+    from dftracer.utils import TraceViewer
 
-    kwargs: Dict[str, Any] = {"group_by": group_by}
+    native_keys = [_NATIVE_GROUP_BY.get(key, key) for key in group_by]
+
+    viewer = TraceViewer(trace_dir, index_path=index_dir or None)
     if query:
-        kwargs["query"] = query
+        viewer = viewer.filter(query)
+    table = viewer.group_by(*native_keys).agg(*_AGG_METRICS).collect()
 
-    # iter_arrow_dfanalyzer_all re-resolves the index path itself rather than
-    # reusing what ensure_indexed() saw, so a compactor archiving this
-    # directory's files between the two calls leaves nothing to resolve and
-    # this raises "No index path available". That data is not lost -- done/
-    # files move to compact/ on archival, not away entirely -- so a directory
-    # that has gone empty in the meantime contributes zero rows here rather
-    # than failing; the same events surface from compact/ on the next call.
-    batches = None
-    for attempt in range(INDEX_RETRIES):
-        try:
-            batches = indexer.iter_arrow_dfanalyzer_all(**kwargs)["events"]
-            break
-        except RuntimeError as exc:
-            if "No index path" not in str(exc):
-                raise
-            if trace_dir and not _trace_files(trace_dir):
-                return []
-            if attempt == INDEX_RETRIES - 1:
-                raise
-            time.sleep(INDEX_RETRY_SECONDS)
-    records = [pa.record_batch(capsule) for capsule in batches]
-    if not records:
+    rows = pa.table(table).to_pylist()
+    if not rows:
         return []
-    return pa.Table.from_batches(records).to_pylist()
+    return [_agent_row(row, native_keys) for row in rows]
 
 
 def _aggregate_session(
@@ -1040,8 +1054,8 @@ def _aggregate_session(
 
     rows: List[Dict[str, Any]] = []
     for directory in directories:
-        indexer = _open_indexer(directory, force_rebuild=force_rebuild, index_dir=index_dir)
-        rows.extend(_aggregate(indexer, group_by, query=query, trace_dir=directory))
+        _open_indexer(directory, force_rebuild=force_rebuild, index_dir=index_dir)
+        rows.extend(_aggregate(directory, group_by, query=query, index_dir=index_dir))
     return rows
 
 

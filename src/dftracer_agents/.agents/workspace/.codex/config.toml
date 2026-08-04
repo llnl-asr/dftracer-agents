@@ -1,3 +1,18 @@
+model = "gpt-5.2"
+model_reasoning_effort = "medium"
+model_provider = "my-custom-proxy"
+# The gpt-5.2 model catalog entry declares supports_search_tool = true, so
+# Codex attaches the hosted web_search_preview tool to every turn unless told
+# not to here. Azure (behind the LivAI proxy) rejects that tool with "Tool
+# 'web_search_preview' disabled for this organization.", so it must be off.
+# `web_search` is the actual switch (top-level enum: disabled|cached|indexed|
+# live) that gates whether the tool gets attached to a request at all --
+# `[tools] web_search` (kept below) is a separate, narrower flag and was not
+# sufficient on its own.
+web_search = "disabled"
+
+[tools]
+web_search = false
 # Codex CLI project-scoped MCP config for dftracer-agents.
 #
 # Codex only loads this file for TRUSTED projects. That trust decision is
@@ -10,4 +25,83 @@
 # See docs/harnesses.rst for the full Codex CLI notes.
 
 [mcp_servers.dftracer]
-url = "http://127.0.0.1:10000/mcp"
+url = "http://127.0.0.1:5000/mcp"
+
+[mcp_servers.dftracer.tools.memory_list]
+approval_mode = "approve"
+
+[mcp_servers.dftracer.tools.pipeline_get_run_id]
+approval_mode = "approve"
+
+[mcp_servers.dftracer.tools.session_status]
+approval_mode = "approve"
+
+[mcp_servers.dftracer.tools.session_validate_structure]
+approval_mode = "approve"
+
+[mcp_servers.dftracer.tools.validate_annotations]
+approval_mode = "approve"
+
+[mcp_servers.dftracer.tools.profile_bind]
+approval_mode = "approve"
+
+[mcp_servers.dftracer.tools.session_init_run]
+approval_mode = "approve"
+
+[mcp_servers.dftracer.tools.profile_step_begin]
+approval_mode = "approve"
+
+[mcp_servers.dftracer.tools.session_run_with_dftracer]
+approval_mode = "approve"
+
+[mcp_servers.dftracer.tools.split]
+approval_mode = "approve"
+
+[mcp_servers.dftracer.tools.view]
+approval_mode = "approve"
+
+[mcp_servers.dftracer.tools.session_analyze_traces]
+approval_mode = "approve"
+
+[mcp_servers.dftracer.tools.profile_step_end]
+approval_mode = "approve"
+
+[mcp_servers.dftracer.tools.memory_write]
+approval_mode = "approve"
+
+[projects."/usr/WS2/haridev/agent-tracer"]
+trust_level = "trusted"
+
+[hooks.state]
+
+[hooks.state."/usr/WS2/haridev/agent-tracer/.codex/hooks.json:pre_tool_use:0:0"]
+trusted_hash = "sha256:fd466b23007eedd3cf589a4b2f156699c140e3fcec72619c591b7fcf6dc92603"
+
+[hooks.state."/usr/WS2/haridev/agent-tracer/.codex/hooks.json:permission_request:0:0"]
+trusted_hash = "sha256:d776853b4aa0db520112834c64e275401788227fff47174625ba56a314895ba7"
+
+[hooks.state."/usr/WS2/haridev/agent-tracer/.codex/hooks.json:post_tool_use:0:0"]
+trusted_hash = "sha256:42be6d158edaa446ddc99687f1e4ca5b52a4f5fe65e84a5eec991d53a71f381f"
+
+[hooks.state."/usr/WS2/haridev/agent-tracer/.codex/hooks.json:session_start:0:0"]
+trusted_hash = "sha256:5c0d42dea9674711676c42145129b63944d390b01e06b6e236d82467a6d3227b"
+
+[hooks.state."/usr/WS2/haridev/agent-tracer/.codex/hooks.json:user_prompt_submit:0:0"]
+trusted_hash = "sha256:066bdd2709c6b9083a647e46aae77955878465b0c6d9f6226d996b6d6e437a33"
+
+[hooks.state."/usr/WS2/haridev/agent-tracer/.codex/hooks.json:stop:0:0"]
+trusted_hash = "sha256:7610d0c21d1290d477e66dc318a2a2cc819e2a146082e28110cb6af22e90a1a0"
+
+[model_providers.my-custom-proxy]
+name = "LivAI"
+base_url = "https://livai-api.llnl.gov/v1" # <--- PUT THE URL HERE (Ends in /v1)
+env_key = "OPENAI_API_KEY"                 # Name of the env variable for your key
+wire_api = "responses"
+# Azure (behind this proxy) rejects the hosted web_search_preview tool with
+# "Tool 'web_search_preview' disabled for this organization." Telling Codex
+# this provider can't do standalone web search stops it from ever attaching
+# that tool to requests, instead of erroring after the model group is chosen.
+supports_standalone_web_search = false
+
+[tui.model_availability_nux]
+"gpt-5.6-sol" = 4
