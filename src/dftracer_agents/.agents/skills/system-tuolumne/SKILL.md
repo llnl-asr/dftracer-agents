@@ -1,3 +1,8 @@
+---
+name: system-tuolumne
+description: System profile for Tuolumne (LLNL AMD MI300A / Cray PE) — module load order, Flux scheduler, ROMIO/MPICH-IO hints, Lustre striping, ROCm/PyTorch environment setup, and known build/run pitfalls
+---
+
 # System: Tuolumne
 
 AMD MI300A APU cluster at LLNL. Uses Cray PE with ROCm.
@@ -359,22 +364,30 @@ fixed and `session_detect` correctly resolved `hip_tracing_needed=True` +
 before HIP was known to be needed, and never invalidated) still had no ROCm
 module. Every later step sourcing that `env.sh` — critically
 `session_install_dftracer` — ran with `DFTRACER_ENABLE_HIP_TRACING=ON` but
-no `hipcc`/ROCm CMake config anywhere on `PATH`/`CMAKE_PREFIX_PATH`. The
-resulting failure was a **confusing, unrelated-looking error**: cmake's HIP
-compiler detection falls back to a broken frontend and dies with
-`fatal error: 'stdlib.h' file not found` — nothing about the message hints
-at a missing ROCm module. Verified directly: with `rocm/7.2.1` NOT loaded,
-`hipcc` isn't even on `PATH`; with it loaded, a trivial `.hip.cpp` compiles
-clean. Fixed in `_ensure_session_env_script`: after computing the module
-list, it now reads the session's own `session.json` (`detection.
-hip_tracing_needed` + `detection.rocm_info.module`) and appends the resolved
-`rocm/X.Y.Z` module if the app genuinely needs HIP and no rocm module is
-already in the list. If you ever see `'stdlib.h' file not found` (or any
-other "missing basic header" error) from a build step on a HIP-enabled
-session, check `cat <ws>/scripts/env.sh` for a `rocm/` module BEFORE
-assuming it's a real toolchain problem — an env.sh generated before HIP was
-correctly detected is stale; remove it (`session_remove_path(run_id,
-'scripts/env.sh')`) and let it regenerate.
+no `hipcc`/ROCm CMake config anywhere on `PATH`/`CMAKE_PREFIX_PATH`, which
+means `find_package(rocprofiler-sdk)` fails and HIP tracing silently
+compiles out (see the software-rocm skill) — a real, independent bug.
+Verified directly: with `rocm/7.2.1` NOT loaded, `hipcc` isn't even on
+`PATH`; with it loaded, a trivial `.hip.cpp` compiles clean. Fixed in
+`_ensure_session_env_script`: after computing the module list, it now reads
+the session's own `session.json` (`detection.hip_tracing_needed` +
+`detection.rocm_info.module`) and appends the resolved `rocm/X.Y.Z` module
+if the app genuinely needs HIP and no rocm module is already in the list.
+
+**Correction — this was NOT what caused the `'stdlib.h' file not found`
+error in this same session.** That error's actual cause turned out to be a
+third, unrelated bug — see "`'stdlib.h' file not found` has a SECOND,
+unrelated root cause" further below (the `CPLUS_INCLUDE_PATH`/
+`C_INCLUDE_PATH` env-var poisoning of Cray clang's toolchain). Both bugs
+were real and both got fixed, but don't assume a missing ROCm module is the
+explanation for a `stdlib.h` error just because this paragraph is nearby —
+check `cat <ws>/scripts/env.sh` for the rocm module AND check whether
+`CPLUS_INCLUDE_PATH`/`C_INCLUDE_PATH` are set in the failing step's
+environment; either one alone is sufficient to cause a `stdlib.h` failure on
+this system, for completely different reasons. An `env.sh` missing a needed
+`rocm/` module is usually because it was generated before HIP was correctly
+detected and never invalidated — remove it
+(`session_remove_path(run_id, 'scripts/env.sh')`) and let it regenerate.
 
 ### Environment consistency rules (ABI safety)
 
@@ -836,6 +849,46 @@ when building via session_install_dftracer after STEP 1 has resolved a newer CCE
 
 **Important:** For Python/AI/ML apps, **dftracer MUST install into the same venv as the app** (not a separate `install/` directory). The session_install_dftracer MCP tool may create a separate environment; if so, manually install via pip into the shared venv instead.
 
+## `'stdlib.h' file not found` has a SECOND, unrelated root cause: `CPLUS_INCLUDE_PATH`/`C_INCLUDE_PATH` env vars (fixed 2026-08-05, RAJAPerf session)
+
+Same exact error text as the 2026-07-09 entry above, but a **completely
+different root cause** — do not assume it's a stale module-version mismatch
+without checking this first, since the fix for that entry will NOT resolve
+this one. Isolated by direct testing (RAJAPerf session, dftracer's vendored
+`cpp-logger` dependency build): setting `CPLUS_INCLUDE_PATH=/usr/include`
+ALONE, with a perfectly consistent/correctly-resolved module stack and
+matching mpicc/mpicxx throughout, was sufficient to reproduce
+`fatal error: 'stdlib.h' file not found` on any C++ translation unit
+including `<cstdlib>`/`<string>`/anything that pulls them in transitively —
+removing just that one env var (leaving everything else identical) fixed it.
+
+**Why:** Cray clang doesn't ship its own libstdc++; it auto-detects an
+installed GCC toolchain to borrow C++ standard library headers from (on
+Tuolumne: `/opt/rh/gcc-toolset-13`, confirmed via `mpicxx -v`, which shows
+`Selected GCC installation: /opt/rh/gcc-toolset-13/...`). That toolset ships
+`include/c++/13/cstdlib` but NOT its own `stdlib.h` — `cstdlib` does
+`#include_next <stdlib.h>` expecting the search chain to fall through to the
+real one, which Cray clang normally supplies itself via an implicit
+`-internal-externc-isystem /usr/include`. Setting `CPLUS_INCLUDE_PATH` (or
+`C_INCLUDE_PATH`) — even to that SAME `/usr/include` directory — gets
+spliced into Clang's internal include-resolution chain ahead of that
+implicit fallback and breaks the `#include_next` chain, so `stdlib.h`
+resolves nowhere. This is NOT specific to HDF5 or any particular library;
+ANY code that sets these two env vars to point the compiler at extra headers
+will take down the ENTIRE build on Cray clang, including totally unrelated
+dependencies that never reference the extra headers at all (confirmed: it
+broke dftracer's vendored `cpp-logger`, which has nothing to do with HDF5).
+
+**Fix:** never use `C_INCLUDE_PATH`/`CPLUS_INCLUDE_PATH` env vars to point a
+Cray-clang build at extra headers. Use `-I<dir>` via `CFLAGS`/`CXXFLAGS`
+instead — verified directly to achieve the identical "prefer this include
+dir" goal without touching Clang's internal system-header chain. Fixed at
+the tool level in `_install_dftracer_pip_direct` (install.py)'s HDF5-prefix
+handling, which used to export `C_INCLUDE_PATH`/`CPLUS_INCLUDE_PATH=<hdf5
+include dir>` and now appends `-I<hdf5 include dir>` to `CFLAGS`/`CXXFLAGS`
+instead. If you ever hand-roll a similar "point the compiler at this extra
+include dir" env setup on this system, use the flag form, not the env-var
+form.
 
 ## Environment consistency (MANDATORY, applies to every step)
 
@@ -1005,3 +1058,21 @@ silently swap it.
 
 See [[dftracer-annotation-lessons]] LESSONS_LOG.md (2026-08-04, YGM session)
 for the full build log and the other unrelated fixes made in the same session.
+
+## HSA_ENABLE_INTERRUPT=0 (busy-poll) is a NET REGRESSION for mixed CPU+GPU apps on MI300A (2026-08-05)
+
+- **Symptom:** a GPU phase dominated by many blocking `hipStreamSynchronize` round-trips
+  looks like it should benefit from HSA busy-wait completion signals, and a single-replicate
+  probe appeared to confirm it (-9.9% / -16.4% on two sync-heavy kernels).
+- **Root cause:** `HSA_ENABLE_INTERRUPT=0` makes the host thread spin-wait for completion
+  signals, burning one host core per rank. On MI300A (unified APU, host cores shared with
+  the ranks' own CPU work) that CPU is taken away from any co-resident host-side compute.
+- **Measured (RAJAPerf, 4 nodes x 16 ranks, 5 interleaved replicates, untraced both arms):**
+  whole-suite p50 **+3.78% (worse)**; CPU-only `Base_Seq` kernels **+3.95% (worse)**;
+  GPU `Base_HIP` kernels only -1.03%, with overlapping ranges.
+- **Exact guidance:** do not use `HSA_ENABLE_INTERRUPT=0` on Tuolumne unless the phase is
+  pure-GPU with genuinely idle host cores. The single-replicate probe result did NOT
+  replicate over 5 interleaved replicates - treat it as a worked example of why a
+  single-sample delta is never creditable here.
+- `rocm-smi --setperflevel high` remains admin-only on Tuolumne (no sudo) - not a usable
+  L3 lever from inside a `flux run`.

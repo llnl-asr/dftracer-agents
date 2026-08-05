@@ -208,3 +208,57 @@ the full fix (always launch with `--exclusive`, and `unset PMI_RANK PMI_SIZE PMI
 PALS_APID PALS_APINFO PALS_NODEID PALS_RANKID PALS_SPOOL_DIR LDCS_RANKINFO` before
 invoking the training process) and the detection recipe — not duplicated here to
 avoid drift between the two copies.
+
+## Unified PHYSICAL memory != any host pointer is GPU-addressable (MI300A, ROCm 7.2.1)
+
+Symptom: SIGABRT (rc=134) with repeated `Memory access fault by GPU node-4 ...
+Reason: Unknown` on the first kernel, after switching an app to a "plain aligned
+host malloc + hipMemAdvise" allocation path on MI300A (RAJAPerf
+`--hip-data-space HipHostAdviseFine`, 2026-08-05).
+
+Root cause: MI300A's APU shares HBM *physically* between CPU and GPU, but the GPU
+still only addresses ranges that came from a HIP-registered allocation path
+(`hipMalloc` / `hipMallocManaged` / `hipHostMalloc`, or an explicit
+`hipHostRegister`). `hipMemAdvise` conveys placement/coherence HINTS for an already-
+registered range; it does not register or map a plain `malloc`/`aligned_alloc` buffer.
+
+Fix: use `hipMallocManaged` when you want the zero-staging-copy APU behaviour — it
+is the same physical HBM with no migration on MI300A, and it removes the pinned-host
+staging buffer that discrete-GPU code paths force. Never justify a plain-malloc GPU
+access path with "unified memory makes it free".
+
+## dftracer HIP tracing is a 6-7x observer effect on launch/sync-heavy kernels (2026-08-05)
+
+- **Symptom:** a `HIP_RUNTIME_API` trace bucket implies ~43 us per host-side HIP call, far
+  above a bare `hipLaunchKernel` on MI300A (~2-5 us), and the kernels with the most HIP
+  calls per unit work look catastrophically slow.
+- **Root cause:** every intercepted HIP API call and kernel dispatch pays the tracing cost,
+  so the inflation is proportional to CALL COUNT, not to real time - it lands hardest on
+  exactly the many-small-launch / many-sync pattern you are trying to diagnose.
+- **Measured (RAJAPerf, MI300A/gfx942, ROCm 7.2.1):** kernels issuing 26
+  `hipStreamSynchronize` + hundreds of `hipLaunchKernel` per repetition were inflated
+  **6.1x-6.7x** in the app's own reported time (0.960 s traced vs 0.144 s untraced p50).
+  The traced data supported a conclusion ("the GPU variant is 18x slower than serial") that
+  is FALSE untraced.
+- **Exact fix:** before sizing any GPU launch-overhead optimization against a
+  `HIP_RUNTIME_API` / `KERNEL_DISPATCH` bucket, cross-check against the application's own
+  timing output with tracing DISABLED. Keep tracing state identical across optimization
+  arms (KB hard rule), but do the BOTTLENECK SIZING untraced.
+
+## 2026-08-05 (MI300A/gfx942, ROCm 7.2.1): compute-lever no-ops and one live candidate
+
+- `HSA_ENABLE_INTERRUPT=0` (busy-wait GPU completion): **regression on any mixed CPU+GPU app**.
+  Measured on RAJAPerf, 5 interleaved replicates, 4N/16R, untraced both arms: GPU-side -1.0%,
+  CPU-side +4.0%, net +3.78% WORSE. Busy-polling steals host cores from co-resident CPU work.
+  Only consider for a pure-GPU sync-heavy phase with idle host cores.
+- `rocm-smi --setperflevel high`: admin-gated on LC systems (no sudo); MI300A already boosts
+  under sustained load. Treat as not-tunable rather than untried.
+- MIOpen find-mode / vendor conv auto-tune: **not applicable** to apps that emit their own
+  HIP kernels (no library conv/GEMM dispatch to tune).
+- NUMA/CPU-GPU affinity binding: now a confirmed no-op on this exact MI300A system across
+  four distinct workload classes. Do not re-propose without a new mechanism.
+- Live candidate for many-small-launch ROCm apps: **HIP graphs** (`hipGraphCreate`/
+  `hipGraphInstantiate`/`hipGraphLaunch`) to amortize per-launch driver enqueue cost, the HIP
+  analogue of CUDA Graphs kernel batching (Ekelund et al. 2025,
+  https://arxiv.org/pdf/2501.09398v1). Size the expected win against an UNTRACED app-timer
+  measurement - HIP API tracing inflates exactly this pattern several-fold.

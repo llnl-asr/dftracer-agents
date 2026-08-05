@@ -3,7 +3,7 @@
   "key": "dftracer-analyzer (baseline_4node)",
   "index": 1,
   "agent": "dftracer-analyzer",
-  "notes": "Analyze fresh 4-node/16-GPU baseline_4node trace (225MB, 56 chunks, ~27.3M events), alloc f3Ppem8DiFzP",
+  "notes": "Analyze fresh 4-node/16-GPU baseline_4node trace (225MB, 56 chunks, ~27.3M events), alloc <flux-jobid>",
   "status": "ok",
   "tries": 1,
   "retries": 0,

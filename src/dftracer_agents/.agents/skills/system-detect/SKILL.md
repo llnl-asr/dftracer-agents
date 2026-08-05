@@ -1,3 +1,8 @@
+---
+name: system-detect
+description: Detect the current HPC/container system via mcp__dftracer__system_detect and load its module/env/MPI-launcher configuration, or register a new system
+---
+
 # System Detection
 
 Detect the current HPC/container system and load appropriate configuration.

@@ -1069,15 +1069,39 @@ def _install_dftracer_pip_direct(
 
             # Prepend source HDF5 include/lib so the compiler/linker prefer it over
             # any /usr/include or /usr/lib64 HDF5 that would otherwise leak in.
+            #
+            # NEVER use the C_INCLUDE_PATH/CPLUS_INCLUDE_PATH env vars for this
+            # on a Cray-clang toolchain: they are NOT a safe "extra -I" —
+            # setting either one (confirmed with JUST CPLUS_INCLUDE_PATH=
+            # /usr/include, nothing else) breaks Cray clang's own internal
+            # GCC-toolchain auto-detection's `#include_next <stdlib.h>` chain
+            # (it auto-selects a headers-only GCC toolset, e.g.
+            # /opt/rh/gcc-toolset-13, for libstdc++ and expects to fall through
+            # to the system libc's stdlib.h next -- the CPATH-family env vars
+            # get spliced into that internal search chain ahead of the
+            # implicit /usr/include fallback, so cstdlib's #include_next
+            # resolves nowhere) and produces `fatal error: 'stdlib.h' file not
+            # found` for EVERY C++ translation unit in the build, not just the
+            # ones that need HDF5 headers -- confirmed to take down dftracer's
+            # unrelated vendored cpp-logger dependency this way (RAJAPerf
+            # 2026-08-05; same symptom seen 2026-07-20 on pecan_milan).
+            # CFLAGS/CXXFLAGS `-I<dir>` achieves the same "prefer this HDF5"
+            # goal without touching the compiler's internal system-header
+            # resolution -- verified directly to compile clean where the env
+            # var version failed identically.
             for _var, _val in (
                 ("CMAKE_PREFIX_PATH", hdf5_prefix),
-                ("C_INCLUDE_PATH", str(_hinc)),
-                ("CPLUS_INCLUDE_PATH", str(_hinc)),
                 ("LIBRARY_PATH", str(_hlib)),
                 ("LD_LIBRARY_PATH", str(_hlib)),
             ):
                 _cur = pip_env.get(_var, _os.environ.get(_var, ""))
                 pip_env[_var] = _val + (_os.pathsep + _cur if _cur else "")
+            for _var in ("CFLAGS", "CXXFLAGS"):
+                _cur_flags = pip_env.get(_var, _os.environ.get(_var, ""))
+                _inc_flag = f"-I{_hinc}"
+                pip_env[_var] = (
+                    f"{_inc_flag} {_cur_flags}".strip() if _cur_flags else _inc_flag
+                )
     elif features.get("hdf5") is False:
         # Explicit off (either "not detected" or a caller override via
         # session_install_dftracer(hdf5=False)) — force it rather than

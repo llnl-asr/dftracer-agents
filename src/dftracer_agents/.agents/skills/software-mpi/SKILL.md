@@ -379,3 +379,22 @@ What survives, and is the durable lesson:
 - Barrier mean duration rising while wall time falls remains a valid tell that the barrier is
   a sink rather than a cost — but confirm the aggregate is actually a meaningful fraction of
   wall clock before acting on it.
+
+## Barrier-dominated benchmark harnesses: check the call site before proposing anything (2026-08-05)
+
+Two independent workloads on the same Cray MPICH system have now shown `MPI_Barrier` time
+that belongs to the BENCHMARK'S OWN TIMING HARNESS, not to the application's algorithm
+(IOR's timing loop; RAJAPerf's `KernelBase::startTimer/stopTimer`). Before proposing any
+communication fix for a barrier finding, `grep -rn MPI_Barrier` the source and classify each
+call site as harness vs. algorithmic. Harness barriers are off-limits (reducing them changes
+what is measured) and the only remaining lever is collective-algorithm selection.
+
+`MPICH_SHARED_MEM_COLL_OPT=1` (node-local shared-memory collective algorithms) is the
+standard env-var-only lever for that case — but it has already measured **no_change (-1.6%,
+inside noise)** on this system for IOR's barrier/allreduce harness at 64 ranks/node
+(`opt_kb`, `software/L2/tuolumne/ior/cray-mpich`). Propose it, but state up front that the
+prior on this system is null; it is worth a slot only when the barrier bucket is large
+(>= several % of wall time) AND ranks are densely packed per node so a node-local algorithm
+has something to exploit. Citation for the mechanism: Thakur et al., IJHPCA 19(1) 2005,
+https://doi.org/10.1177/1094342005051521; runtime algorithm selection modelling:
+Nuriyev & Lastovetsky, https://arxiv.org/pdf/2004.11062v1.

@@ -387,6 +387,15 @@ export OTEL_LOGS_EXPORTER=otlp
 export OTEL_METRICS_EXPORTER=otlp
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/json
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://$HOST:$collector_port
+# Per-signal endpoints, in addition to the generic one above: under the VSCode
+# Remote-SSH extension, OTEL_EXPORTER_OTLP_ENDPOINT alone has been observed to
+# get silently dropped between the extension host and the spawned \`claude\`
+# process while every other OTEL_* var (including these two) survives —
+# confirmed via /proc/<pid>/environ on the actual running \`claude\` binary.
+# Full paths are required here; unlike the generic var, Claude Code does not
+# append /v1/logs or /v1/metrics to these itself.
+export OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://$HOST:$collector_port/v1/logs
+export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://$HOST:$collector_port/v1/metrics
 export OTEL_LOGS_EXPORT_INTERVAL=5000
 export OTEL_METRIC_EXPORT_INTERVAL=15000
 export DFTRACER_PROFILE_ENDPOINT=http://$HOST:$collector_port

@@ -57,7 +57,7 @@ export LD_PRELOAD=""
 # reliably started gcs_server) - set only right before the training launch
 # and the worker's `ray start --address=` below, where the object store is
 # actually used.
-RAY_TMP="/tmp/${USER:-haridev}_ray_$$"
+RAY_TMP="/tmp/${USER:-$USER}_ray_$$"
 mkdir -p "$RAY_TMP"
 
 python3 -c "import dftracer.dftracer; print('dftracer OK')" | tee -a "$LOG_FILE"
@@ -97,7 +97,7 @@ TORCH_PREWARM_PID=$!
 echo "Rank $RANK - torch/lib GPU code-object prewarm backgrounded (pid $TORCH_PREWARM_PID)" | tee -a "$LOG_FILE"
 
 echo "Rank $RANK - pre-warming HF cache..." | tee -a "$LOG_FILE"
-find /p/lustre5/ice4hpc/drug-discovery/ray_molformer/hf_cache -type f -exec cat {} + > /dev/null 2>&1 || true
+find $LUSTRE_ROOT/drug-discovery/ray_molformer/hf_cache -type f -exec cat {} + > /dev/null 2>&1 || true
 
 # dftracer_service node-counter daemon: one instance per node, pinned to one
 # core, bracketing the real run (Pipeline Policy rule 12 / MANDATORY). Started
@@ -145,7 +145,7 @@ if [ "$RANK" = "0" ]; then
     # HF_HOME/HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE exported here because
     # actors placed on the head node are forked by raylet using this call's
     # env, same reasoning as the worker branch below.
-    export HF_HOME=/p/lustre5/ice4hpc/drug-discovery/ray_molformer/hf_cache
+    export HF_HOME=$LUSTRE_ROOT/drug-discovery/ray_molformer/hf_cache
     export HF_HUB_OFFLINE=1
     export TRANSFORMERS_OFFLINE=1
     ray_addr=""
@@ -267,7 +267,7 @@ if [ "$RANK" = "0" ]; then
     # "InsufficientResourcesManager" scheduling warning yet -- i.e. stuck
     # BEFORE Tune even started placing trials). Force offline mode so
     # from_pretrained() uses the cache immediately with no network attempt.
-    export HF_HOME=/p/lustre5/ice4hpc/drug-discovery/ray_molformer/hf_cache
+    export HF_HOME=$LUSTRE_ROOT/drug-discovery/ray_molformer/hf_cache
     export HF_HUB_OFFLINE=1
     export TRANSFORMERS_OFFLINE=1
     # -u: unbuffered stdout so `tee` shows real progress instead of batching
@@ -337,7 +337,7 @@ else
     # call to huggingface.co on egress-restricted compute nodes and hang
     # indefinitely with no traceback. This was the root cause of the
     # "Connected to Ray cluster, then stalls forever" symptom.
-    export HF_HOME=/p/lustre5/ice4hpc/drug-discovery/ray_molformer/hf_cache
+    export HF_HOME=$LUSTRE_ROOT/drug-discovery/ray_molformer/hf_cache
     export HF_HUB_OFFLINE=1
     export TRANSFORMERS_OFFLINE=1
     # --num-cpus=1: CONFIRMED fix (see head node comment above) - 16 still

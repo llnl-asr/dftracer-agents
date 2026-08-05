@@ -1461,7 +1461,7 @@ root_cause: |
   entirely (no CC/CXX/LD_LIBRARY_PATH dance, no chid_t/dlopen/link-order
   pitfalls from the rest of this log).
 fix: |
-  ml use /usr/workspace/dldl/dftracer/distributions/modulefiles
+  ml use $HOME/dftracer/distributions/modulefiles
   ml load dftracer-dist
   ml load python/3.11
   python -m venv venv-311 && source venv-311/bin/activate
@@ -1662,3 +1662,157 @@ fix: |
   Applied directly to CP10 in SKILL.md (see that entry for the full
   DFTRACER_ENABLE_AGGREGATION / rules.yaml mechanics this refines).
 tags: [dftracer-annotation, selective-aggregation, dur-threshold, trace-interval, cp10-refinement]
+
+---
+date: 2026-08-05
+app: RAJAPerf (github.com/llnl/rajaperf), general (any CMake/BLT-style project with a nested include tree)
+context: clang_add_braces / add_braces_c silently corrupted src/common/Executor.cpp and src/common/KernelBase.cpp with a dozen+ stray brace pairs at locations with no if/for/while at all (a constructor's member-initializer list, a switch's case label, random unrelated statement pairs) — a NEW, broader manifestation of the brace-corruption bug class already partially fixed for YGM/VPIC-Kokkos/flux-fiction (see [[bug-clang-add-braces-overlap-corruption]], [[bug-clang-add-braces-multiline-call-corruption]])
+error: |
+  Neither an if/for/while-overlap shape nor a multiline-call shape — this
+  time the corrupted ranges don't overlap each other at all, so the existing
+  overlap/subset guards in _insert_braces never triggered. The build-smoke
+  agent correctly refused to hand-patch the corruption itself (per its own
+  rule: "a build failure naming a specific function is an annotation bug —
+  report it, don't edit source yourself") and routed it back rather than
+  guessing a fix.
+root_cause: |
+  _add_braces_via_clang calls `clang -Xclang -ast-dump=json -fsyntax-only`
+  with NO -I include paths at all. RAJAPerf's Executor.cpp/KernelBase.cpp
+  include "common/RAJAPerfSuite.hpp" and other project headers nested under
+  RAJA/BLT/camp submodule trees that this bare invocation can never resolve
+  ("fatal error: 'common/RAJAPerfSuite.hpp' file not found", clang exit code
+  1). Clang does NOT simply abort on an unresolved #include under
+  -fsyntax-only -- it continues in error-recovery mode and still emits a
+  "best effort" AST dump (362MB for this one file) for whatever it can still
+  parse. That degraded AST reports BOGUS range.begin/range.end line numbers
+  for the if/for/while nodes it does still manage to produce, and the old
+  code trusted every (start,end) pair from the AST unconditionally as long
+  as it didn't overlap another accepted range -- a clean, non-overlapping,
+  simply-WRONG range sails right past that guard.
+fix: |
+  Two-part fix in source_parser.py / annotation_clang.py:
+  1. _add_braces_via_clang now checks clang's exit code. Any nonzero exit
+     (parse did not complete cleanly) means the AST is untrustworthy for
+     line-range accuracy -- return a safe no-op ({"modified": False,
+     "skipped_reason": "..."}) instead of proceeding. This converts silent
+     corruption into an explicit, visible signal.
+  2. add_braces_c/_add_braces_via_clang now accept an extra_include_dirs
+     parameter; clang_annotate_file and clang_add_braces both pass a new
+     shared helper's discovered dirs (dftracer install include/,
+     annotated/<file-dir>, annotated/src) -- a best-effort improvement for
+     simpler projects, NOT a claim of completeness for deep submodule trees
+     like RAJA/BLT (a proper fix for those would read a CMake-generated
+     compile_commands.json, not implemented yet -- flag as a future
+     improvement if this recurs on another BLT/CMake-submodule-heavy app).
+  3. clang_annotate_file's response now surfaces `braces_skipped_reason` so
+     the calling agent SEES that brace insertion was skipped and can
+     manually verify (via grep/read) whether the file has any real
+     braceless if/for/while bodies needing correct END-macro placement,
+     rather than silently assuming "no insertions" meant "nothing needed
+     wrapping".
+  4. For THIS session, the two already-corrupted files were fixed by
+     reconstructing them from source/ with ONLY the legitimate dftracer
+     insertions re-applied (the #include and the 4 correct
+     DFTRACER_CPP_FUNCTION()/UPDATE pairs at Executor::runSuite/runKernel
+     and KernelBase::execute/runKernel, all previously verified correct by
+     the build-smoke agent) -- not a patch-over of the corrupted file.
+  General takeaway: on ANY project where clang_syntax_check ALSO reports
+  missing-header errors for a file (check this first), clang_add_braces is
+  operating on a degraded AST for that same file -- after this fix it will
+  safely skip rather than corrupt, but any real braceless control-flow body
+  in that file needs manual verification.
+tags: [clang-add-braces, ast-corruption, degraded-parse, missing-headers, rajaperf, blt, cmake, reusable-pattern, tool-level-fix]
+
+---
+date: 2026-08-05
+app: RAJAPerf (github.com/llnl/rajaperf), general (any C++ main() annotated via the REGION_START/END path)
+context: linking raja-perf.exe failed with "pasting formed 'profiler_\"main\"', an invalid preprocessing token" -- a bug in the CP2/CP3 "C++ main() must use REGION_START/END, not RAII FUNCTION()" fix recorded earlier THIS SAME SESSION (see the entry above this one's sibling fix in clang_annotate_file) -- the fix itself carried a defect that was never actually compiled/verified against the real dftracer.h before being applied
+error: |
+  DFTRACER_CPP_REGION_START("main")/DFTRACER_CPP_REGION_END("main") -- WITH
+  QUOTES -- fails to compile: dftracer.h defines these as
+  `profiler_##name` token-pastes (`#define DFTRACER_CPP_REGION_START(name) \
+  DFTracer* profiler_##name = new DFTracer(#name, ...)`). `##` requires a
+  bare preprocessor token, not a string literal -- pasting `profiler_` with
+  the literal characters of `"main"` (quotes included) produces the invalid
+  token `profiler_"main"`, a hard compile error caught only at the FINAL
+  LINK stage of a 600+ file RAJAPerf build (~9 minutes in), not at annotation
+  or lint time -- clang_lint_annotations has no rule checking macro-argument
+  well-formedness against the real header, only ordering/placement.
+  Separately, the paired UPDATE call used DFTRACER_CPP_FUNCTION_UPDATE(...),
+  which expands to `profiler_dft_fn.update(...)` -- but `profiler_dft_fn` is
+  only ever declared by DFTRACER_CPP_FUNCTION() (the RAII macro), which
+  main() deliberately does NOT use. The pointer-based REGION_START instead
+  declares `profiler_main` (a DFTracer*), which needs the arrow-deref
+  DYN_UPDATE variant: DFTRACER_CPP_REGION_DYN_UPDATE(main, "comp", "cpu")
+  (expands to `profiler_main->update(...)`).
+root_cause: |
+  The earlier fix (this session, same date) that corrected clang_annotate_file
+  to use REGION_START/END instead of RAII FUNCTION() for a C++ main() copied
+  the exact quoted-string pattern from the ANNOTATOR AGENT's own manual hand-fix
+  report ("DFTRACER_CPP_REGION_START(\"main\")...") without cross-checking it
+  against dftracer.h's actual macro definition -- the annotator's hand-fix was
+  ALSO wrong, just never exercised through a real compile before this fix
+  copied the same mistake into the tool. Neither the annotator's manual fix
+  nor the tool fix that followed it was verified with an actual compiler
+  invocation against the real header at the time.
+fix: |
+  1. dftracer.h ground truth (read directly, not assumed):
+     DFTRACER_CPP_REGION_START(name)/_END(name) take a BARE IDENTIFIER (no
+     quotes) -- the trace event name is derived internally via #name
+     stringization, so DFTRACER_CPP_REGION_START(main) is already correct
+     and sufficient; do not add manual quotes.
+     DFTRACER_CPP_REGION_DYN_UPDATE(name, key, val) -- not
+     DFTRACER_CPP_FUNCTION_UPDATE(key, val) -- is the correct UPDATE call
+     paired with REGION_START/END (arrow-deref on the profiler_##name
+     pointer REGION_START declares, vs. FUNCTION_UPDATE's hardcoded
+     profiler_dft_fn which only DFTRACER_CPP_FUNCTION() ever declares).
+  2. Fixed in annotation_clang.py's clang_annotate_file: `fn_start`/`fn_end`
+     for a C++ main() are now `DFTRACER_CPP_REGION_START(main);` /
+     `DFTRACER_CPP_REGION_END(main);` (bare identifier). `_make_update()`
+     gained a `region_name` parameter -- when set, it emits
+     `DFTRACER_CPP_REGION_DYN_UPDATE({region_name}, "comp", "{comp}");`
+     instead of the FUNCTION_UPDATE form; both call sites for is_main_fn
+     pass `region_name="main"`.
+  3. Verified with an ACTUAL clang -fsyntax-only compile against the real
+     installed dftracer.h (not just visual inspection) before considering
+     this fixed -- exit 0. Re-ran the tool end-to-end on a fresh synthetic
+     MPI main() to confirm the generated output is the corrected form.
+  4. RAJAPerfSuiteDriver.cpp (this session's actual file, corrupted before
+     this fix existed) was hand-corrected to match: 3 lines changed
+     (REGION_START/END unquoted, UPDATE call switched to
+     DFTRACER_CPP_REGION_DYN_UPDATE).
+  General takeaway: a macro-usage fix for a C/C++ annotation tool is NOT
+  verified until it has actually been compiled against the real vendor
+  header -- copying a pattern from an agent's own prose report (even one
+  that "looked plausible" and passed clang_lint_annotations, which only
+  checks ordering/placement, not argument well-formedness against the real
+  macro definitions) is not verification. This exact class of error is
+  invisible until final link of a large multi-file build, far downstream of
+  where it was introduced.
+tags: [clang-annotate-file, dftracer-cpp-region, token-pasting, macro-misuse, main-entry-point, self-correction, rajaperf, tool-level-fix]
+
+---
+date: 2026-08-05
+app: RAJAPerf, general
+context: reconfirmation of the mcp__dftracer__analyze dask-teardown-hang bug (see 2026-07-06/2026-07-08 entries above) on a MUCH smaller trace than previously seen
+error: |
+  analyze() timed out at the existing 300s ceiling TWICE (generic preset,
+  with and without a checkpoint) on an 8.6MB / ~47,588-event compact trace
+  -- previous entries assumed/implied this was more of a large-trace
+  problem. No partial stdout was captured either time (the "timeout after
+  output is success" handling from the 2026-07-06 fix did not help here --
+  either analysis itself hung before producing output on this trace shape,
+  or the captured-output path still isn't triggering). Not re-investigated
+  further this session (time-boxed); the analyzer fell back to a manual
+  gzip+json aggregation per this project's documented workaround.
+fix: |
+  No new fix applied. Flagging that trace SIZE alone does not predict
+  whether this hang reproduces -- don't assume a small trace is safe from
+  it. If this recurs, the next investigation should check whether analyze()
+  is hanging during the ANALYSIS phase itself (not just dask teardown) for
+  this trace shape/preset combination, since zero stdout was captured this
+  time vs. the original bug report's "output already flushed, only teardown
+  hangs" — that's a materially different symptom and may need a different
+  fix in dfanalyzer_service.py than the existing timeout-after-output
+  handling.
+tags: [dfanalyzer, dask, hang, timeout, mcp-tool-gap, rajaperf, reconfirmation, needs-followup]

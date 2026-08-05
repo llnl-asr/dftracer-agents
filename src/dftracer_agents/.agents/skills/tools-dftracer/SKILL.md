@@ -50,7 +50,7 @@ and it already knows the CMake two-pass dependency-bootstrap quirk, see
    run manually. Skips the entire CC/CXX/LD_LIBRARY_PATH/chid_t/dlopen
    compile-time pitfall surface because nothing gets compiled:
    ```bash
-   ml use /usr/workspace/dldl/dftracer/distributions/modulefiles
+   ml use $HOME/dftracer/distributions/modulefiles
    ml load dftracer-dist
    ml load python/3.11        # must match the modulefile's target Python
    python -m venv venv-311 && source venv-311/bin/activate
@@ -284,7 +284,7 @@ target_link_libraries(<your_target> PRIVATE dftracer_core_imported)
 
 Pass `-DDFTRACER_ROOT=<venv>/lib/pythonX.Y/site-packages/dftracer` (and locate
 `cpp-logger` headers separately — on Tuolumne found at
-`/usr/WS2/haridev/dftracer-project/cpp-logger/include` as of this session; a
+`$HOME/dftracer-project/cpp-logger/include` as of this session; a
 proper fix would have the wheel ship these itself). This is a packaging bug in
 the prerelease wheel, not something to patch per-project each time — worth
 fixing at the distribution level (ship correct `IMPORTED_LOCATION` paths, drop

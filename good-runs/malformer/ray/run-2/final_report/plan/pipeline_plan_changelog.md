@@ -91,7 +91,7 @@ COMMUNICATION/I/O/MEMORY: walked their checklists and recorded "not applicable /
 negligible" verdicts with concrete evidence (documented in pipeline_plan.md, not
 silently skipped).
 
-opt1 run required 3 submission attempts on the live 32-node `f3Mwh7sKgyd1` allocation
+opt1 run required 3 submission attempts on the live 32-node `<flux-jobid>` allocation
 (no new allocation requested):
 - Attempt 1 (f6e9nUBC3Z): worker's 60s wait for the head's Ray-address file timed out
   even though the head had written it ~15-40s earlier — root-caused as Lustre

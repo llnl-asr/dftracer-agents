@@ -1,3 +1,8 @@
+---
+name: flux-alloc
+description: Flux job allocation workflow — discover queues/resources, allocate nodes with flux alloc, connect via flux proxy, run/inspect/cancel jobs safely, and replicate/interleave timing comparisons correctly
+---
+
 # Flux Job Allocation
 
 Allocate N nodes from an available Flux queue, then connect to the instance

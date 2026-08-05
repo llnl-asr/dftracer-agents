@@ -146,6 +146,40 @@ call `profile_status` and check that `events_seen` climbs on its own as you work
 > and proves nothing — in either the working or the broken state. `events_seen`,
 > and the server's own `/proc/<pid>/environ`, are the only reliable signals.
 
+**Confirming the server has it is not sufficient.** The vscode-server process
+and its extension host can both carry the full `OTEL_*` set while the actual
+`claude` binary they spawn is still missing `OTEL_EXPORTER_OTLP_ENDPOINT`
+specifically — every other `OTEL_*` var (`OTEL_LOGS_EXPORTER`,
+`OTEL_METRICS_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`,
+`CLAUDE_CODE_ENABLE_TELEMETRY`) survives the hop, only the generic endpoint
+var is silently dropped somewhere between the VSCode extension host and the
+`claude` process it launches. This was confirmed by walking the process tree
+with `/proc/<pid>/environ` from the running `claude` process up through its
+parent chain: the endpoint was present at every hop except the final one. No
+`managed-settings.json` was present on the machine where this was found, so it
+is not an enterprise-policy filter — it looks like extension-side behavior.
+
+The workaround is the documented **per-signal** endpoint variables, which
+`dftracer_agents_stack env` now emits alongside the generic one:
+
+```bash
+export OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:4318/v1/logs
+export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://127.0.0.1:4318/v1/metrics
+```
+
+Full paths are required — unlike the generic `OTEL_EXPORTER_OTLP_ENDPOINT`,
+Claude Code does not append `/v1/logs` / `/v1/metrics` to these itself. Re-run
+`dftracer_agents_stack env >> "$HOME/.vscode-server/server-env-setup"` (or add
+the two lines by hand) and restart the server as above. Verify by checking the
+*running `claude` process's own* `/proc/<pid>/environ` — not just the
+server's — since that is exactly the hop where the generic var was seen to
+disappear:
+
+```bash
+tr '\0' '\n' < /proc/$(pgrep -f 'anthropic.claude-code.*native-binary/claude' | head -1)/environ \
+  | grep '^OTEL_EXPORTER_OTLP'
+```
+
 If `events_seen` is still `0` once the server env is confirmed, check that the
 collector is actually up and reachable (`dftracer_agents_stack logs collector`).
 To separate a dead receiver from a silent sender, POST a synthetic record and

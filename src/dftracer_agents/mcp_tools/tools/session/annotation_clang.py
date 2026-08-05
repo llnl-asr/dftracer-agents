@@ -61,6 +61,47 @@ from fastmcp import FastMCP
 from .workspace import _ws, _ok, _err
 
 # ---------------------------------------------------------------------------
+# Shared include-dir discovery (brace insertion)
+# ---------------------------------------------------------------------------
+
+
+def _discover_brace_include_dirs(ws, filepath: str, run_id: str) -> List[str]:
+    """Best-effort ``-I`` dirs so ``add_braces_c`` can actually resolve headers.
+
+    Deliberately light — dftracer's own install include dir plus the
+    annotated file's own directory and ``annotated/src``. This is NOT a
+    substitute for a project's real build-system include tree (submodule
+    trees, generated config headers, etc.) — for those, ``add_braces_c``'s
+    own nonzero-exit-code guard is what actually protects against corruption
+    (see its docstring); this helper only raises the odds of a clean parse
+    for simpler projects, it never claims completeness.
+    """
+    import os as _os
+    from .workspace import _load_state
+
+    dirs: List[str] = []
+    try:
+        state = _load_state(run_id)
+    except Exception:
+        state = {}
+
+    _prefix = state.get("dftracer_install_prefix", "")
+    if _prefix:
+        _inc = _os.path.join(_prefix, "include")
+        if _os.path.isdir(_inc):
+            dirs.append(_inc)
+
+    _file_dir = ws / "annotated" / _os.path.dirname(filepath)
+    if _file_dir.exists():
+        dirs.append(str(_file_dir))
+    _src_dir = ws / "annotated" / "src"
+    if _src_dir.exists() and str(_src_dir) not in dirs:
+        dirs.append(str(_src_dir))
+
+    return dirs
+
+
+# ---------------------------------------------------------------------------
 # Annotation-decision constants and helpers
 # ---------------------------------------------------------------------------
 
@@ -214,12 +255,23 @@ def register_clang_tools(mcp: FastMCP) -> None:
         if not abs_path.exists():
             return _err(f"File not found in annotated/: {filepath}")
 
+        _inc_dirs = _discover_brace_include_dirs(ws, filepath, run_id)
         try:
-            result = add_braces_c(abs_path)
+            result = add_braces_c(abs_path, extra_include_dirs=_inc_dirs)
         except ClangNotFoundError as exc:
             return _err(str(exc), filepath=filepath)
         if "error" in result:
             return _err(result["error"], filepath=filepath)
+
+        if result.get("skipped_reason"):
+            return _ok(
+                "Brace insertion SKIPPED (safety guard): " + result["skipped_reason"],
+                filepath=filepath,
+                modified=False,
+                insertions=0,
+                method=result["method"],
+                skipped_reason=result["skipped_reason"],
+            )
 
         return _ok(
             f"Brace insertion complete: {result['insertions']} pair(s) added "
@@ -558,11 +610,15 @@ def register_clang_tools(mcp: FastMCP) -> None:
             del _FILE_CACHE[cache_key]
 
         try:
-            brace_result = add_braces_c(abs_path)
+            brace_result = add_braces_c(
+                abs_path,
+                extra_include_dirs=_discover_brace_include_dirs(ws, filepath, run_id),
+            )
         except ClangNotFoundError as exc:
             return _err(str(exc), filepath=filepath)
 
         braces_added = brace_result.get("insertions", 0)
+        braces_skipped_reason = brace_result.get("skipped_reason")
 
         # Reload from disk (brace insertion may have shifted line numbers)
         text = abs_path.read_text(errors="replace")
@@ -584,8 +640,16 @@ def register_clang_tools(mcp: FastMCP) -> None:
         )
         FINI = "DFTRACER_CPP_FINI();" if is_cpp else "DFTRACER_C_FINI();"
 
-        def _make_update(fn: dict, ind: str, comp_override: str = None) -> str:
+        def _make_update(
+            fn: dict, ind: str, comp_override: str = None, region_name: str = None
+        ) -> str:
             comp = comp_override if comp_override is not None else _derive_comp(fn)
+            if region_name is not None:
+                # Pointer-based REGION (profiler_##name is a DFTracer*, declared
+                # by REGION_START) needs the arrow-deref DYN_UPDATE variant, NOT
+                # FUNCTION_UPDATE — that one hardcodes the unrelated
+                # profiler_dft_fn variable, which REGION_START never declares.
+                return f'{ind}DFTRACER_CPP_REGION_DYN_UPDATE({region_name}, "comp", "{comp}");'
             if is_cpp:
                 return f'{ind}DFTRACER_CPP_FUNCTION_UPDATE("comp", "{comp}");'
             return f'{ind}DFTRACER_C_FUNCTION_UPDATE_STR("comp", "{comp}");'
@@ -681,11 +745,18 @@ def register_clang_tools(mcp: FastMCP) -> None:
             # other C++ function keeps the RAII DFTRACER_CPP_FUNCTION() macro
             # (no explicit END needed for those).
             if is_main_fn and is_cpp:
-                fn_start = 'DFTRACER_CPP_REGION_START("main");'
-                fn_end = 'DFTRACER_CPP_REGION_END("main");'
+                # Bare identifier, NOT a quoted string: REGION_START/END do
+                # profiler_##name token-pasting (dftracer.h) — a quoted
+                # "main" would paste into the invalid token profiler_"main".
+                # The trace event's name string is derived internally via
+                # #name stringization, so no manual quoting is needed or
+                # correct here.
+                fn_start = "DFTRACER_CPP_REGION_START(main);"
+                fn_end = "DFTRACER_CPP_REGION_END(main);"
             else:
                 fn_start = START
                 fn_end = END
+            _region_name = "main" if (is_main_fn and is_cpp) else None
 
             if is_main_fn and _mpi_init_line is not None:
                 # A2: place INIT/START/UPDATE right after the last MPI startup call
@@ -695,14 +766,14 @@ def register_clang_tools(mcp: FastMCP) -> None:
                 # A6: main() is always "cpu" regardless of MPI calls in its body
                 insertions.append((init_idx, init_ind + INIT))          # A3: prio 3 → on top
                 insertions.append((init_idx, init_ind + fn_start))      # A3: prio 2 → below INIT
-                insertions.append((init_idx, "UPDATE:" + _make_update(fn, init_ind, comp_override=_comp_overrides.get(fn_name, "cpu"))))
+                insertions.append((init_idx, "UPDATE:" + _make_update(fn, init_ind, comp_override=_comp_overrides.get(fn_name, "cpu"), region_name=_region_name)))
             else:
                 if is_main_fn:
                     # Fallback when no MPI startup calls detected
                     insertions.append((body_idx, ind + INIT))
                 insertions.append((body_idx, ind + fn_start))
                 comp_ov = _comp_overrides.get(fn_name) if fn_name in _comp_overrides else ("cpu" if is_main_fn else None)
-                insertions.append((body_idx, "UPDATE:" + _make_update(fn, ind, comp_override=comp_ov)))
+                insertions.append((body_idx, "UPDATE:" + _make_update(fn, ind, comp_override=comp_ov, region_name=_region_name)))
 
             # Explicit END/FINI placement is required for: every C function
             # (no RAII in C), AND a C++ main() specifically (DFTRACER_CPP_INIT/
@@ -819,6 +890,11 @@ def register_clang_tools(mcp: FastMCP) -> None:
                 " NOT yet written to disk (write_immediately=False) — call "
                 "clang_write_annotated_file to persist."
             )
+        if braces_skipped_reason:
+            msg += (
+                " WARNING: brace insertion was SKIPPED (safety guard) — "
+                + braces_skipped_reason
+            )
 
         return _ok(
             msg,
@@ -830,6 +906,7 @@ def register_clang_tools(mcp: FastMCP) -> None:
             total_lines=len(lines),
             already_annotated=False,
             braces_added=braces_added,
+            braces_skipped_reason=braces_skipped_reason,
             written_to_disk=written_to_disk,
             bytes_written=len(content.encode("utf-8", errors="replace")),
             disk_mtime_ns=disk_mtime_ns if written_to_disk else None,

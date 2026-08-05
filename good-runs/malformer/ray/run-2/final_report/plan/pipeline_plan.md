@@ -5,13 +5,13 @@
 - **App**: IBM MoLFormer (chemical-language transformer, PyTorch) launched via Ray 2.40.0
   for distributed task scheduling (NOT MPI, despite mpi4py appearing in requirements.txt —
   Ray handles all distribution; treat `mpi=false` from detection as authoritative).
-- **Source**: symlinked from `/p/lustre5/ice4hpc/drug-discovery/ray_molformer` (Python,
+- **Source**: symlinked from `$LUSTRE_ROOT/drug-discovery/ray_molformer` (Python,
   pip-based, no formal package/setup.py structure). Key launch scripts:
   `ray_flux_molformer_job.sh` (top-level job script: experiment name/storage path, node
   count) -> `start_ray_run_molformer.sh` (sets up Ray cluster, sources env, loads ROCm) ->
   python training entry point.
 - **System**: Tuolumne (AMD MI300A APU, Cray PE, Flux scheduler). ROCm 6.2.1 required
-  (from `start_ray_run_molformer.sh`). Active flux allocation: `f3NCgEB6TL5D` — ASK the
+  (from `start_ray_run_molformer.sh`). Active flux allocation: `<flux-jobid>` — ASK the
   user to confirm this allocation still has remaining time before any run step; do not
   spawn a second allocation unless it has expired or the user asks for a fresh one.
 - **Dependencies**: PyTorch (ROCm 6.2.1 build), Ray 2.40.0, DeepChem, RDKit, Dask,
@@ -76,7 +76,7 @@ layout can shift between minor versions.
 
 ### Canonical paths (from session_status / session_get_run_paths)
 
-- Workspace: `/usr/WS2/haridev/dftracer-agents/workspaces/ray_molformer/20260725_000436`
+- Workspace: `$PROJECT_ROOT/workspaces/ray_molformer/20260725_000436`
 - Subdirs present: `performance, source, artifacts, scripts, build, install`
 - `source_dir` pattern per run: `<WS>/<run_name>/source`
 - `traces_raw` pattern: `<WS>/<run_name>/traces/raw`, `traces_compact`: `<WS>/<run_name>/traces/compact`
@@ -112,8 +112,8 @@ Inputs: `run_id="ray_molformer/20260725_000436"`.
 2. Confirm ROCm 6.2.1 module is loadable and ray_molformer's `start_ray_run_molformer.sh`
    module-load sequence still matches current Tuolumne module state (module versions can
    drift; the app script is authoritative per project env-consistency rule).
-3. Verify the flux allocation `f3NCgEB6TL5D` is still alive and has enough remaining
-   time: `flux jobs -no "{id} {state} {t_remaining}" f3NCgEB6TL5D`. If expired, note that
+3. Verify the flux allocation `<flux-jobid>` is still alive and has enough remaining
+   time: `flux jobs -no "{id} {state} {t_remaining}" <flux-jobid>`. If expired, note that
    STEP 6/STEP 8/STEP 9 will need the user to supply a fresh allocation.
 4. Record any new lesson to `system-tuolumne` skill as a PROPOSAL only (do not self-write
    — follow the confirmation gate); report the proposal text back to the orchestrator.
@@ -126,7 +126,7 @@ liveness check result; any proposed `system-tuolumne` skill delta.
 ## STEP 2: dftracer-session-setup
 
 Inputs: `run_id`, source already symlinked at
-`file:///p/lustre5/ice4hpc/drug-discovery/ray_molformer` (per session_status). Session
+`file://$LUSTRE_ROOT/drug-discovery/ray_molformer` (per session_status). Session
 is already in `detected` state — this step finalizes workspace setup, not re-cloning.
 
 1. Use `session_get_run_paths(run_id, run_name="baseline")` to get `source_dir` etc.
@@ -278,7 +278,7 @@ Ray), log at `<WS>/artifacts/06_build_smoke_*.log`.
 - True cause of the ABI mismatch: CMake's `find_package(Python3)` in dftracer's
   `setup.py`/CMakeLists prioritizes the `VIRTUAL_ENV` environment variable over the
   `Python3_EXECUTABLE`/`Python3_ROOT_DIR` hints. The Claude harness's own dev venv
-  (`/usr/workspace/haridev/dftracer-agents/.venv`, Python 3.13) is inherited via
+  (`$PROJECT_ROOT/.venv`, Python 3.13) is inherited via
   `VIRTUAL_ENV` into every Bash tool call in this session, so CMake picked THAT
   interpreter's ABI regardless of PATH ordering or explicit `-DPython3_EXECUTABLE=`
   hints. Fix: `unset VIRTUAL_ENV` before invoking `pip install`/`cmake` for the
@@ -325,7 +325,7 @@ Inputs: annotated+smoke-verified build from STEP 6, confirmed flux allocation fr
 STEP 1 (or ask user for a fresh one if expired).
 
 1. ASK the user (if not already answered this session): use existing allocation
-   `f3NCgEB6TL5D` (if still alive) via `flux proxy <jobid> bash <wrapper>.sh ...`, or
+   `<flux-jobid>` (if still alive) via `flux proxy <jobid> bash <wrapper>.sh ...`, or
    spawn a new one? Also ask for a TIME BUDGET for the training run (DL run-length rule)
    — target at least ~10 minutes of training; calibrate epoch/step count from a short
    probe on this run rather than guessing.
@@ -674,9 +674,9 @@ even where negligible):
   and would REGRESS compute time, the exact dimension already identified as the
   bottleneck — not applied. Verdict: not applicable; memory is not the constraint.
 
-opt1 launched: `flux proxy f3Mwh7sKgyd1 flux submit -N2 -n2 -c1 -o spindle.level=off
+opt1 launched: `flux proxy <flux-jobid> flux submit -N2 -n2 -c1 -o spindle.level=off
 scripts/opt1_runner.sh` (job id within proxy: f6e9nUBC3Z, on the pre-existing live
-32-node pbatch allocation `f3Mwh7sKgyd1`, ~12h remaining at launch — no new allocation
+32-node pbatch allocation `<flux-jobid>`, ~12h remaining at launch — no new allocation
 requested). Same 2-node/8-GPU scale, same 4-epoch/128-batch config as baseline.
 Result and comparator numbers to be appended once the run completes.
 
@@ -741,7 +741,7 @@ first opt1 attempt to strand the cluster at 4/8 GPUs (see changelog).
 
 ### STEP 11 RESULT (2026-07-25) — 4-node/16-GPU validation of opt1
 
-Used the same live 32-node allocation `f3Mwh7sKgyd1` (no new allocation requested).
+Used the same live 32-node allocation `<flux-jobid>` (no new allocation requested).
 `scripts/opt1_4node_runner.sh` (opt1 bf16-autocast entry script, scaled to
 `--nodes=4`, `ScalingConfig(num_workers=16)`) submitted via
 `flux submit -N4 -n4 -c1 -o spindle.level=off` — succeeded on the FIRST attempt (all
@@ -934,15 +934,15 @@ magnitude within this trace):**
 compound-query gotcha per `dftracer-trace-utils`), then with no query filter at all
 (`group_by_dims="cat"` only) — both failed identically. Not root-caused this pass since it is
 secondary to the standalone baseline_4node diagnosis (the primary deliverable) and the flux
-allocation used (`f3Ppf64XiCgw`) was running low on remaining time. **Flagged as a known gap for
+allocation used (`<flux-jobid>`) was running low on remaining time. **Flagged as a known gap for
 the next agent that needs the 2-node-vs-4-node delta** — retry with a fresh allocation and,
 if it still fails, treat as a tool bug to fix rather than a data problem (event_count and
 analyze both succeeded cleanly against both trace directories' individual chunks in this
 session, so the directories themselves are not the problem).
 
-**Allocation notes:** the session's originally-planned allocation (`f3Ppem8DiFzP`, 4-node) was
+**Allocation notes:** the session's originally-planned allocation (`<flux-jobid>`, 4-node) was
 in `SCHED` (not yet running) when this step started; used a different live 8-node `pdebug`
-allocation (`f3Ppf64XiCgw`) instead per the "any other currently-live allocation" fallback
+allocation (`<flux-jobid>`) instead per the "any other currently-live allocation" fallback
 policy. `cluster_n_workers=32` on `analyze()` triggers thread-limit exhaustion on this trace
 size/node combination — use `cluster_n_workers=8` for baseline_4node-sized (27M event, 56-chunk)
 traces on this system, a new caveat beyond the existing "never `cluster_cores`" rule in

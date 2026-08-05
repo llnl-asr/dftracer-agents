@@ -1,3 +1,8 @@
+---
+name: system-container
+description: System profile for Docker/Podman container environments — sudo available, no HPC module system, package-manager installs, MPI via mpirun
+---
+
 # System: Container
 
 Docker/Podman container environment. Sudo is available.

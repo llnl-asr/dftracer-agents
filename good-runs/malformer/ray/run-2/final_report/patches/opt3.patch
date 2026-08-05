@@ -41,7 +41,7 @@
 -# transient filesystem hiccups (see huggingface/transformers issues #44,
 -# #27421, #31019 for the same symptom class in other distributed setups).
 -def _from_pretrained_with_retry(cls, *args, max_attempts=5, base_delay=2.0, **kwargs):
--    os.environ["HF_HOME"] = "/p/lustre5/ice4hpc/drug-discovery/ray_molformer/hf_cache"
+-    os.environ["HF_HOME"] = "/p/lustre5/$USER/drug-discovery/ray_molformer/hf_cache"
 -    os.environ["HF_HUB_OFFLINE"] = "1"
 -    os.environ["TRANSFORMERS_OFFLINE"] = "1"
 -    last_exc = None

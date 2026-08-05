@@ -266,3 +266,28 @@ vice versa) if you're grepping for a success/completion marker downstream of the
 content. Always use `grep -a` (treat as text) when scanning run logs for HPC jobs, especially
 ones where a ROCm/HIP/CUDA crash or core dump might have written raw bytes into the same
 stdout/stderr stream as the rest of the log.
+
+## Size the compute bottleneck against the APP's own timer, not the trace bucket (2026-08-05, RAJAPerf/MI300A)
+
+Generalizes the PECAN "Layer Breakdown can hide a traced compute cost" lesson in the
+opposite direction: a trace bucket can also massively OVER-state a compute bottleneck.
+
+- GPU/HIP/CUDA API tracing cost scales with CALL COUNT, so it is worst precisely on the
+  many-small-kernel-launch pattern that launch-overhead diagnosis targets. On RAJAPerf
+  (MI300A, ROCm 7.2.1) dftracer HIP tracing inflated the two most launch/sync-heavy kernels
+  **6.1x-6.7x** in the app's own reported time, producing a 26.8 s "compute bottleneck"
+  that was ~85% observer effect and reversing the sign of a GPU-vs-CPU comparison.
+- **Rule:** whenever a compute bottleneck is attributed to launch/sync overhead, get an
+  UNTRACED measurement from the application's own timer before estimating any
+  `app_impact_pct`. Keep tracing state identical across optimization ARMS (KB hard rule),
+  but do the bottleneck SIZING untraced. Quote the denominator you used.
+- **Corollary for busy-wait/spin knobs** (`HSA_ENABLE_INTERRUPT=0`, `cudaDeviceScheduleSpin`,
+  `HIP_LAUNCH_BLOCKING` variants): they trade host CPU for sync latency. On a unified/APU
+  system, or any app that also runs host-side compute on the same cores, the CPU cost can
+  exceed the GPU gain - measure the CPU-side kernels too, not just the GPU ones. Measured
+  RAJAPerf result: GPU -1.0%, CPU +4.0%, net +3.8% WORSE.
+- **Interleave arms and require >=5 replicates before crediting a launch-overhead delta.**
+  A single-replicate probe of `HSA_ENABLE_INTERRUPT=0` showed -9.9%/-16.4%; over 5
+  interleaved replicates the same knob showed -3.4%/+0.8% with overlapping ranges. Wall
+  time per identical run drifted 150 s -> 82 s across a 35-minute window purely from
+  allocation contention - a back-to-back A/B design would have manufactured a fake result.

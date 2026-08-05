@@ -5,7 +5,7 @@
 # NOTE: a bare `flux run` queues a NEW job instead of using your
 # allocation -- always go through `flux proxy <alloc>`.
 set -e
-ALLOC="${1:-f3Ppf64XiCgw}"
+ALLOC="${1:-<flux-jobid>}"
 if [ -z "$ALLOC" ]; then echo "usage: $0 <flux_alloc_id>"; exit 1; fi
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib_load_config.sh"

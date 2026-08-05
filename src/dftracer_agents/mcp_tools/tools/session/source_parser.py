@@ -22,7 +22,7 @@ import ast
 import json
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 
 class ClangNotFoundError(RuntimeError):
@@ -395,7 +395,7 @@ def _callee_name(call_expr: dict) -> str:
 # Python extraction via ast module
 # ---------------------------------------------------------------------------
 
-def add_braces_c(path: Path) -> dict:
+def add_braces_c(path: Path, extra_include_dirs: Optional[List[str]] = None) -> dict:
     """Add ``{`` / ``}`` around braceless ``if`` / ``for`` / ``while`` bodies.
 
     Uses clang ``-Xclang -ast-dump=json`` for precise AST-level detection.
@@ -403,26 +403,55 @@ def add_braces_c(path: Path) -> dict:
 
     Args:
         path: Absolute path to a C or C++ source file inside ``annotated/``.
+        extra_include_dirs: Optional ``-I`` paths so clang can actually resolve
+            the file's own project headers (e.g. a CMake/BLT project's nested
+            submodule include trees). See :func:`_add_braces_via_clang` for
+            why this matters beyond just "fewer warnings".
 
     Returns:
         Dict with keys:
             * ``modified``   (bool) — ``True`` if the file was rewritten.
             * ``insertions`` (int)  — number of brace pairs added.
             * ``method``     (str)  — always ``"clang"``.
+            * ``skipped_reason`` (str, only when ``modified`` is ``False``
+              because of an unresolvable-headers parse) — see below.
     """
     lang = "c" if path.suffix.lower() == ".c" else "c++"
-    return _add_braces_via_clang(path, lang)
+    return _add_braces_via_clang(path, lang, extra_include_dirs=extra_include_dirs)
 
 
-def _add_braces_via_clang(path: Path, lang: str) -> dict:
+def _add_braces_via_clang(
+    path: Path, lang: str, extra_include_dirs: Optional[List[str]] = None
+) -> dict:
     """Collect braceless control-flow bodies via clang AST then rewrite the file.
 
     Raises ClangNotFoundError if the clang binary is missing.
+
+    **Why a nonzero exit / parse error must abort rather than proceed:** when
+    clang can't resolve a ``#include`` (project header not on the search
+    path — routine for any nontrivial CMake/BLT project unless the caller
+    supplies real project include dirs), it does not simply fail — it keeps
+    going in error-recovery mode and still emits a "best effort" AST dump for
+    the rest of the file. That degraded AST can report bogus ``range.begin``/
+    ``range.end`` line numbers for whatever if/for/while nodes it does still
+    manage to produce. `_insert_braces`'s overlap guards catch some bad
+    shapes (ranges that overlap or nest incorrectly) but NOT a clean,
+    non-overlapping, simply-WRONG range — which is exactly what a
+    degraded parse produces. Confirmed on RAJAPerf (2026-08-05): calling this
+    with no include dirs (RAJA/BLT headers unresolved, `fatal error:
+    'common/RAJAPerfSuite.hpp' file not found`, exit code 1) still produced a
+    362MB AST dump and inserted a dozen+ stray brace pairs at locations with
+    no if/for/while at all — a constructor's member-initializer list, a
+    `switch`'s `case` label, random unrelated statement pairs — silently
+    corrupting the file. Treating any nonzero clang exit here as "do not
+    trust this AST" converts that into a safe no-op (report why, via
+    ``skipped_reason``) instead of silent corruption.
     """
+    inc_flags = [f"-I{d}" for d in extra_include_dirs] if extra_include_dirs else []
     try:
         proc = subprocess.run(
             ["clang", "-Xclang", "-ast-dump=json", "-fsyntax-only", "-w",
-             f"-x{lang}", str(path)],
+             f"-x{lang}"] + inc_flags + [str(path)],
             capture_output=True, text=True, timeout=60,
         )
     except FileNotFoundError:
@@ -431,6 +460,28 @@ def _add_braces_via_clang(path: Path, lang: str) -> dict:
         )
     except subprocess.TimeoutExpired:
         return {"modified": False, "insertions": 0, "method": "clang"}
+
+    if proc.returncode != 0:
+        # Parse did not complete cleanly — the AST (if any was emitted at
+        # all) is from error-recovery mode and not trustworthy for line-range
+        # accuracy. Do NOT attempt brace insertion from it.
+        _err_tail = "\n".join(
+            ln for ln in (proc.stderr or "").splitlines() if "fatal error" in ln or ": error:" in ln
+        )[:500]
+        return {
+            "modified": False,
+            "insertions": 0,
+            "method": "clang",
+            "skipped_reason": (
+                "clang exited non-zero while parsing (likely unresolved "
+                "project headers) — refusing to trust a degraded/"
+                "error-recovery AST for brace insertion. Pass "
+                "extra_include_dirs with this project's real include paths, "
+                "or verify manually whether this file has any braceless "
+                "if/for/while bodies needing END/UPDATE macros placed "
+                "correctly." + (f" clang errors: {_err_tail}" if _err_tail else "")
+            ),
+        }
 
     stdout = proc.stdout
     if not stdout:

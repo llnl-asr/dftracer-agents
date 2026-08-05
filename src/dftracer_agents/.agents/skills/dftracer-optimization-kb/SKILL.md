@@ -21,7 +21,7 @@ Scopes and what they transfer to:
 | software | L2 | any workload **linking that software**, any system | [software.md](software.md) |
 | workload | L1 | that application, **any system** | [workload.md](workload.md) |
 
-Recorded: 26 system, 34 software, 62 workload entries.
+Recorded: 27 system, 41 software, 69 workload entries.
 
 ## A second, orthogonal axis: metric_scope
 
@@ -51,20 +51,3 @@ that costs the app is not a win — never apply/keep one where this guard fired.
    is worthless.
 4. A `metric_scope="system"` entry always carries its paired app-metric proof
    — see the non-degradation guard above.
-5. **KNOWN BUG — `opt_kb_record` can mis-render a CRASHED run as a "win"
-   (confirmed, AF3 optimizer session, 2026-08-02).** If the `metric` you
-   record is a boolean/completion flag (e.g. "did this run finish") rather
-   than a real performance number, and the run being recorded actually
-   CRASHED, the tool's win/regression math (framed around
-   `lower_is_better`/percent-delta) can render the crash as `win (+100%)` in
-   the proposal table, because a crash naturally reduces a "did it complete"
-   metric toward whatever the tool interprets as the improving direction. The
-   crash was correctly described in the record's own `notes` field, but the
-   `verdict` field itself was wrong and misleading if read on its own. **Do
-   not use a boolean completion flag as the recorded `metric` at all** — pick
-   a real quantity (wall time, event count, memory) and record the crash as a
-   `status`/`notes` field alongside a `no_change`/explicit-failure verdict,
-   not as a `metric` whose "improvement" is merely "stopped running". This is
-   a tool-level defect worth fixing (reject or force-invert a boolean-flag
-   metric, or add an explicit `verdict="failed"` override) rather than
-   working around by hand every time.
