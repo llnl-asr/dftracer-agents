@@ -694,6 +694,37 @@ def _ensure_session_env_script(ws: Path, source_dir: Optional[Path] = None) -> P
         except Exception:
             modules = []
 
+    # Neither an app's own scripts (a fresh clone has none yet) nor the
+    # system default module list (systems.yaml's Tuolumne entry has no ROCm
+    # module -- most sessions don't need one) load ROCm. If this session's
+    # session_detect already determined the app genuinely needs HIP
+    # (detection.hip_tracing_needed), append the resolved rocm/X.Y.Z module
+    # so every later build/install/run step that sources this SAME env.sh
+    # actually has hipcc/ROCm's CMake config on PATH. Without this, a
+    # DFTRACER_ENABLE_HIP_TRACING=ON install (or any HIP compilation unit in
+    # the app's own build) fails deep inside cmake/ninja with a confusing
+    # unrelated error (e.g. "'stdlib.h' file not found" from a mis-configured
+    # HIP compiler frontend that never got ROCM_PATH/PATH set up) -- confirmed
+    # on RAJAPerf 2026-08-05, where session_configure had its own ad-hoc
+    # module line but session_install_dftracer's cached env.sh predated that
+    # fix and never picked up rocm/7.2.1. Best-effort: any failure reading
+    # session.json just skips this (module list falls back to whatever was
+    # already computed above).
+    try:
+        import json as _json
+        _state_file = ws / "session.json"
+        if _state_file.exists():
+            _state = _json.loads(_state_file.read_text())
+            _det = _state.get("detection") or {}
+            if _det.get("hip_tracing_needed"):
+                _rocm_module = (_det.get("rocm_info") or {}).get("module")
+                if _rocm_module and not any(
+                    m == _rocm_module or m.split("/")[0] == "rocm" for m in modules
+                ):
+                    modules = list(modules) + [_rocm_module]
+    except Exception:
+        pass
+
     sys_env: Dict[str, str] = {}
     try:
         from ..system.system_service import get_current_system_env
@@ -1055,6 +1086,18 @@ def _install_dftracer_pip_direct(
         pip_env.setdefault("DFTRACER_ENABLE_HDF5", "OFF")
     if features.get("hip"):
         pip_env.setdefault("DFTRACER_ENABLE_HIP_TRACING", "ON")
+        # find_package(rocprofiler-sdk) needs the ROCm prefix reachable via
+        # CMAKE_PREFIX_PATH (ROCM_PATH/HIP_PATH are set separately above from
+        # dftracer_pip_env, in case dftracer's CMakeLists.txt reads those
+        # instead) — without one of these, HIP tracing SILENTLY compiles out
+        # with no build error at all (see software-rocm skill). Append
+        # (never overwrite) since HDF5's own prefix may already be first in
+        # CMAKE_PREFIX_PATH — CMake's list-valued CMAKE_PREFIX_PATH searches
+        # every entry, order does not matter for find_package to succeed.
+        _rocm_prefix = (features.get("rocm") or {}).get("path")
+        if _rocm_prefix:
+            _cur_cpp = pip_env.get("CMAKE_PREFIX_PATH", _os.environ.get("CMAKE_PREFIX_PATH", ""))
+            pip_env["CMAKE_PREFIX_PATH"] = _rocm_prefix + (_os.pathsep + _cur_cpp if _cur_cpp else "")
     if features.get("hwloc"):
         pip_env.setdefault("DFTRACER_DISABLE_HWLOC", "OFF")
 

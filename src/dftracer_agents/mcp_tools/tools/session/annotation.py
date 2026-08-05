@@ -691,14 +691,23 @@ def _annotate_python_source(content: str, is_entry: bool) -> str:
 # Annotation coverage report
 # ---------------------------------------------------------------------------
 
-#: The macro name used as a sentinel to detect annotated C functions.
-#: A function body in an annotated C file is considered instrumented when
-#: this string appears on any line inside the body.
-#: C++ functions use ``DFTRACER_CPP_FUNCTION`` instead but that variant is
-#: not currently tracked by the coverage report (C++ functions are included
-#: in totals only when they appear in files that changed between ``source/``
-#: and ``annotated/``).
+#: Macro name(s) used as sentinels to detect annotated C/C++ functions. A
+#: function body in an annotated file is considered instrumented when any of
+#: these strings appears on any line inside the body: the C macro
+#: (``DFTRACER_C_FUNCTION_START``), the C++ RAII macro
+#: (``DFTRACER_CPP_FUNCTION`` — this substring also matches
+#: ``DFTRACER_CPP_FUNCTION_UPDATE``, which is fine, both indicate the
+#: function is instrumented), and the C++ explicit-region macro used for a
+#: C++ ``main()`` instead of the RAII form (``DFTRACER_CPP_REGION_START`` —
+#: see ``clang_annotate_file``'s CP2/CP3-driven main()-only substitution).
+#: Previously only the C macro was checked, so every C++ file (the common
+#: case) silently reported 0% coverage regardless of real annotation state
+#: (confirmed on RAJAPerf, 2026-08-05) — always ground-truth with a direct
+#: grep when this looks suspiciously like 0%.
 _DFTRACER_C_START = "DFTRACER_C_FUNCTION_START"
+_DFTRACER_CPP_START = "DFTRACER_CPP_FUNCTION"
+_DFTRACER_CPP_REGION_START = "DFTRACER_CPP_REGION_START"
+_DFTRACER_ANY_START = (_DFTRACER_C_START, _DFTRACER_CPP_START, _DFTRACER_CPP_REGION_START)
 
 #: The decorator line used as a sentinel to detect annotated Python functions.
 #: A ``def`` statement in an annotated Python file is considered instrumented
@@ -802,17 +811,19 @@ def _find_annotated_c_functions(path: Path) -> Set[str]:
     """Return the names of C/C++ functions in ``path`` that contain a dftracer START macro.
 
     Iterates through the file line by line, tracking the current function
-    context with :func:`_c_func_at_line`.  Whenever a line containing
-    :data:`_DFTRACER_C_START` is encountered and a current function context
-    is known, that function name is added to the result set.
+    context with :func:`_c_func_at_line`.  Whenever a line containing any of
+    :data:`_DFTRACER_ANY_START` (the C macro or either C++ variant) is
+    encountered and a current function context is known, that function name
+    is added to the result set.
 
     Args:
         path: Absolute path to the annotated C or C++ source file to inspect.
 
     Returns:
-        A set of function names that are instrumented with
-        ``DFTRACER_C_FUNCTION_START``.  Returns an empty set if the file
-        cannot be read.
+        A set of function names instrumented with ``DFTRACER_C_FUNCTION_START``
+        (C), ``DFTRACER_CPP_FUNCTION``/``DFTRACER_CPP_FUNCTION_UPDATE`` (C++
+        RAII), or ``DFTRACER_CPP_REGION_START`` (C++ ``main()``). Returns an
+        empty set if the file cannot be read.
     """
     try:
         lines = path.read_text(errors="ignore").splitlines()
@@ -825,7 +836,7 @@ def _find_annotated_c_functions(path: Path) -> Set[str]:
         name = _c_func_at_line(line)
         if name:
             current_func = name
-        if _DFTRACER_C_START in line and current_func:
+        if current_func and any(sentinel in line for sentinel in _DFTRACER_ANY_START):
             annotated.add(current_func)
     return annotated
 

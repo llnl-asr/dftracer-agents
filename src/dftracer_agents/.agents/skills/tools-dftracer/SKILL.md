@@ -19,9 +19,22 @@ So a CORRECT install pulls in three related-but-separate packages:
 
 ## Install sources
 
-Two valid ways to install, both via `pip` (never a manual git clone + hand-driven
-cmake build for a session-local install — that's what `session_install_dftracer`
-is for, and it already knows the CMake two-pass dependency-bootstrap quirk, see
+**MANDATORY rule (corrected 2026-08-04, user-taught, YGM session): never use
+the prebuilt distribution when ANY build-time feature flag needs to be
+configured — MPI, ROCm/HIP, or HDF5.** The prebuilt wheel is a single fixed
+build with whatever flags its own CI happened to use (confirmed: the
+Tuolumne prerelease wheel linked NO MPI library at all — `ldd
+libdftracer_core.so | grep -i mpi` came back empty). If the traced app needs
+dftracer's own MPI-IO interception, HDF5 tracing, or HIP tracing, you MUST
+build from source (options 1, 2, or 4 below) with the matching
+`DFTRACER_ENABLE_*`/`MPICC`/`MPICXX`/`HDF5_ROOT` env vars — see RULE 1 in
+`dftracer-install`. Only reach for the prebuilt distribution (option 3) when
+the workload needs nothing beyond plain FUNCTION-mode app-level annotation
+tracing with no dftracer-side feature flags at all.
+
+Four valid ways to install (never a manual git clone + hand-driven cmake build
+for a session-local install — that's what `session_install_dftracer` is for,
+and it already knows the CMake two-pass dependency-bootstrap quirk, see
 `dftracer-build-dftracer/pitfalls.md`):
 
 1. **PyPI release**: `pip install dftracer==<version>` (e.g. `2.0.3`). Gets a
@@ -32,10 +45,56 @@ is for, and it already knows the CMake two-pass dependency-bootstrap quirk, see
    install, NOT a manual `git clone` + `cmake configure/build/install` — pip
    drives the same build backend, it just resolves the source from the git ref
    instead of a PyPI sdist/wheel.
+3. **Prebuilt prerelease distribution (Tuolumne, no compile step, LIMITED — see mandatory rule above)**:
+   `session_install_dftracer` does NOT know about this path yet — it must be
+   run manually. Skips the entire CC/CXX/LD_LIBRARY_PATH/chid_t/dlopen
+   compile-time pitfall surface because nothing gets compiled:
+   ```bash
+   ml use /usr/workspace/dldl/dftracer/distributions/modulefiles
+   ml load dftracer-dist
+   ml load python/3.11        # must match the modulefile's target Python
+   python -m venv venv-311 && source venv-311/bin/activate
+   pip install --pre dftracer
+   ```
+   Installs a prebuilt wheel with `libdftracer_core.so`, headers, AND ready
+   CMake config files (`lib64/cmake/dftracer/dftracer-config.cmake`) — no
+   `session_generate_dftracer_pc` needed for CMake C++ projects. Caveat: this
+   wheel showed no MPI library linked in `ldd` — verify with `ldd
+   libdftracer_core.so | grep -i mpi` before relying on it for anything beyond
+   FUNCTION-mode app-level annotation. See `dftracer-annotation-lessons`
+   LESSONS_LOG.md (2026-08-04, YGM session) for the full trace.
 
-Prefer `session_install_dftracer` (the MCP tool) for either source — check what
-it actually does before assuming; it may already default to develop-branch pip
-install with the CMake two-pass bootstrap baked in.
+4. **LLNL internal GitLab source (czgitlab, SSH), the canonical org for
+   feature-configurable source builds**: same org, one repo per package —
+   ```
+   ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git
+   ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer-utils.git
+   ssh://git@czgitlab.llnl.gov:7999/dftracer/pydftracer.git
+   ```
+   (dfanalyzer and dfdiagnoser live under the same org too.) Install order:
+   `dftracer` BEFORE `dftracer-utils` (RULE 3 in `dftracer-install` — a stale
+   `zconf.h` header collision otherwise). `pip install
+   "git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git"` with the
+   `DFTRACER_ENABLE_MPI`/`DFTRACER_ENABLE_HDF5`/`MPICC`/`MPICXX`/`HDF5_ROOT`
+   env vars set BEFORE the pip call (RULE 1). SSH access confirmed working
+   from Tuolumne compute/login nodes without extra setup (2026-08-04).
+   **`czgitlab.llnl.gov` is only reachable from inside the LC (Livermore
+   Computing) network** — this works from any LC system (Tuolumne, etc.) but
+   will NOT resolve/connect from outside LC. Don't assume this source is
+   reachable in a non-LC or external/sandboxed environment; fall back to
+   options 1/2 (GitHub/PyPI) there.
+   ALWAYS verify the feature actually compiled in — a green pip install does
+   not guarantee it: `ldd <prefix>/lib64/libdftracer_core.so | grep -i mpi`
+   must show exactly one `libmpi`, not zero.
+
+Prefer `session_install_dftracer` (the MCP tool) for sources 1-2 and 4 — check
+what it actually does before assuming; it may already default to
+develop-branch pip install with the CMake two-pass bootstrap baked in, and may
+or may not yet accept an arbitrary git URL (including the czgitlab SSH form) —
+if it doesn't, fall back to a manual pip install with the env vars above,
+still inside the session's own venv, never the shared framework venv. Source 3
+is currently a manual-only path (an MCP tool gap worth closing —
+`session_install_dftracer` could grow a `source="prerelease-module"` option).
 
 ## CC/CXX/LD_LIBRARY_PATH MUST be set before pip install (this always fails otherwise)
 
@@ -144,6 +203,45 @@ Confirm the diagnosis first — on the stale copy,
 `grep -c readv <venv>/.../site-packages/dftracer/include/brahma/interface/posix.h`
 returns 0 (the old header has no `readv` declaration at all).
 
+## Prebuilt prerelease wheel's packaged CMake config is broken for CMake C++ consumers (confirmed 2026-08-04, YGM)
+
+The prerelease distribution (see Install sources, option 3) ships
+`lib64/cmake/dftracer/dftracer-config.cmake` + `dftracer-targets-release.cmake`,
+but for a C++ project that does `find_package(dftracer CONFIG REQUIRED)`
+against it, two real breakages surface:
+
+1. `dftracer-targets-release.cmake` hardcodes the ORIGINAL BUILD MACHINE'S
+   paths in `IMPORTED_LOCATION_RELEASE` (e.g. `/project/build/...`), not the
+   installed venv location — `find_package` succeeds but the imported target
+   points at a path that doesn't exist in the consuming session.
+2. `dftracer-config.cmake` unconditionally `find_package(brahma REQUIRED)`,
+   but `brahma` (only needed for PRELOAD-mode interception) is NOT packaged
+   in this wheel at all — `find_package(dftracer)` fails outright with
+   `brahma_DIR` not found, even for a FUNCTION-mode-only C++ consumer that
+   never needed brahma.
+
+**Workaround** (used successfully on YGM): skip `find_package(dftracer)`
+entirely and define a manual `IMPORTED` CMake target pointing straight at the
+wheel's `lib64/libdftracer_core.so` + `include/`:
+```cmake
+add_library(dftracer_core_imported SHARED IMPORTED)
+set_target_properties(dftracer_core_imported PROPERTIES
+  IMPORTED_LOCATION "${DFTRACER_ROOT}/lib64/libdftracer_core.so"
+  INTERFACE_INCLUDE_DIRECTORIES "${DFTRACER_ROOT}/include;${CPP_LOGGER_INCLUDE_DIR}")
+target_link_libraries(<your_target> PRIVATE dftracer_core_imported)
+```
+Also note: the wheel's `dftracer/dftracer.h` transitively requires
+`<cpp-logger/logger.h>`, which this wheel does NOT package — the consuming
+project must supply that include path separately (found via a sibling
+`cpp-logger` source checkout in the YGM session; there may not always be one
+available, this is a real packaging gap worth closing upstream).
+
+This is a genuine wheel-packaging defect (stale absolute paths baked into a
+release artifact + a spurious hard dependency), not a usage mistake — worth
+fixing at the dftracer packaging level (regenerate the CMake config
+relocatably at wheel-build time, make brahma optional) rather than expecting
+every consumer to rediscover this workaround.
+
 ## Session-local vs shared venv (MANDATORY)
 
 Never install or repair dftracer inside the shared framework venv
@@ -153,3 +251,42 @@ to fix up for a traced app. Always install a session-local dftracer (via
 `session_install_dftracer`) and point the traced app's own build/run at that
 session's install, per [[feedback_dftracer_aiml_venv]] (dftracer and the app
 share ONE venv — the session's, not the framework's).
+
+## Prebuilt prerelease wheel's CMake package is broken for CMake C++ consumers
+
+**Symptom:** a CMake C++ project's `find_package(dftracer CONFIG REQUIRED)`
+against the prerelease-wheel install (see "Prebuilt prerelease distribution"
+above) fails, or configures but references stale paths.
+
+**Root cause (confirmed on `llnl/ygm`, 2026-08-04):**
+`<prefix>/lib64/cmake/dftracer/dftracer-targets-release.cmake` has hardcoded
+`IMPORTED_LOCATION_RELEASE` paths from the WHEEL'S OWN BUILD MACHINE (e.g.
+`/project/build/...`), not the install prefix the wheel actually landed in.
+Separately, `dftracer-config.cmake` unconditionally `find_package(brahma
+REQUIRED)`, but the wheel does not ship a `brahma` CMake package at all —
+`brahma` is only needed for PRELOAD-mode interception, irrelevant to
+FUNCTION-mode source annotation (the only mode this project uses, see
+[[feedback-always-function-mode]]). The wheel also doesn't package
+`cpp-logger` headers, which `dftracer/dftracer.h` transitively requires.
+
+**Fix:** do not use `find_package(dftracer CONFIG)` against this prerelease
+wheel. Define a manual `IMPORTED` target instead, pointed straight at the
+`.so` and include dirs:
+
+```cmake
+add_library(dftracer_core_imported SHARED IMPORTED)
+set_target_properties(dftracer_core_imported PROPERTIES
+  IMPORTED_LOCATION "${DFTRACER_ROOT}/lib64/libdftracer_core.so"
+  INTERFACE_INCLUDE_DIRECTORIES "${DFTRACER_ROOT}/include;${CPP_LOGGER_INCLUDE_DIR}"
+)
+target_link_libraries(<your_target> PRIVATE dftracer_core_imported)
+```
+
+Pass `-DDFTRACER_ROOT=<venv>/lib/pythonX.Y/site-packages/dftracer` (and locate
+`cpp-logger` headers separately — on Tuolumne found at
+`/usr/WS2/haridev/dftracer-project/cpp-logger/include` as of this session; a
+proper fix would have the wheel ship these itself). This is a packaging bug in
+the prerelease wheel, not something to patch per-project each time — worth
+fixing at the distribution level (ship correct `IMPORTED_LOCATION` paths, drop
+the hard `brahma` requirement for FUNCTION-only consumers, package
+`cpp-logger` headers).

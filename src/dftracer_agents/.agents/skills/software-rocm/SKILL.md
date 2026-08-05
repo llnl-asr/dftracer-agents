@@ -47,6 +47,27 @@ to turn HIP tracing off once the build has it. Build against a ROCm >= 6.2 prefi
 with `CMAKE_PREFIX_PATH=$ROCM_PATH` or `find_package(rocprofiler-sdk)` fails and it
 silently compiles out (no error, just no HIP tracing).
 
+**Confirmed missing in `session_install_dftracer` itself (fixed 2026-08-05,
+RAJAPerf session).** Detection correctly set `DFTRACER_ENABLE_HIP_TRACING=ON`
+in `dftracer_pip_env`/`DFTRACER_CMAKE_ARGS` whenever `hip_tracing_needed` was
+true, but never set `ROCM_PATH`/`HIP_PATH`/`CMAKE_PREFIX_PATH` alongside it —
+so every HIP-tracing dftracer install up to this point would have hit exactly
+the silent-compile-out failure mode this paragraph warns about (a build that
+reports success, produces a working library, but with zero
+`HIP_RUNTIME_API`/`KERNEL_DISPATCH` events ever possible — the kind of gap
+that's easy to misread as "this app does no GPU work" per the case C/D
+warning above, except one level earlier: dftracer itself never got the
+capability compiled in). Fixed in two places: `detection.py`'s `_detect_info`
+now sets `ROCM_PATH`/`HIP_PATH` in `dftracer_pip_env` from the resolved
+`rocm_info["path"]` whenever `hip_tracing_needed`; `install.py`'s
+`_install_dftracer_pip_direct` now also APPENDS the ROCm prefix to
+`CMAKE_PREFIX_PATH` (not overwrite — HDF5's own prefix may already occupy
+that var) when `features["hip"]` is set. After a HIP-tracing dftracer
+install, don't just trust exit 0 — verify with a real GPU run that
+`HIP_RUNTIME_API`/`KERNEL_DISPATCH` categories are actually non-empty in the
+trace (this is also why the smoke-test step for any HIP-enabled session
+should explicitly check for those categories, not just "did the binary run").
+
 ## PyTorch profiler + dftracer HIP tracing coexist for exactly ONE profiler window
 
 `pydftracer` (develop) ships `dftracer.python.torch.trace_handler`, which replays

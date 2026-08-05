@@ -1,0 +1,59 @@
+{
+  "run_id": "ygm/20260804_221748",
+  "key": "STEP 4: dftracer-build-smoke",
+  "index": 2,
+  "agent": "dftracer-build-smoke",
+  "notes": "Switch to GNU mpich wrapper (gcc-native/11.2) to avoid Cray-clang20 consteval/fmt bug",
+  "status": "ok",
+  "tries": 3,
+  "retries": 2,
+  "failed_attempts": 2,
+  "successful_attempts": 1,
+  "exec_s": 1969.622,
+  "wall_s": 2863.963,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "blocked",
+      "duration_s": 169.531,
+      "error": "dftracer not installed in this session (no venv/, no artifacts/dftracer_install.log, no libdftracer_core.so anywhere under the workspace); session_build_annotated cannot find_package(dftracer) or link libdftracer_core.so without it",
+      "start_ns": 1785882666730907197,
+      "end_ns": 1785882836261785893
+    },
+    {
+      "number": 2,
+      "status": "failed",
+      "duration_s": 832.099,
+      "error": "Blocked by non-annotation toolchain bug: Cray clang 20.1.6 + spdlog-bundled fmt (fetched via FetchContent) fails with 'call to consteval function ... is not a constant expression' in logger-inl.h/common.h SPDLOG_FMT_STRING \u2014 a known fmtlib/bundled-fmt vs newer-clang consteval strictness incompatibility, unrelated to dftracer annotations.",
+      "start_ns": 1785883647321023396,
+      "end_ns": 1785884479419761237
+    },
+    {
+      "number": 3,
+      "status": "ok",
+      "duration_s": 967.992,
+      "error": "",
+      "start_ns": 1785884562701434477,
+      "end_ns": 1785885530693782104
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

@@ -896,15 +896,53 @@ def _detect_rocm_from_scripts(source_dir: Path) -> Dict[str, Any]:
     }
 
 
+def _rocm_version_key(version: str) -> tuple:
+    """Parse an X.Y.Z ROCm version string into a tuple for numeric sorting."""
+    parts = re.findall(r"\d+", version)
+    return tuple(int(p) for p in parts[:3]) if parts else (0, 0, 0)
+
+
+def _list_loadable_rocm_modules() -> List[str]:
+    """Return every 'rocm/X.Y.Z' token ``module avail`` reports on this system.
+
+    HPC module systems (Tuolumne/LC) expose many more ROCm builds under
+    ``module avail`` than are usefully distinguishable by scanning ``/opt/``
+    alone, and — critically — loading the module is what actually puts a
+    working ``hipcc``/CMake-config tree on PATH/CMAKE_PREFIX_PATH.  A version
+    only present as a bare ``/opt/rocm-X.Y.Z`` directory with no matching
+    module may be an unsupported/incomplete build (see the raw-path fallback
+    below, which found ``/opt/rocm-4.2.0`` on Tuolumne — installed on disk but
+    missing CMake config files entirely). Best-effort: returns [] on any
+    failure so callers fall through to the next detection strategy.
+    """
+    try:
+        import subprocess as _sp
+        proc = _sp.run(
+            ["bash", "-lc", "module avail -t rocm 2>&1"],
+            capture_output=True, text=True, timeout=30,
+        )
+        out = (proc.stdout or "") + (proc.stderr or "")
+    except Exception:
+        return []
+    return sorted(set(re.findall(r"\brocm/([\d]+\.[\d]+\.[\d]+)(?![\w.-])", out)))
+
+
 def _detect_rocm(source_dir: Optional[Path] = None) -> Dict[str, Any]:
     """Detect ROCm (AMD GPU) stack on the system.
 
     Checks (in order):
     1. App install/job scripts for 'module load rocm/X.Y.Z' (HPC module systems)
     2. ROCM_PATH / ROCM_HOME / HIP_PATH environment variables
-    3. /opt/rocm-X.Y.Z and /opt/rocm directory existence
-    4. hipcc compiler on PATH
-    5. rocm-smi / rocminfo tool on PATH
+    3. Loadable 'rocm/X.Y.Z' environment modules (``module avail``) — picks the
+       NEWEST version, since HPC sites typically keep many ROCm builds
+       installed side by side and only the module load sets up a fully
+       working hipcc/CMake toolchain.
+    4. /opt/rocm-X.Y.Z and /opt/rocm directory existence — picks the NEWEST
+       versioned directory (a plain lexical/glob-order pick is WRONG: it
+       returns the oldest install, e.g. 4.2.0 on a system that also has
+       7.2.1, which then reads as "ROCm too old / no CMake config").
+    5. hipcc compiler on PATH
+    6. rocm-smi / rocminfo tool on PATH
 
     Pass source_dir to enable script scanning (step 1), which is the most
     reliable strategy on HPC systems like Tuolumne where ROCm is module-managed.
@@ -927,28 +965,44 @@ def _detect_rocm(source_dir: Optional[Path] = None) -> Dict[str, Any]:
             version = _read_rocm_version(val)
             return {"found": True, "path": val, "version": version, "source": f"env:{env_var}"}
 
-    # 3. Versioned and default /opt/rocm paths
-    rocm_candidates = ["/opt/rocm"]
-    # Also scan /opt/ for any rocm-X.Y.Z directories
+    # 3. Loadable modules — prefer the newest, since that's what a `module
+    # load rocm/<version>` actually wires up correctly (hipcc, CMake config).
+    module_versions = _list_loadable_rocm_modules()
+    if module_versions:
+        best = max(module_versions, key=_rocm_version_key)
+        candidate_path = f"/opt/rocm-{best}"
+        rocm_path = candidate_path if Path(candidate_path).exists() else None
+        return {
+            "found": True,
+            "path": rocm_path,
+            "version": best,
+            "source": "module:avail",
+            "module": f"rocm/{best}",
+        }
+
+    # 4. Versioned and default /opt/rocm paths — newest first, not glob order.
     opt = Path("/opt")
+    versioned = []
     if opt.exists():
-        rocm_candidates += sorted(
-            str(p) for p in opt.iterdir()
-            if p.is_dir() and p.name.startswith("rocm-")
-        )
+        for p in opt.iterdir():
+            if p.is_dir() and p.name.startswith("rocm-"):
+                v = p.name[len("rocm-"):]
+                versioned.append((v, str(p)))
+    versioned.sort(key=lambda vp: _rocm_version_key(vp[0]), reverse=True)
+    rocm_candidates = [path for _v, path in versioned] + ["/opt/rocm"]
     for candidate in rocm_candidates:
         if Path(candidate).exists():
             version = _read_rocm_version(candidate)
             return {"found": True, "path": candidate, "version": version, "source": f"path:{candidate}"}
 
-    # 4. hipcc on PATH
+    # 5. hipcc on PATH
     hipcc = shutil.which("hipcc")
     if hipcc:
         rocm_root = str(Path(hipcc).parent.parent)
         version = _read_rocm_version(rocm_root)
         return {"found": True, "path": rocm_root, "version": version, "source": "hipcc"}
 
-    # 5. rocm-smi / rocminfo
+    # 6. rocm-smi / rocminfo
     if shutil.which("rocm-smi") or shutil.which("rocminfo"):
         return {"found": True, "path": None, "version": None, "source": "rocm-smi"}
 
@@ -1237,6 +1291,18 @@ def _detect_info(
             dftracer_pip_env["HDF5_DIR"] = hdf5_root
     if hip_tracing_needed:
         dftracer_pip_env["DFTRACER_ENABLE_HIP_TRACING"] = "ON"
+        # DFTRACER_ENABLE_HIP_TRACING is a real build-time dependency on
+        # rocprofiler-sdk (via CMake's find_package), NOT just a flag — per
+        # software-rocm's own documented lesson, without ROCM_PATH/
+        # CMAKE_PREFIX_PATH pointing at the resolved ROCm prefix,
+        # find_package(rocprofiler-sdk) fails and HIP tracing SILENTLY
+        # compiles out with no error at all (confirmed missing here,
+        # RAJAPerf 2026-08-05 — DFTRACER_ENABLE_HIP_TRACING=ON was set but
+        # CMAKE_PREFIX_PATH pointed only at HDF5's /usr prefix).
+        _rocm_path = rocm_info.get("path")
+        if _rocm_path:
+            dftracer_pip_env["ROCM_PATH"] = _rocm_path
+            dftracer_pip_env["HIP_PATH"] = _rocm_path
     if hwloc_found:
         dftracer_pip_env["DFTRACER_DISABLE_HWLOC"] = "OFF"
 

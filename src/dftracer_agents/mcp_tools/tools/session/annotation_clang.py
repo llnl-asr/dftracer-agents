@@ -522,7 +522,18 @@ def register_clang_tools(mcp: FastMCP) -> None:
         else:
             text = abs_path.read_text(errors="replace")
 
-        if "#include <dftracer/dftracer.h>" in text:
+        # Idempotency requires BOTH the include AND at least one actual
+        # function-level macro — the include alone was previously treated as
+        # proof of prior annotation, which silently masked a real failure
+        # mode: a call that inserted only the #include (e.g. every target
+        # function force-skipped by an exclude_functions/comp_overrides
+        # interaction) reported functions=0 once, then "already_annotated"
+        # forever after on retry (confirmed on RAJAPerf 2026-08-05).
+        _has_function_macros = bool(re.search(
+            r"DFTRACER_(?:C_FUNCTION_START|CPP_FUNCTION|CPP_REGION_START)\s*\(",
+            text,
+        ))
+        if "#include <dftracer/dftracer.h>" in text and _has_function_macros:
             return _ok(
                 f"{filepath} is already annotated — skipped.",
                 filepath=filepath,
@@ -567,8 +578,11 @@ def register_clang_tools(mcp: FastMCP) -> None:
             else "DFTRACER_C_FUNCTION_START();"
         )
         END = "DFTRACER_C_FUNCTION_END();"  # C++ uses RAII, no explicit END needed
-        INIT = f"DFTRACER_C_INIT({init_args});"
-        FINI = "DFTRACER_C_FINI();"
+        INIT = (
+            f"DFTRACER_CPP_INIT({init_args});" if is_cpp
+            else f"DFTRACER_C_INIT({init_args});"
+        )
+        FINI = "DFTRACER_CPP_FINI();" if is_cpp else "DFTRACER_C_FINI();"
 
         def _make_update(fn: dict, ind: str, comp_override: str = None) -> str:
             comp = comp_override if comp_override is not None else _derive_comp(fn)
@@ -659,6 +673,20 @@ def register_clang_tools(mcp: FastMCP) -> None:
 
             is_main_fn = fn_name == "main" and is_entry
 
+            # A C++ main() must NOT use the RAII DFTRACER_CPP_FUNCTION() macro:
+            # its destructor would fire at scope exit, i.e. AFTER our own
+            # explicit DFTRACER_CPP_FINI() call runs just before `return` —
+            # see dftracer-annotation-lessons CP2/CP3. Use the explicit
+            # REGION_START/REGION_END pair for a C++ main() instead; every
+            # other C++ function keeps the RAII DFTRACER_CPP_FUNCTION() macro
+            # (no explicit END needed for those).
+            if is_main_fn and is_cpp:
+                fn_start = 'DFTRACER_CPP_REGION_START("main");'
+                fn_end = 'DFTRACER_CPP_REGION_END("main");'
+            else:
+                fn_start = START
+                fn_end = END
+
             if is_main_fn and _mpi_init_line is not None:
                 # A2: place INIT/START/UPDATE right after the last MPI startup call
                 # (MPI_Comm_rank is the last — rank info is embedded in trace metadata)
@@ -666,29 +694,34 @@ def register_clang_tools(mcp: FastMCP) -> None:
                 init_ind = _indent(lines, _mpi_init_line - 1, ind)
                 # A6: main() is always "cpu" regardless of MPI calls in its body
                 insertions.append((init_idx, init_ind + INIT))          # A3: prio 3 → on top
-                insertions.append((init_idx, init_ind + START))         # A3: prio 2 → below INIT
+                insertions.append((init_idx, init_ind + fn_start))      # A3: prio 2 → below INIT
                 insertions.append((init_idx, "UPDATE:" + _make_update(fn, init_ind, comp_override=_comp_overrides.get(fn_name, "cpu"))))
             else:
                 if is_main_fn:
                     # Fallback when no MPI startup calls detected
                     insertions.append((body_idx, ind + INIT))
-                insertions.append((body_idx, ind + START))
+                insertions.append((body_idx, ind + fn_start))
                 comp_ov = _comp_overrides.get(fn_name) if fn_name in _comp_overrides else ("cpu" if is_main_fn else None)
                 insertions.append((body_idx, "UPDATE:" + _make_update(fn, ind, comp_override=comp_ov)))
 
-            if not is_cpp:
+            # Explicit END/FINI placement is required for: every C function
+            # (no RAII in C), AND a C++ main() specifically (DFTRACER_CPP_INIT/
+            # FINI and the REGION_START/END pair above are explicit calls, not
+            # RAII — the RAII exemption applies only to DFTRACER_CPP_FUNCTION()
+            # in non-main C++ functions, which never reach this block).
+            if not is_cpp or is_main_fn:
                 if is_main_fn:
                     # A4: place END+FINI before MPI_Finalize (not at last return)
                     if _mpi_finalize_line is not None:
                         fin_idx = _mpi_finalize_line - 1  # 0-based index of MPI_Finalize line
                         fin_ind = _indent(lines, fin_idx, ind)
                         insertions.append((fin_idx, fin_ind + FINI))
-                        insertions.append((fin_idx, fin_ind + END))
+                        insertions.append((fin_idx, fin_ind + fn_end))
                     else:
                         # No MPI_Finalize found — fall back to close brace
                         close_idx = close - 1
                         insertions.append((close_idx, ind + FINI))
-                        insertions.append((close_idx, ind + END))
+                        insertions.append((close_idx, ind + fn_end))
 
                     # A5: add END+FINI at returns that occur AFTER MPI_Init
                     # but BEFORE MPI_Finalize (error paths with early teardown)
@@ -704,9 +737,11 @@ def register_clang_tools(mcp: FastMCP) -> None:
                                 ex_idx = ex_line - 1
                                 ex_ind = _indent(lines, ex_idx, ind)
                                 insertions.append((ex_idx, ex_ind + FINI))
-                                insertions.append((ex_idx, ex_ind + END))
+                                insertions.append((ex_idx, ex_ind + fn_end))
                 else:
-                    # Regular (non-entry-point) functions
+                    # Regular (non-entry-point) C functions only — C++ regular
+                    # functions never reach here (RAII covers them; guarded by
+                    # the `not is_cpp or is_main_fn` check above).
                     if exits:
                         for ex in exits:
                             ex_line = ex.get("line") if isinstance(ex, dict) else ex
@@ -727,11 +762,17 @@ def register_clang_tools(mcp: FastMCP) -> None:
         #   prio 2: START / INIT → processed last, pushed above UPDATE
         def _sort_key(item):
             idx, txt = item
-            if FINI in txt or END in txt:
+            # Regex (not the START/END/INIT/FINI string constants directly) so
+            # this also classifies the C++ main()-only REGION_START/REGION_END
+            # pair correctly — those are distinct literal strings from the
+            # regular START/END/INIT/FINI constants above but belong in the
+            # same priority buckets (REGION_END with END/FINI, REGION_START
+            # with START).
+            if re.search(r"_(?:FUNCTION_END|REGION_END|FINI)\s*\(", txt):
                 prio = 0
             elif txt.startswith("UPDATE:"):
                 prio = 1
-            elif INIT in txt and START not in txt:
+            elif re.search(r"_INIT\s*\(", txt) and not re.search(r"_(?:FUNCTION_START|REGION_START)\s*\(", txt):
                 prio = 3   # INIT inserted last → ends up above START in file
             else:
                 prio = 2   # START and everything else

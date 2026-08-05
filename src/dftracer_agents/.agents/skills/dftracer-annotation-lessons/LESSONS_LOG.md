@@ -1392,3 +1392,273 @@ fix: |
   Process(target=...), etc.) must be a plain top-level function or a bound
   method on a picklable object — never a closure/nested function.
 tags: [python, multiprocessing, spawn, pickle, closure, worker_init_fn, pytorch, dataloader]
+
+---
+date: 2026-08-04
+app: https://github.com/llnl/ygm
+context: annotating a header-only C++ library (implementation split into .ipp files included at the bottom of .hpp headers) with DFTRACER_CPP_* macros
+error: |
+  Compile errors deep inside ygm/detail/comm.ipp, collective.hpp, mpi.hpp, and
+  comm_environment.hpp complaining that DFTRACER_CPP_FUNCTION / UPDATE macros
+  are undefined, even though every one of those files was correctly annotated
+  and #include <dftracer/dftracer.h> was present in the entry test_comm.cpp.
+root_cause: |
+  test_comm.cpp had #include <dftracer/dftracer.h> AFTER #include <ygm/comm.hpp>.
+  comm.hpp transitively pulls in comm.ipp/collective.hpp/mpi.hpp/comm_environment.hpp
+  at preprocess time; those headers use DFTRACER_CPP_* macros in their annotated
+  method bodies, so by the time they're parsed the macros must already be defined.
+  Include order matters here in a way it normally doesn't for a single flat .cpp.
+  See CP9 in this skill's SKILL.md.
+fix: |
+  In the entry .cpp, make #include <dftracer/dftracer.h> the FIRST include,
+  before any of the library's own headers:
+    #include <dftracer/dftracer.h>   // must be first
+    #include <ygm/comm.hpp>
+  Also do NOT let clang_annotate_file insert a stray #include <dftracer/dftracer.h>
+  directly into a .ipp/.hpp header (CP6) — it did so once here and had to be
+  manually removed.
+tags: [cpp, header-only, ipp, include-order, ygm, cp9, macro-undefined]
+
+---
+date: 2026-08-04
+app: https://github.com/llnl/ygm
+context: clang_annotate_file / clang_extract_functions return 0 functions for a .ipp file that defines Class::method(...) bodies for a class declared in a separate .hpp
+error: |
+  clang_extract_functions(comm.ipp) returned an empty function list (not an
+  error — just 0 results) despite the file containing ~55 real method
+  definitions (ygm::comm::method(...) {...}).
+root_cause: |
+  comm.ipp defines out-of-line method bodies for the ygm::comm class, which is
+  only forward/fully declared in the sibling comm.hpp. The clang-based AST
+  tools have no -I/extra-include-dirs style parameter to resolve <ygm/...>
+  include paths or hand the tool comm.hpp's class context, so the AST parse of
+  comm.ipp in isolation fails to resolve the class and silently yields 0
+  functions — not a template-instantiation problem, a missing-context problem.
+fix: |
+  No tool-level fix applied this session (would need clang_annotate_file /
+  clang_extract_functions to accept an extra_include_dirs param the same way
+  clang_syntax_check already does, so the .ipp can be parsed with the class's
+  own headers visible). Interim workaround: fall back to a manual, scoped
+  annotation pass applying the same Rule 0 skip criteria and comp= table by
+  hand, then verify with a real compiler (mpicxx -fsyntax-only -std=c++20)
+  plus clang_lint_annotations instead of relying on clang_extract_functions'
+  function count.
+tags: [cpp, clang_annotate_file, clang_extract_functions, ipp, header-only, mcp-tool-gap, ygm]
+
+---
+date: 2026-08-04
+app: general (Tuolumne)
+context: dftracer can be installed from a prebuilt prerelease distribution via a modulefile, skipping session_install_dftracer's from-source CMake build entirely
+error: |
+  (not an error — a new, faster install path discovered this session)
+root_cause: |
+  Every prior session installed dftracer either via session_install_dftracer's
+  from-source pip build (compiling the C/C++ extension against the session's
+  own MPI/HDF5/compiler) or a manual `pip install dftracer`/`pip install
+  git+https://github.com/LLNL/dftracer.git@develop`, both of which compile.
+  Tuolumne also hosts a prebuilt wheel distribution via a modulefile that
+  session_install_dftracer does NOT know about — using it skips compilation
+  entirely (no CC/CXX/LD_LIBRARY_PATH dance, no chid_t/dlopen/link-order
+  pitfalls from the rest of this log).
+fix: |
+  ml use /usr/workspace/dldl/dftracer/distributions/modulefiles
+  ml load dftracer-dist
+  ml load python/3.11
+  python -m venv venv-311 && source venv-311/bin/activate
+  pip install --pre dftracer
+  This installs dftracer 2.1.1.post22.dev0 + pydftracer + dftracer-utils as a
+  prebuilt wheel: libdftracer_core.so, headers, AND ready-to-use CMake config
+  files (dftracer-config.cmake etc. under lib64/cmake/dftracer/) all present
+  out of the box — no session_generate_dftracer_pc / manual CMake wiring
+  needed for CMake-based C++ projects (unlike the autotools .pc-generation
+  path in dftracer-install SKILL.md).
+  Caveat: this prebuilt wheel showed no MPI library in `ldd` output — if a
+  workload needs dftracer's own MPI-IO interception (not just FUNCTION-mode
+  app-level annotation around MPI calls, which works fine), verify with
+  `ldd libdftracer_core.so | grep -i mpi` before relying on this path; a
+  from-source build with DFTRACER_ENABLE_MPI=ON may still be needed.
+  Python version must match the modulefile's target (python/3.11 here, not
+  the system default python/3.13.2) — mismatched Python breaks the wheel's
+  ABI the same way an from-source build would (see RULE 0 in dftracer-install).
+tags: [tuolumne, dftracer-install, prerelease, modulefile, dftracer-dist, prebuilt-wheel, mcp-tool-gap]
+
+---
+date: 2026-08-04
+app: https://github.com/llnl/ygm
+context: session_build_annotated's build_subdir parameter was silently ignored for cmake/autotools/meson build tools — CONFIRMED and FIXED at the tool level
+error: |
+  session_build_annotated(run_id, build_subdir="source", extra_cmake_flags=...)
+  failed cmake configure with:
+    "The source directory <ws>/annotated does not appear to contain CMakeLists.txt"
+  even though build_subdir="source" was passed and <ws>/annotated/source/CMakeLists.txt
+  genuinely exists (YGM's session layout nests the repo as annotated/source/, not
+  annotated/ directly — matching the top-level source/ tree's own layout).
+root_cause: |
+  In session_tools.py's _session_build_annotated_impl, the build_subdir parameter
+  was ONLY honored inside the custom_build_cmd escape hatch (`work = ann /
+  build_subdir if build_subdir else ann`). The cmake branch hardcoded
+  `cmake -S str(ann) -B str(build_ann)` — always the bare annotated/ root — and
+  the autotools branch hardcoded `ann / "configure"` / `cwd=ann` for autoreconf,
+  and the meson branch hardcoded `meson setup <build_ann> str(ann)`. build_subdir
+  was accepted as a parameter and documented, but three of the four build-tool
+  branches never read it.
+fix: |
+  Fixed in session_tools.py: introduced a single `src_root = ann / build_subdir
+  if build_subdir else ann` resolved once near the top of
+  _session_build_annotated_impl (with an existence check), and replaced every
+  bare `ann` reference in the cmake/autotools/meson/python branches with
+  `src_root`. The custom_build_cmd escape hatch now also just uses src_root
+  instead of re-deriving `work` locally. Requires an MCP server restart to take
+  effect (code change, not data) — until restarted, use the custom_build_cmd
+  escape hatch (which already correctly honored build_subdir even before this
+  fix) as an immediate workaround for any project with a nested annotated/<dir>/
+  layout: pass a manual `cmake -S . -B ../../build_ann ... && cmake --build
+  ../../build_ann && cmake --install ../../build_ann` as custom_build_cmd with
+  build_subdir set — custom_build_cmd's cwd is src_root, so relative paths climb
+  back to the workspace root correctly.
+tags: [dftracer, session_build_annotated, build_subdir, cmake, mcp-tool-fix, ygm, confirmed-bug]
+
+---
+date: 2026-08-04
+app: https://github.com/llnl/ygm + https://github.com/llnl/ygm-bench
+context: scaled 4-node/128-rank traced run of around_the_world_ygm ran 5-10x slower than untraced, with runtime NOT scaling with -n (trip count)
+error: |
+  DFTRACER_ENABLE=0: -n 1000 -> 105.8s, -n 2000 -> 281.75s (roughly proportional).
+  DFTRACER_ENABLE=1 (DATA_DIR=all): -n 2000 and -n 6000 BOTH still running past
+  585-589s at the identical elapsed-wall-clock checkpoint (near-identical
+  trajectories despite 3x different trip counts) -- runtime was NOT driven by
+  workload size at all under tracing, only by elapsed time.
+root_cause: |
+  ygm::comm::local_progress() -- the core async-communication progress-engine
+  poll function -- was annotated with DFTRACER_CPP_FUNCTION(). It is called
+  from local_wait_until()'s `while (not fn()) { local_progress(); }` spin loop
+  up to millions of times per barrier/wait, and itself calls
+  process_receive_queue() and flush_next_send() -- ALSO both separately
+  annotated. check_completed_sends(), post_new_irecv(), local_process_incoming()
+  (itself an internal `while(true)` MPI_Test spin-loop), handle_completed_send(),
+  and check_if_production_halt_required() are all reachable from this same hot
+  path. Every poll iteration therefore fired a CASCADE of nested RAII trace
+  events (timestamp capture + buffer write per DFTRACER_CPP_FUNCTION()), and at
+  millions of iterations this overhead dominates wall-clock time completely,
+  swamping the actual communication work being measured.
+fix: |
+  Stripped DFTRACER_CPP_FUNCTION() (leaving a one-line comment explaining why,
+  not silently removed) from the 9 hot-loop functions in
+  include/ygm/detail/comm.ipp: local_progress, local_wait_until,
+  process_receive_queue, flush_next_send, check_completed_sends,
+  check_if_production_halt_required, post_new_irecv, local_process_incoming,
+  handle_completed_send. Kept annotation on the coarser, once-per-logical-
+  operation functions applications actually call directly: async, async_bcast,
+  barrier, all_reduce*, mpi_send/recv/bcast, pack_lambda*, comm_setup, welcome.
+  Coverage check still holds (46 DFTRACER_CPP_FUNCTION() == 46
+  DFTRACER_CPP_FUNCTION_UPDATE calls after the strip, down from 55/55).
+  Verified the annotated tree still compiles/links cleanly (single MPI runtime,
+  libmpi_gnu_112.so.12 only) after the strip. See CP10 in this skill's
+  SKILL.md for the generalized pattern (any async/polling communication
+  engine, not just YGM) and the diagnostic tell (traced runtime independent
+  of workload size == hot-loop over-annotation, not a real bottleneck).
+  Follow-up idea (not yet implemented): dftracer's own aggregator
+  (src/dftracer/core/aggregator/{aggregator,rules}.cpp) can summarize
+  repeated events into periodic time buckets (e.g. 5s granularity) instead of
+  one event per call -- worth trying as a lighter-weight alternative to fully
+  stripping annotation from hot functions when their behavior is itself
+  diagnostically interesting.
+tags: [cpp, ygm, hot-loop, polling, dftracer-overhead, over-annotation, async-communication, cp10, performance]
+
+---
+date: 2026-08-04
+app: https://github.com/llnl/ygm-bench (consuming annotated https://github.com/llnl/ygm)
+context: making a second, separate repo build against an already-annotated header-only library tree instead of fetching a fresh unannotated copy of it
+error: |
+  (not an error — a generic, reusable CMake technique worth recording)
+  ygm-bench's CMakeLists.txt does find_package(ygm CONFIG) first, falling back
+  to FetchContent_Declare(ygm GIT_REPOSITORY https://github.com/llnl/ygm.git...)
+  + FetchContent_MakeAvailable(ygm) if that fails. The annotated YGM tree has
+  no install()/export() rules, so find_package never succeeds regardless of
+  CMAKE_PREFIX_PATH — it would always fall through to fetching a FRESH,
+  UNANNOTATED copy of ygm from GitHub, silently defeating the whole point of
+  tracing ygm-bench's usage of the instrumented library.
+root_cause: |
+  FetchContent_MakeAvailable(<name>) by default clones from the declared
+  GIT_REPOSITORY every time, with no built-in awareness of a local annotated
+  checkout sitting right next to it in the same session workspace.
+fix: |
+  Pass CMake's own per-dependency override cache variable at configure time:
+    cmake ... -DFETCHCONTENT_SOURCE_DIR_YGM=<ws>/annotated/source ...
+  (the <NAME> must match the FetchContent_Declare(<name> ...) name, uppercased
+  — "ygm" -> FETCHCONTENT_SOURCE_DIR_YGM). This makes FetchContent_MakeAvailable
+  add_subdirectory() the local annotated tree in place instead of git-cloning,
+  with NO CMakeLists.txt patch needed in either repo. Because the annotated
+  library's own CMakeLists.txt already links its dftracer_core_imported target
+  into its main INTERFACE target, any downstream consumer that links that
+  target (e.g. ygm-bench's own `target_link_libraries(... ygm::ygm)`)
+  transitively picks up the dftracer link automatically — no separate dftracer
+  wiring needed in the downstream repo's CMakeLists.txt.
+  Caveat: the downstream repo's own entry points (main()s) still need their
+  own explicit DFTRACER_CPP_INIT()/DFTRACER_CPP_FINI() added (mirroring the
+  first repo's smoke-test entry point) — without it, every DFTRACER_CPP_FUNCTION()
+  call reached via the annotated library is a silent no-op (dftracer is never
+  initialized for that process).
+  General pattern: this FETCHCONTENT_SOURCE_DIR_<NAME> override applies to ANY
+  downstream/benchmark repo that pulls the traced library via FetchContent —
+  not YGM-specific.
+tags: [cmake, fetchcontent, header-only, multi-repo, ygm, ygm-bench, dftracer-init, reusable-pattern]
+
+---
+date: 2026-08-04
+app: general (Tuolumne)
+context: dftracer prerelease wheel (dftracer-dist module + pip install --pre) does not ship dftracer_service
+error: |
+  <venv-311>/bin/dftracer_service not found when trying to bracket a run per
+  project policy rule 12 (node-counter daemon, one instance per node).
+root_cause: |
+  The prebuilt prerelease wheel (see tools-dftracer skill, "Prebuilt
+  prerelease distribution") packages libdftracer_core.so, headers, and CMake
+  config files, but not the dftracer_service binary — that's only produced by
+  a from-source CMake build.
+fix: |
+  When dftracer_service is required (project policy rule 12, every job
+  launch) and only the prerelease wheel is installed, install a SECOND,
+  from-source dftracer into a separate session-local venv (e.g. venv-src-gnu)
+  using the GNU toolchain, and use ITS dftracer_service binary — while still
+  building/linking the actual traced application against whichever dftracer
+  install matches its own compiler ABI (GNU toolchain build in this session,
+  since Cray-clang 20 couldn't compile ygm-bench's spdlog dependency anyway;
+  see [[system-tuolumne]]). Do not assume the prerelease wheel is a complete
+  substitute for a from-source install if dftracer_service is needed.
+tags: [tuolumne, dftracer-install, prerelease, dftracer_service, mcp-tool-gap, ygm-bench]
+
+---
+date: 2026-08-04
+app: general
+context: refining CP10's selective-aggregation guidance (dftracer-annotation-lessons SKILL.md) — how to spot aggregation candidates and how to size DFTRACER_TRACE_INTERVAL_MS
+error: |
+  (not an error — a heuristic refinement to an existing lesson)
+  CP10's SELECTIVE AGGREGATION fix only listed a fixed example
+  DFTRACER_TRACE_INTERVAL_MS=5000 with no guidance on choosing that value,
+  and only described spotting hot-loop candidates via static caller-pattern
+  grepping (while/spin-wait loops) before annotating.
+root_cause: |
+  N/A — gap in existing guidance, not a bug. Two things were missing:
+  (1) fast-but-not-obviously-hot-loop functions are easy to miss by static
+  grep alone but show up immediately in smoke-test timing; (2) a flat
+  interval constant doesn't fit both a 3-minute smoke/validation run and an
+  hour-long production run — too coarse an interval on a short run collapses
+  the whole timeline into 1-2 buckets and destroys phase visibility.
+fix: |
+  1. Detection: after the smoke test, check observed per-call duration for
+     annotated functions, not just static call-graph shape. Any function
+     whose smoke-trace `dur` is very small (rule of thumb: dur < 1000 in the
+     configured DFTRACER_TIME_METRIC unit) is a selective-aggregation
+     candidate for the CP10 fix even if it wasn't caught by the
+     while/spin-wait caller-pattern heuristic.
+  2. DFTRACER_TRACE_INTERVAL_MS sizing: scale bucket granularity to expected
+     job duration instead of using one fixed constant everywhere. Jobs under
+     ~5 minutes -> ~1000ms (1s) interval, so aggregated buckets still resolve
+     phase changes; longer jobs -> grow the interval roughly proportionally
+     (tens of minutes -> several seconds, hour+ -> tens of seconds) so the
+     aggregated event count stays bounded without collapsing a short run's
+     timeline into 1-2 buckets.
+  Applied directly to CP10 in SKILL.md (see that entry for the full
+  DFTRACER_ENABLE_AGGREGATION / rules.yaml mechanics this refines).
+tags: [dftracer-annotation, selective-aggregation, dur-threshold, trace-interval, cp10-refinement]

@@ -271,3 +271,28 @@ schemas would sit in context permanently. See [[dftracer-context-economy]].
 - Cross-check any `analyze()` summary against `event_count` and the known pid count.
 - An empty `diagnose()` is a tool signal, not "no bottlenecks".
 - Rank bottlenecks by aggregated `dur`, never by event count (STDIO: 166,952 events, 1.5s).
+
+## Two confirmed tool bugs found during a YGM/ygm-bench session (2026-08-04)
+
+1. **`mcp__dftracer__reader` (`mode="lines"`) rejects `start=0`.** The default/
+   zero start value fails with `Line numbers must be 1-based (start from 1)`
+   from the underlying `dftracer_reader` CLI — the MCP tool's own default
+   doesn't match the CLI's 1-based requirement. Always pass `start=1`
+   explicitly (or any positive line number) rather than relying on the
+   parameter default.
+
+2. **`mcp__dftracer__view` (and any `--query` with an embedded double-quoted
+   string, e.g. `cat == "CPP_APP"`) silently loses the quotes** when this
+   session's `flux proxy <job> flux run ...` wrapping is in the call path —
+   the query DSL parser receives `cat==CPP_APP` (unquoted) instead of
+   `cat=="CPP_APP"`, and fails or misparses. Reproduced manually outside the
+   MCP tool too, so this is in the flux argv-forwarding path, not something
+   `view`/`dftracer_view` itself does wrong. `--preset` (no quoted value)
+   passes through fine — isolates the bug to quoted-string queries
+   specifically. Until fixed, avoid quoted-string DSL queries through
+   `mcp__dftracer__view` on any Cray/flux-proxy system; use `--preset` filters
+   or `mcp__dftracer__reader`/`event_count` instead.
+
+Both reported for confirmation, not yet fixed at the tool-code level — see
+[[dftracer-annotation-lessons]] LESSONS_LOG.md 2026-08-04 (YGM/ygm-bench
+session) for the full context these were found in.

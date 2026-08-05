@@ -339,6 +339,95 @@ CP8  REGION_END missing before a return in main()
      main() has a return path that lacks DFTRACER_CPP_REGION_END before it → add
      REGION_END (and FINI if applicable) before every return statement in main().
 
+CP10 Annotated a hot-loop/polling function in an async communication engine
+     A function called in a tight spin/poll loop (e.g. a progress-engine
+     function like `while (not fn()) { local_progress(); }`, or any function
+     whose body is itself a `while(true)`/`MPI_Test` polling loop) was given
+     DFTRACER_CPP_FUNCTION() → RAII overhead (timestamp capture + buffer
+     write) accumulates across millions of calls and DOMINATES wall-clock
+     time, causing the traced binary to run 5-10x+ slower than untraced, with
+     runtime NOT scaling with workload size (`-n`/iteration count) the way an
+     untraced run does — a signature symptom, not just "slow". Confirmed on
+     YGM (llnl/ygm): `comm::local_progress()`, `local_wait_until()`,
+     `process_receive_queue()`, `flush_next_send()`, `check_completed_sends()`,
+     `check_if_production_halt_required()`, `post_new_irecv()`,
+     `local_process_incoming()`, `handle_completed_send()` are all called from
+     one shared progress-polling path and were incorrectly annotated.
+     → Identify hot-loop candidates BEFORE annotating: grep for functions
+     whose callers include a `while`/spin-wait loop, or that are called from
+     another annotated "progress"/"poll"/"wait_until"-style function. Strip
+     DFTRACER_CPP_FUNCTION() (or the C/Python equivalent) from these — keep
+     annotation only on the coarser, logically-once-per-operation entry
+     points (e.g. `async`, `barrier`, `all_reduce*`, `mpi_send/recv/bcast`)
+     that a user's application code actually calls, not the internal
+     mechanics run underneath. Diagnostic tell: run the SAME workload size
+     with DFTRACER_ENABLE=1 vs DFTRACER_ENABLE=0 — if traced is many times
+     slower AND multiple different `-n` values under tracing converge to
+     near-identical wall time (rather than each scaling proportionally like
+     the untraced runs do), that's this pattern, not a real communication
+     bottleneck.
+
+     PREFERRED FIX (confirmed working, YGM 2026-08-04): don't strip the
+     annotation -- use dftracer's SELECTIVE AGGREGATION instead, so hot
+     functions keep visibility but their many short calls collapse into
+     periodic summary events instead of one raw event each. Identify
+     candidates from SMOKE TEST timing, not just static hot-loop grepping:
+     any annotated function whose observed per-call duration in the smoke
+     trace is very small (rule of thumb: `dur < 1000` in the configured
+     DFTRACER_TIME_METRIC unit) is a selective-aggregation candidate even if
+     it wasn't caught by the caller-pattern heuristic above.
+     ```bash
+     export DFTRACER_ENABLE_AGGREGATION=1
+     export DFTRACER_AGGREGATION_TYPE=SELECTIVE   # exact string, uppercase
+     export DFTRACER_AGGREGATION_FILE=<path-to-rules.yaml>
+     export DFTRACER_TRACE_INTERVAL_MS=5000       # bucket granularity -- scale to job length, see below
+     ```
+     Bucket granularity should scale with expected job duration, not stay
+     fixed: for jobs under ~5 minutes use a ~1000ms (1s) interval so
+     aggregated buckets still resolve phase changes; for longer jobs grow the
+     interval roughly proportionally (e.g. tens of minutes -> several seconds,
+     hour+ -> tens of seconds) so the aggregated event count stays bounded
+     without collapsing a short run's timeline into 1-2 buckets.
+     rules.yaml content (top-level keys are `inclusion`/`exclusion`, NOT
+     nested under an `aggregation:` key -- that nesting is only for the
+     separate main DFTRACER_CONFIGURATION YAML file):
+     ```yaml
+     inclusion:
+       - "dur < 1000"
+     exclusion: []
+     ```
+     Rule syntax is `field OP value` (`==`,`!=`,`>`,`>=`,`<`,`<=`,`IN {...}`,
+     `LIKE "pattern"`, `AND`/`OR`/`NOT`) evaluated against each event's
+     fields (`dur` = duration in the configured DFTRACER_TIME_METRIC unit,
+     plus `name`/`cat`/any UPDATE'd metadata key). Events matching an
+     inclusion rule (and no exclusion rule) get bucketed per
+     DFTRACER_TRACE_INTERVAL_MS instead of logged individually; the output
+     aggregated event (`"ph":3` in the .pfw JSON) carries `dft_cnt` (call
+     count folded in) plus `dur_sum`/`dur_min`/`dur_max` and per-numeric-arg
+     sum/min/max. Verified on YGM: with all 9 hot-loop functions annotated
+     AND this aggregation config, a 128-rank run went from "traced slower
+     than untraced and non-scaling with -n" back to normal near-linear
+     scaling (n=500 -> 70.2s, closely matching the untraced-baseline rate),
+     with per-rank trace files shrinking from >1GB (unaggregated) to
+     under 1MB (aggregated) -- full CPP_APP-category visibility retained
+     (176 aggregated hot-function events with real dft_cnt in the small run)
+     at a fraction of the volume and overhead. Prefer this over fully
+     stripping annotation whenever the hot function's behavior is itself
+     diagnostically interesting; strip entirely only when even the
+     aggregation bookkeeping overhead is too much (very extreme call rates).
+
+CP9  #include <dftracer/dftracer.h> placed after the library's own headers in a
+     header-only library whose implementation lives in a .ipp included at the
+     bottom of a .hpp (e.g. class.hpp includes class.ipp, and class.ipp's method
+     bodies use DFTRACER_CPP_* macros). If the entry .cpp includes the library
+     header (e.g. <ygm/comm.hpp>) BEFORE <dftracer/dftracer.h>, every dftracer
+     macro used inside the pulled-in .ipp/.hpp headers is undefined at parse
+     time → compile errors deep inside the library, not at the include site.
+     → In the entry .cpp, <dftracer/dftracer.h> MUST be the very first include,
+     before any of the library's own headers. Confirmed on YGM (llnl/ygm),
+     comm.ipp/collective.hpp/mpi.hpp/comm_environment.hpp all use DFTRACER_CPP_*
+     macros and are pulled in transitively by <ygm/comm.hpp>.
+
 ---
 
 ## Python-Specific Pitfalls (PP)

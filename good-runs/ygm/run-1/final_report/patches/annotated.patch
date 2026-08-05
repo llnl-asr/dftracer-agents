@@ -1,0 +1,762 @@
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/CMakeLists.txt $WS/annotated/source/CMakeLists.txt
+--- $WS/baseline/source/CMakeLists.txt	2026-08-04 15:17:50.473582000 -0700
++++ $WS/annotated/source/CMakeLists.txt	2026-08-04 15:55:20.598734000 -0700
+@@ -134,6 +134,25 @@
+ endif ()
+ 
+ #
++# dftracer (annotation tracing) -- bypass the packaged dftracer-config.cmake
++# (it hard-requires a brahma CMake package that this wheel does not ship;
++# brahma/preload discovery is irrelevant for FUNCTION-mode source annotation,
++# which only needs the headers + libdftracer_core.so).
++#
++if (NOT DFTRACER_ROOT)
++  set(DFTRACER_ROOT "$ENV{DFTRACER_ROOT}")
++endif ()
++if (NOT DFTRACER_ROOT)
++  message(FATAL_ERROR "DFTRACER_ROOT must be set (dftracer install prefix)")
++endif ()
++add_library(dftracer_core_imported SHARED IMPORTED)
++set_target_properties(dftracer_core_imported PROPERTIES
++    IMPORTED_LOCATION "${DFTRACER_ROOT}/lib64/libdftracer_core.so"
++    INTERFACE_INCLUDE_DIRECTORIES "${DFTRACER_ROOT}/include;/usr/WS2/$USER/dftracer-project/cpp-logger/include"
++)
++add_library(dftracer::dftracer ALIAS dftracer_core_imported)
++
++#
+ # Create the YGM target library
+ #
+ add_library(ygm INTERFACE)
+@@ -146,7 +165,7 @@
+ target_link_libraries(
+     ygm
+     PUBLIC
+-    INTERFACE MPI::MPI_CXX Threads::Threads cereal spdlog_header_only Boost::container Boost::unordered Boost::static_string Boost::json
++    INTERFACE MPI::MPI_CXX Threads::Threads cereal spdlog_header_only Boost::container Boost::unordered Boost::static_string Boost::json dftracer::dftracer
+ )
+ 
+ if (YGM_DONT_USE_MREMAP)
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/include/ygm/detail/collective.hpp $WS/annotated/source/include/ygm/detail/collective.hpp
+--- $WS/baseline/source/include/ygm/detail/collective.hpp	2026-08-04 15:17:50.645697000 -0700
++++ $WS/annotated/source/include/ygm/detail/collective.hpp	2026-08-04 15:52:45.860385000 -0700
+@@ -5,6 +5,8 @@
+ 
+ #pragma once
+ 
++#include <dftracer/dftracer.h>
++
+ // Note: collective.hpp should not be included directly by users. This may cause
+ // the collectives to be unable to find a definition of `ygm::comm` or the
+ // `ygm::comm` to be unable to find a definition for collective operations it is
+@@ -23,6 +25,8 @@
+  */
+ template <typename T>
+ T prefix_sum(const T &value, const comm &c) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   T to_return{0};
+   c.barrier();
+   MPI_Comm mpi_comm = c.get_mpi_comm();
+@@ -42,6 +46,8 @@
+  */
+ template <typename T>
+ T sum(const T &value, const comm &c) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   T to_return;
+   c.barrier();
+   MPI_Comm mpi_comm = c.get_mpi_comm();
+@@ -61,6 +67,8 @@
+  */
+ template <typename T>
+ T min(const T &value, const comm &c) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   T to_return;
+   c.barrier();
+   MPI_Comm mpi_comm = c.get_mpi_comm();
+@@ -80,6 +88,8 @@
+  */
+ template <typename T>
+ T max(const T &value, const comm &c) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   T to_return;
+   c.barrier();
+   MPI_Comm mpi_comm = c.get_mpi_comm();
+@@ -98,6 +108,8 @@
+  * @return T
+  */
+ inline bool logical_and(bool value, const comm &c) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   bool to_return;
+   c.barrier();
+   MPI_Comm mpi_comm = c.get_mpi_comm();
+@@ -116,6 +128,8 @@
+  * @return T
+  */
+ inline bool logical_or(bool value, const comm &c) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   bool to_return;
+   c.barrier();
+   MPI_Comm mpi_comm = c.get_mpi_comm();
+@@ -134,6 +148,8 @@
+  */
+ template <typename T>
+ void bcast(T &to_bcast, int root, const comm &cm) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   if constexpr (std::is_trivially_copyable<T>::value &&
+                 std::is_standard_layout<T>::value) {
+     YGM_ASSERT_MPI(
+@@ -164,6 +180,8 @@
+ 
+ template <typename T, typename Equal = std::equal_to<T>>
+ bool is_same(const T &to_check, const comm &cm, const Equal &equals = Equal()) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   T to_bcast;
+   if (cm.rank() == 0) {
+     to_bcast = to_check;
+@@ -184,6 +202,8 @@
+  */
+ template <typename T, typename MergeFunction>
+ inline T all_reduce(const T &in, MergeFunction merge, const comm &cm) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   int first_child  = 2 * cm.rank() + 1;
+   int second_child = 2 * (cm.rank() + 1);
+   int parent       = (cm.rank() - 1) / 2;
+@@ -221,6 +241,8 @@
+ template <typename T, typename MergeFunction>
+ inline std::optional<T> all_reduce(std::optional<T> mine, MergeFunction merge,
+                                    const comm &cm) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   int first_child  = 2 * cm.rank() + 1;
+   int second_child = 2 * (cm.rank() + 1);
+   int parent       = (cm.rank() - 1) / 2;
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/include/ygm/detail/comm_environment.hpp $WS/annotated/source/include/ygm/detail/comm_environment.hpp
+--- $WS/baseline/source/include/ygm/detail/comm_environment.hpp	2026-08-04 15:17:50.649680000 -0700
++++ $WS/annotated/source/include/ygm/detail/comm_environment.hpp	2026-08-04 15:52:45.864389000 -0700
+@@ -5,6 +5,8 @@
+ 
+ #pragma once
+ 
++#include <dftracer/dftracer.h>
++
+ #include <cmath>
+ #include <cstdlib>
+ #include <iostream>
+@@ -43,6 +45,8 @@
+ 
+  public:
+   comm_environment(const ygm::detail::layout& layout) {
++    DFTRACER_CPP_FUNCTION();
++    DFTRACER_CPP_FUNCTION_UPDATE("comp", "cpu");
+     size_t nodes = layout.node_size();
+     // We have to determine the routing type first as it changes the ratio
+     // between local and remote buffers
+@@ -154,6 +158,8 @@
+   }
+ 
+   void print(std::ostream& os = std::cout) const {
++    DFTRACER_CPP_FUNCTION();
++    DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+     os << "======== ENVIRONMENT SETTINGS ========\n"
+        << "YGM_COMM_LOCAL_BUFFER_SIZE_KB   = " << local_buffer_size / 1024
+        << "\n"
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/include/ygm/detail/comm.ipp $WS/annotated/source/include/ygm/detail/comm.ipp
+--- $WS/baseline/source/include/ygm/detail/comm.ipp	2026-08-04 15:17:50.647710000 -0700
++++ $WS/annotated/source/include/ygm/detail/comm.ipp	2026-08-04 20:12:15.931357000 -0700
+@@ -4,6 +4,8 @@
+ // SPDX-License-Identifier: MIT
+ 
+ #pragma once
++
++#include <dftracer/dftracer.h>
+ #include <ygm/detail/collective.hpp>
+ #include <ygm/detail/lambda_compliance.hpp>
+ #include <ygm/detail/meta/functional.hpp>
+@@ -38,6 +40,8 @@
+       m_layout(MPI_COMM_WORLD),
+       m_router(m_layout, config.routing),
+       m_logger(m_layout.rank()) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   // pimpl_if = std::make_shared<detail::mpi_init_finalize>(argc, argv);
+   comm_setup(MPI_COMM_WORLD);
+ }
+@@ -52,6 +56,8 @@
+     : m_layout(mcomm),
+       m_router(m_layout, config.routing),
+       m_logger(m_layout.rank()) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   pimpl_if.reset();
+   int flag(0);
+   YGM_ASSERT_MPI(MPI_Initialized(&flag));
+@@ -69,6 +75,8 @@
+  * send buffers, and posts initial receives.
+  */
+ inline void comm::comm_setup(MPI_Comm c) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   m_logger.set_path(config.default_log_path + std::to_string(rank()));
+   m_logger.set_log_level(config.default_log_level);
+   m_logger.log(log_level::info, "Setting up ygm::comm");
+@@ -103,6 +111,8 @@
+  * @param os Output stream to print welcome message to
+  */
+ inline void comm::welcome(std::ostream &os) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   static bool already_printed = false;
+   if (already_printed) return;
+   already_printed = true;
+@@ -157,6 +167,8 @@
+  * @param os Output stream to print stats to
+  */
+ inline void comm::stats_print(const std::string &name, std::ostream &os) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   std::stringstream sstr;
+   sstr << "============== STATS =================\n"
+        << "NAME                     = " << name << "\n"
+@@ -188,6 +200,8 @@
+  * for use within the ygm::comm
+  */
+ inline comm::~comm() {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   barrier();
+ 
+   m_logger.log(log_level::info, "Destroying ygm::comm");
+@@ -227,6 +241,8 @@
+  */
+ template <typename AsyncFunction, typename... SendArgs>
+ inline void comm::async(int dest, AsyncFunction &&fn, const SendArgs &...args) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   YGM_CHECK_ASYNC_LAMBDA_COMPLIANCE(AsyncFunction, "ygm::comm::async()");
+ 
+   YGM_ASSERT_RELEASE(dest < m_layout.size());
+@@ -309,6 +325,8 @@
+  */
+ template <typename AsyncFunction, typename... SendArgs>
+ inline void comm::async_bcast(AsyncFunction &&fn, const SendArgs &...args) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   YGM_CHECK_ASYNC_LAMBDA_COMPLIANCE(AsyncFunction, "ygm::comm::async_bcast()");
+ 
+   check_if_production_halt_required();
+@@ -324,6 +342,8 @@
+ template <typename AsyncFunction, typename... SendArgs>
+ inline void comm::async_mcast(const std::vector<int> &dests, AsyncFunction &&fn,
+                               const SendArgs &...args) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   YGM_CHECK_ASYNC_LAMBDA_COMPLIANCE(AsyncFunction, "ygm::comm::async_mcast()");
+ 
+   for (auto dest : dests) {
+@@ -397,6 +417,8 @@
+  * \endcode
+  */
+ inline void comm::async_barrier() {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   log(log_level::debug, "Entering YGM async_barrier");
+   bool ret = priv_barrier(false);
+   YGM_ASSERT_RELEASE(ret == false);
+@@ -411,6 +433,8 @@
+  * messages before any rank is able to return from the barrier() call.
+  */
+ inline void comm::barrier() {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   if (m_trace_ygm || m_trace_mpi) {
+     m_tracer.trace_barrier_begin(m_tracer.get_next_message_id(), m_send_count,
+                                  m_recv_count, m_pending_isend_bytes,
+@@ -441,6 +465,8 @@
+  * async_barrier
+  */
+ inline bool comm::priv_barrier(bool local_full) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   flush_all_local_and_process_incoming();
+   std::pair<uint64_t, uint64_t> previous_counts{1, 2};
+   std::pair<uint64_t, uint64_t> current_counts{3, 4};
+@@ -469,6 +495,8 @@
+  * called it. See:  MPI_Barrier()
+  */
+ inline void comm::cf_barrier() const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   log(log_level::debug, "Entering YGM cf_barrier");
+   YGM_ASSERT_MPI(MPI_Barrier(m_comm_barrier));
+   log(log_level::debug, "Exiting YGM cf_barrier");
+@@ -476,6 +504,8 @@
+ 
+ template <typename T>
+ inline ygm_ptr<T> comm::make_ygm_ptr(T &t) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "cpu");
+   ygm_ptr<T> to_return(&t);
+   to_return.check(*this);
+   return to_return;
+@@ -489,6 +519,8 @@
+  */
+ inline void comm::register_pre_barrier_callback(
+     const std::function<void()> &fn) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "cpu");
+   m_pre_barrier_callbacks.push_back(fn);
+ }
+ 
+@@ -497,6 +529,8 @@
+  */
+ template <typename T>
+ inline T comm::all_reduce_sum(const T &t) const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   T to_return;
+   YGM_ASSERT_MPI(MPI_Allreduce(&t, &to_return, 1, detail::mpi_typeof(T()),
+                                MPI_SUM, m_comm_other));
+@@ -508,6 +542,8 @@
+  */
+ template <typename T>
+ inline T comm::all_reduce_min(const T &t) const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   T to_return;
+   YGM_ASSERT_MPI(MPI_Allreduce(&t, &to_return, 1, detail::mpi_typeof(T()),
+                                MPI_MIN, m_comm_other));
+@@ -519,6 +555,8 @@
+  */
+ template <typename T>
+ inline T comm::all_reduce_max(const T &t) const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   T to_return;
+   YGM_ASSERT_MPI(MPI_Allreduce(&t, &to_return, 1, detail::mpi_typeof(T()),
+                                MPI_MAX, m_comm_other));
+@@ -530,6 +568,8 @@
+  */
+ template <typename T, typename MergeFunction>
+ inline T comm::all_reduce(const T &in, MergeFunction merge) const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   int first_child  = 2 * rank() + 1;
+   int second_child = 2 * (rank() + 1);
+   int parent       = (rank() - 1) / 2;
+@@ -567,6 +607,8 @@
+ template <typename T>
+ inline void comm::mpi_send(const T &data, int dest, int tag,
+                            MPI_Comm comm) const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   ygm::detail::byte_vector packed;
+   cereal::YGMOutputArchive oarchive(packed);
+   oarchive(data);
+@@ -589,6 +631,8 @@
+  */
+ template <typename T>
+ inline T comm::mpi_recv(int source, int tag, MPI_Comm comm) const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   std::vector<std::byte> packed;
+   size_t                 packed_size{0};
+   YGM_ASSERT_MPI(MPI_Recv(&packed_size, 1, detail::mpi_typeof(packed_size),
+@@ -614,6 +658,8 @@
+  */
+ template <typename T>
+ inline T comm::mpi_bcast(const T &to_bcast, int root, MPI_Comm comm) const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   ygm::detail::byte_vector packed;
+   cereal::YGMOutputArchive oarchive(packed);
+   if (rank() == root) {
+@@ -645,6 +691,8 @@
+  *
+  */
+ inline std::ostream &comm::cout0() const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   if (rank() == 0) {
+     return std::cout;
+   }
+@@ -657,6 +705,8 @@
+  * @return std::cerr that only writes from rank 0
+  */
+ inline std::ostream &comm::cerr0() const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   if (rank() == 0) {
+     return std::cerr;
+   }
+@@ -670,6 +720,8 @@
+  * @return std::cout for use by any rank
+  */
+ inline std::ostream &comm::cout() const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   std::cout << rank() << ": ";
+   return std::cout;
+ }
+@@ -681,6 +733,8 @@
+  * @return std::cerr for use by any rank
+  */
+ inline std::ostream &comm::cerr() const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   std::cerr << rank() << ": ";
+   return std::cerr;
+ }
+@@ -697,6 +751,8 @@
+  */
+ template <typename... Args>
+ inline void comm::cout0(Args &&...args) const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   if (rank0()) {
+     std::cout << detail::outstr0(args...) << std::endl;
+   }
+@@ -710,6 +766,8 @@
+  */
+ template <typename... Args>
+ inline void comm::cerr0(Args &&...args) const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   if (rank0()) {
+     std::cerr << detail::outstr0(args...) << std::endl;
+   }
+@@ -727,6 +785,8 @@
+  */
+ template <typename... Args>
+ inline void comm::cout(Args &&...args) const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   std::cout << detail::outstr(args...) << std::endl;
+ }
+ 
+@@ -742,6 +802,8 @@
+  */
+ template <typename... Args>
+ inline void comm::cerr(Args &&...args) const {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   std::cerr << detail::outstr(args...) << std::endl;
+ }
+ 
+@@ -755,6 +817,8 @@
+  */
+ inline size_t comm::pack_header(ygm::detail::byte_vector &packed,
+                                 const int dest, size_t size) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "mem");
+   size_t size_before = packed.size();
+ 
+   header_t h;
+@@ -780,6 +844,8 @@
+  * receive and process incoming YGM messages.
+  */
+ inline std::pair<uint64_t, uint64_t> comm::barrier_reduce_counts() {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   uint64_t local_counts[2]  = {m_recv_count, m_send_count};
+   uint64_t global_counts[2] = {0, 0};
+ 
+@@ -836,6 +902,8 @@
+  * @param dest
+  */
+ inline void comm::flush_send_buffer(int dest) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   static size_t counter = 0;
+   if (m_vec_send_buffers[dest].size() > 0) {
+     check_completed_sends();
+@@ -896,6 +964,9 @@
+  * @param dest_queue Queue of destinations to send buffered messages to
+  */
+ inline void comm::flush_next_send(std::deque<int> &dest_queue) {
++  // Hot-loop function (see CP10): annotated, relies on selective aggregation.
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   if (!dest_queue.empty()) {
+     int dest = dest_queue.front();
+     dest_queue.pop_front();
+@@ -910,6 +981,9 @@
+  * @param req_buffer mpi_isend_request object associated to completed send
+  */
+ inline void comm::handle_completed_send(mpi_isend_request &req_buffer) {
++  // Hot-loop function (see CP10): annotated, relies on selective aggregation.
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   m_pending_isend_bytes -= req_buffer.buffer->size();
+   log(log_level::debug, "Completed send of " +
+                             std::to_string(req_buffer.buffer->size()) +
+@@ -924,6 +998,9 @@
+  * @brief Test completed sends
+  */
+ inline void comm::check_completed_sends() {
++  // Hot-loop function (see CP10): annotated, relies on selective aggregation.
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   if (!m_send_queue.empty()) {
+     int flag(1);
+     while (flag && not m_send_queue.empty()) {
+@@ -955,6 +1032,9 @@
+  *
+  */
+ inline void comm::check_if_production_halt_required() {
++  // Hot-loop function (see CP10): annotated, relies on selective aggregation.
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   while (m_enable_interrupts && !m_in_process_receive_queue &&
+          m_pending_isend_bytes >
+              (config.local_buffer_size + config.remote_buffer_size)) {
+@@ -967,6 +1047,11 @@
+  * one buffer.
+  */
+ inline void comm::local_progress() {
++  // Hot-loop function (see CP10 in dftracer-annotation-lessons): annotated,
++  // but relies on DFTRACER selective aggregation (dur<1000 -> 5s buckets)
++  // to keep per-call RAII overhead from dominating wall-clock time.
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   if (not m_in_process_receive_queue) {
+     process_receive_queue();
+   }
+@@ -1001,6 +1086,9 @@
+  */
+ template <typename Function>
+ inline void comm::local_wait_until(Function fn) {
++  // Hot-loop function (see CP10): annotated, relies on selective aggregation.
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   while (not fn()) {
+     local_progress();
+   }
+@@ -1011,6 +1099,8 @@
+  * Notifies any registered barrier watchers.
+  */
+ inline void comm::flush_all_local_and_process_incoming() {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   // Keep flushing until all local work is complete
+   bool did_something = true;
+   while (did_something) {
+@@ -1050,6 +1140,8 @@
+  * capacity
+  */
+ inline void comm::flush_to_capacity() {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   while (m_send_local_buffer_bytes > config.local_buffer_size) {
+     YGM_ASSERT_DEBUG(!m_send_local_dest_queue.empty());
+     flush_next_send(m_send_local_dest_queue);
+@@ -1069,6 +1161,9 @@
+  */
+ inline void comm::post_new_irecv(
+     std::shared_ptr<ygm::detail::byte_vector> &recv_buffer) {
++  // Hot-loop function (see CP10): annotated, relies on selective aggregation.
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   recv_buffer->clear();
+   mpi_irecv_request recv_req;
+   recv_req.buffer = recv_buffer;
+@@ -1099,6 +1194,8 @@
+ template <typename Lambda, typename... PackArgs>
+ inline size_t comm::pack_lambda(ygm::detail::byte_vector &packed, Lambda &&l,
+                                 const PackArgs &...args) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "mem");
+   auto dispatch_lambda = [](comm *c, cereal::YGMInputArchive *bia,
+                             std::remove_reference_t<Lambda> &&l) {
+     std::tuple<PackArgs...> ta;
+@@ -1135,6 +1232,8 @@
+  */
+ template <typename Lambda, typename... PackArgs>
+ inline void comm::pack_lambda_broadcast(Lambda &&l, const PackArgs &...args) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "mem");
+   auto forward_remote_and_dispatch_lambda = [](comm                    *c,
+                                                cereal::YGMInputArchive *bia,
+                                                std::remove_reference_t<Lambda>
+@@ -1252,6 +1351,8 @@
+ inline size_t comm::pack_lambda_generic(ygm::detail::byte_vector &packed,
+                                         Lambda &&l, RemoteLogicLambda rll,
+                                         const PackArgs &...args) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "mem");
+   size_t                        size_before = packed.size();
+   const std::tuple<PackArgs...> tuple_args(
+       std::forward<const PackArgs>(args)...);
+@@ -1315,6 +1416,8 @@
+  */
+ inline void comm::queue_message_bytes(const ygm::detail::byte_vector &packed,
+                                       const int                       dest) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   m_send_count++;
+   bool local = m_layout.is_local(dest);
+   //
+@@ -1363,6 +1466,8 @@
+ inline void comm::handle_next_receive(
+     std::shared_ptr<ygm::detail::byte_vector> &buffer, const size_t buffer_size,
+     const uint32_t from_rank) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   log(log_level::debug, "Received " + std::to_string(buffer_size) +
+                             " bytes from rank " + std::to_string(from_rank));
+ 
+@@ -1434,6 +1539,9 @@
+  * @return True if receive queue was non-empty, else false
+  */
+ inline bool comm::process_receive_queue() {
++  // Hot-loop function (see CP10): annotated, relies on selective aggregation.
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   YGM_ASSERT_RELEASE(!m_in_process_receive_queue);
+   m_in_process_receive_queue = true;
+   bool received_to_return    = false;
+@@ -1492,6 +1600,9 @@
+  * @return True if any messages were received, otherwise false.
+  */
+ inline bool comm::local_process_incoming() {
++  // Hot-loop function (see CP10): annotated, relies on selective aggregation.
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+   bool received_to_return = false;
+ 
+   while (true) {
+@@ -1525,6 +1636,8 @@
+  * requests of the application's async calls.
+  */
+ inline void comm::enable_ygm_tracing() {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "cpu");
+   // Setup tracing if not already enabled
+   if (!m_trace_ygm && !m_trace_mpi) {
+     m_tracer.create_directory();
+@@ -1538,6 +1651,8 @@
+  * @brief Turn on tracing of MPI calls within YGM
+  */
+ inline void comm::enable_mpi_tracing() {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "cpu");
+   // Setup tracing if not already enabled
+   if (!m_trace_ygm && !m_trace_mpi) {
+     m_tracer.create_directory();
+@@ -1551,6 +1666,8 @@
+  * @brief Turn off tracing of YGM functions
+  */
+ inline void comm::disable_ygm_tracing() {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "cpu");
+   m_trace_ygm = false;
+   cf_barrier();
+   // if (!m_trace_ygm && !m_trace_mpi) {
+@@ -1563,6 +1680,8 @@
+  * @brief Turn off tracing of MPI calls
+  */
+ inline void comm::disable_mpi_tracing() {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "cpu");
+   m_trace_mpi = false;
+   cf_barrier();
+ 
+@@ -1596,6 +1715,8 @@
+  */
+ template <typename StringType>
+ inline void comm::set_log_location(const StringType &s) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   set_log_location(std::filesystem::path(s));
+ }
+ 
+@@ -1606,6 +1727,8 @@
+  * @param p Path to log location as an std::filesystem::path
+  */
+ inline void comm::set_log_location(std::filesystem::path p) {
++  DFTRACER_CPP_FUNCTION();
++  DFTRACER_CPP_FUNCTION_UPDATE("comp", "io");
+   // p will be treated as a desired directory location to store all logs. The
+   // full name of the individual loggers on each rank will be determined by the
+   // ygm::detail::logger objects.
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/include/ygm/detail/comm_router.hpp $WS/annotated/source/include/ygm/detail/comm_router.hpp
+--- $WS/baseline/source/include/ygm/detail/comm_router.hpp	2026-08-04 15:17:50.650738000 -0700
++++ $WS/annotated/source/include/ygm/detail/comm_router.hpp	2026-08-04 15:52:45.861532000 -0700
+@@ -5,6 +5,8 @@
+ 
+ #pragma once
+ 
++#include <dftracer/dftracer.h>
++
+ #include <ygm/detail/comm_environment.hpp>
+ #include <ygm/detail/layout.hpp>
+ 
+@@ -35,6 +37,8 @@
+    * subset of those communicating in routing_type::NR
+    */
+   int next_hop(const int dest, const routing_type route) const {
++    DFTRACER_CPP_FUNCTION();
++    DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+     int to_return;
+     switch (route) {
+       case routing_type::NONE:
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/include/ygm/detail/mpi.hpp $WS/annotated/source/include/ygm/detail/mpi.hpp
+--- $WS/baseline/source/include/ygm/detail/mpi.hpp	2026-08-04 15:17:50.666687000 -0700
++++ $WS/annotated/source/include/ygm/detail/mpi.hpp	2026-08-04 15:52:45.868378000 -0700
+@@ -5,6 +5,8 @@
+ 
+ #pragma once
+ 
++#include <dftracer/dftracer.h>
++
+ #include <mpi.h>
+ #include <iostream>
+ #include <ygm/detail/ygm_traits.hpp>
+@@ -14,9 +16,13 @@
+ class mpi_init_finalize {
+  public:
+   mpi_init_finalize(int *argc, char ***argv) {
++    DFTRACER_CPP_FUNCTION();
++    DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+     YGM_ASSERT_MPI(MPI_Init(argc, argv));
+   }
+   ~mpi_init_finalize() {
++    DFTRACER_CPP_FUNCTION();
++    DFTRACER_CPP_FUNCTION_UPDATE("comp", "comm");
+     YGM_ASSERT_RELEASE(MPI_Barrier(MPI_COMM_WORLD) == MPI_SUCCESS);
+     if (MPI_Finalize() != MPI_SUCCESS) {
+       std::cerr << "ERROR:  MPI_Finalize() != MPI_SUCCESS" << std::endl;
+diff -ruN --no-dereference '--exclude=*.o' '--exclude=*.mod' '--exclude=*.a' '--exclude=*.so' '--exclude=.git' '--exclude=object' '--exclude=*.pfw' '--exclude=*.pfw.gz' '--exclude=*.h5' '--exclude=*.log' $WS/baseline/source/test/test_comm.cpp $WS/annotated/source/test/test_comm.cpp
+--- $WS/baseline/source/test/test_comm.cpp	2026-08-04 15:17:50.776574000 -0700
++++ $WS/annotated/source/test/test_comm.cpp	2026-08-04 15:27:50.694811000 -0700
+@@ -4,11 +4,14 @@
+ // SPDX-License-Identifier: MIT
+ 
+ #undef NDEBUG
++#include <dftracer/dftracer.h>
+ #include <ygm/comm.hpp>
+ #include <ygm/detail/ygm_ptr.hpp>
+ 
+ int main() {
+   YGM_ASSERT_MPI(MPI_Init(nullptr, nullptr));
++  DFTRACER_CPP_INIT(nullptr, nullptr, nullptr);
++  DFTRACER_CPP_REGION_START(main_region);
+ 
+   std::vector<std::string> routing_schemes{"NONE", "NR", "NLNR"};
+   for (const auto& routing_scheme : routing_schemes) {
+@@ -136,6 +139,8 @@
+     */
+   }
+ 
++  DFTRACER_CPP_REGION_END(main_region);
++  DFTRACER_CPP_FINI();
+   YGM_ASSERT_MPI(MPI_Finalize());
+   return 0;
+ }

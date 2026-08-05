@@ -285,6 +285,17 @@ def _session_build_annotated_impl(
     if not ann.exists():
         return _err("annotated/ not found — run session_copy_annotated first")
 
+    # build_subdir resolves where the project's actual build-system root lives
+    # under annotated/ (e.g. "source" when the session layout nests the repo
+    # as annotated/source/CMakeLists.txt rather than annotated/CMakeLists.txt).
+    # Every branch below must build FROM src_root, not the bare annotated/ dir,
+    # or build_subdir is silently ignored (confirmed bug — the cmake/autotools/
+    # meson branches used to hardcode `ann`; only the custom_build_cmd escape
+    # hatch honored build_subdir).
+    src_root = ann / build_subdir if build_subdir else ann
+    if not src_root.exists():
+        return _err(f"build_subdir not found under annotated/: {build_subdir}", build_subdir=build_subdir)
+
     state = _load_state(run_id)
     info = state.get("detection") or _detect_info(ws / "source")
     bt = info.get("build_tool", "unknown")
@@ -294,13 +305,7 @@ def _session_build_annotated_impl(
 
     # Escape hatch: pre-existing custom build recipe (make/setup/etc.).
     if custom_build_cmd:
-        work = ann / build_subdir if build_subdir else ann
-        if not work.exists():
-            return _err(
-                f"custom build_subdir not found: {work}",
-                build_subdir=build_subdir,
-            )
-        r_bld = _run(["bash", "-lc", custom_build_cmd], cwd=work, timeout=1800)
+        r_bld = _run(["bash", "-lc", custom_build_cmd], cwd=src_root, timeout=1800)
         steps["custom_build"] = r_bld
         if not r_bld["success"]:
             return _err("custom build command failed for annotated source", **r_bld)
@@ -316,7 +321,7 @@ def _session_build_annotated_impl(
             flags.append(f"-DCMAKE_PREFIX_PATH={dft_prefix}")
         flags += (extra_cmake_flags.split() if extra_cmake_flags else [])
         r_cfg = _run(
-            ["cmake", "-S", str(ann), "-B", str(build_ann)] + flags,
+            ["cmake", "-S", str(src_root), "-B", str(build_ann)] + flags,
             timeout=300,
         )
         steps["configure"] = r_cfg
@@ -334,14 +339,14 @@ def _session_build_annotated_impl(
             return _err("make install failed for annotated source", **r_ins)
 
     elif bt == "autotools":
-        for deps_dir in ann.rglob(".deps"):
+        for deps_dir in src_root.rglob(".deps"):
             if deps_dir.is_dir():
                 shutil.rmtree(deps_dir, ignore_errors=True)
         for deps_dir in build_ann.rglob(".deps"):
             if deps_dir.is_dir():
                 shutil.rmtree(deps_dir, ignore_errors=True)
-        if (ann / "configure.ac").exists() and not (ann / "configure").exists():
-            _run(["autoreconf", "-fi"], cwd=ann, timeout=120)
+        if (src_root / "configure.ac").exists() and not (src_root / "configure").exists():
+            _run(["autoreconf", "-fi"], cwd=src_root, timeout=120)
 
         env: Dict[str, str] = {}
         if dft_prefix:
@@ -353,7 +358,7 @@ def _session_build_annotated_impl(
             env["LDFLAGS"]  = f"-L{dft_prefix}/lib -Wl,-rpath,{dft_prefix}/lib"
 
         r_cfg = _run(
-            [str(ann / "configure"), f"--prefix={install_ann}",
+            [str(src_root / "configure"), f"--prefix={install_ann}",
              "--disable-dependency-tracking"],
             cwd=build_ann,
             env=env if env else None,
@@ -396,7 +401,7 @@ def _session_build_annotated_impl(
         if (build_ann / "meson-info").exists():
             flags = ["--reconfigure"] + flags
         r_cfg = _run(
-            ["meson", "setup", str(build_ann), str(ann)] + flags,
+            ["meson", "setup", str(build_ann), str(src_root)] + flags,
             env=env if env else None,
             timeout=300,
         )
@@ -418,7 +423,7 @@ def _session_build_annotated_impl(
         pip = ws / "install" / "bin" / "pip"
         if not pip.exists():
             pip = Path(sys.executable).parent / "pip"
-        r_bld = _run([str(pip), "install", "-e", str(ann)], timeout=300)
+        r_bld = _run([str(pip), "install", "-e", str(src_root)], timeout=300)
         steps["pip_install"] = r_bld
         if not r_bld["success"]:
             return _err("pip install failed for annotated source", **r_bld)
@@ -1339,6 +1344,26 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                     return _err("git clone failed", clone_stderr=r2["stderr"])
                 _run(["git", "checkout", ref], cwd=src)
 
+            # No-op when the repo has no .gitmodules; required for repos that
+            # vendor dependencies as submodules (e.g. LLNL/RAJAPerf pulling in
+            # RAJA/BLT/camp) — otherwise their CMake configure fails with
+            # "submodule is not present".
+            _run(
+                ["git", "submodule", "update", "--init", "--recursive", "--depth", "1"],
+                cwd=src,
+                timeout=600,
+            )
+
+        def _ignore_git_pack_special_files(directory, files):
+            # Skip .git/objects/pack/*.keep entries shutil.copytree would
+            # otherwise try to stat/copy but that don't exist on disk in some
+            # shallow/recursive submodule clones (e.g. LLNL/RAJAPerf).
+            ignored = set()
+            for f in files:
+                if f.endswith(".keep") and not (Path(directory) / f).exists():
+                    ignored.add(f)
+            return ignored
+
         structure = _init_structure(ws, dataset_path)
         for target_name in ("baseline", "annotated"):
             target_source = Path(structure[target_name]) / "source"
@@ -1350,6 +1375,7 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 shutil.copytree(
                     src, target_source, dirs_exist_ok=True,
                     symlinks=True, ignore_dangling_symlinks=True,
+                    ignore=_ignore_git_pack_special_files,
                 )
 
         _save_state(rid, {

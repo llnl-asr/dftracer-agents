@@ -322,8 +322,59 @@ done
 ### dftracer ROCm detection
 
 `session_detect` scans app install/job scripts for `rocm/X.Y.Z` module-load
-patterns to find the ROCm version — no need to have the module pre-loaded.
-`DFTRACER_ENABLE_HIP_TRACING=ON` is set automatically when ROCm is found.
+patterns to find the ROCm version first (no need to have the module
+pre-loaded). `DFTRACER_ENABLE_HIP_TRACING=ON` is set based on whether the APP
+SOURCE itself references HIP/ROCm APIs (`hip_runtime.h`, `hipMalloc`,
+`find_package(HIP)`, `.hip` files, …) — NOT merely on whether ROCm is present
+on the node, since every Tuolumne node has ROCm installed regardless of what
+the app does (see [[bug_hip_tracing_false_positive]]).
+
+**ROCm version fallback bug (fixed 2026-08-04, RAJAPerf session).** When no
+app script names an explicit `rocm/X.Y.Z`, `_detect_rocm()`'s filesystem
+fallback used to `sorted()` the `/opt/rocm-X.Y.Z` directories lexically
+ascending and return the FIRST match — which is the OLDEST install on disk
+(`/opt/rocm-4.2.0`), not the newest. Tuolumne keeps every ROCm release from
+4.2.0 up through 7.2.1 installed side by side (`ls /opt/rocm-*`), and the
+oldest one lacks CMake config files entirely, so this silently read as
+"ROCm too old / HIP unavailable" for apps with real GPU/HIP kernel code
+(confirmed on RAJAPerf, which has RAJA HIP-backend kernel variants gated by
+CMake's `ENABLE_HIP`). Fixed in `detection.py`'s `_detect_rocm`: it now
+queries `module avail -t rocm` first and picks the NEWEST version found
+there (loading the module is also what actually puts a working
+`hipcc`/CMake-config tree on PATH, not just having the directory exist), and
+the raw `/opt/rocm-*` glob fallback now sorts by parsed semantic version
+descending instead of lexical ascending. Any app with real GPU/HIP code
+should end up with a recent ROCm (currently up to `rocm/7.2.1` on Tuolumne),
+not whatever the oldest installed version happens to be.
+
+**Follow-on bug: `env.sh` never loaded the resolved ROCm module at all
+(fixed 2026-08-05, RAJAPerf session).** `_ensure_session_env_script`
+(`install.py`) writes the session's ONE canonical `env.sh` — sourced by
+every later build/install/run step — from either the app's own checked-in
+scripts or, for a fresh clone with none, `systems.yaml`'s static per-system
+module list. Tuolumne's `systems.yaml` entry has NO `rocm/X.Y.Z` in it (most
+sessions don't need one), so even after the version-selection bug above was
+fixed and `session_detect` correctly resolved `hip_tracing_needed=True` +
+`rocm/7.2.1`, the cached `env.sh` (created earlier in the same session,
+before HIP was known to be needed, and never invalidated) still had no ROCm
+module. Every later step sourcing that `env.sh` — critically
+`session_install_dftracer` — ran with `DFTRACER_ENABLE_HIP_TRACING=ON` but
+no `hipcc`/ROCm CMake config anywhere on `PATH`/`CMAKE_PREFIX_PATH`. The
+resulting failure was a **confusing, unrelated-looking error**: cmake's HIP
+compiler detection falls back to a broken frontend and dies with
+`fatal error: 'stdlib.h' file not found` — nothing about the message hints
+at a missing ROCm module. Verified directly: with `rocm/7.2.1` NOT loaded,
+`hipcc` isn't even on `PATH`; with it loaded, a trivial `.hip.cpp` compiles
+clean. Fixed in `_ensure_session_env_script`: after computing the module
+list, it now reads the session's own `session.json` (`detection.
+hip_tracing_needed` + `detection.rocm_info.module`) and appends the resolved
+`rocm/X.Y.Z` module if the app genuinely needs HIP and no rocm module is
+already in the list. If you ever see `'stdlib.h' file not found` (or any
+other "missing basic header" error) from a build step on a HIP-enabled
+session, check `cat <ws>/scripts/env.sh` for a `rocm/` module BEFORE
+assuming it's a real toolchain problem — an env.sh generated before HIP was
+correctly detected is stale; remove it (`session_remove_path(run_id,
+'scripts/env.sh')`) and let it regenerate.
 
 ### Environment consistency rules (ABI safety)
 
@@ -608,6 +659,28 @@ fi
   avoid fork-safety issues — but source-built HDF5 is the permanent fix.
 
 ## Build lessons (dated)
+- 2026-08-04: Cray-clang (`cce/20.0.0`, clang 20.1.6) fails compiling spdlog's
+  bundled/FetchContent'd `fmt` for any C++20 codebase that pulls spdlog in
+  (confirmed on `llnl/ygm`):
+  ```
+  error: call to consteval function 'fmt::basic_format_string<...>::basic_format_string<...>'
+  is not a constant expression
+  ```
+  This is a genuine Clang-20-stricter-consteval vs. older/bundled-`fmt`
+  incompatibility, unrelated to dftracer or the app itself. **Fix: switch to
+  the GNU toolchain** — `module swap PrgEnv-cray PrgEnv-gnu` (or `module load
+  gcc-native/11.2` directly), then bind CC/CXX to the matching GNU cray-mpich
+  wrapper dir (only `gnu/11.2` exists under
+  `/opt/cray/pe/mpich/9.0.1/ofi/gnu/`, confirmed via `ls`):
+  ```bash
+  export CC=/opt/cray/pe/mpich/9.0.1/ofi/gnu/11.2/bin/mpicc
+  export CXX=/opt/cray/pe/mpich/9.0.1/ofi/gnu/11.2/bin/mpicxx
+  ```
+  GCC 11.2.1 compiles the same spdlog/fmt cleanly. `rm -rf` the CMake build
+  dir first — CMake caches the compiler and refuses to switch it on an
+  existing `CMakeCache.txt`. If a workload needs GCC 12/13 for some other
+  reason, check `/opt/cray/pe/mpich/9.0.1/ofi/gnu/` for a matching version dir
+  first; only `11.2` is confirmed present as of this session.
 - 2026-07-08: Fortran apps (Flash-X) FAIL to build with Cray PE `ftn`/`craycc`
   (Fortran flag incompatibilities). Use the **GNU MPI wrappers** at
   `/opt/cray/pe/mpich/9.0.1/ofi/gnu/11.2/bin/{mpif90,mpicc,mpicxx}`, and add
@@ -892,3 +965,43 @@ prewarms/stages `/opt/rocm` libraries (e.g. to cut GPU code-object load time) wi
 target the wrong files and measure a null result. Before proposing any ROCm-library
 prewarm/staging/caching optimization, verify which library files the actual process loads
 (check `torch/lib/*.so` first, not the module-loaded system ROCm tree).
+
+## Cray-clang 20.1.6 breaks on spdlog's bundled/fetched fmt (consteval error) — use PrgEnv-gnu instead
+
+**Symptom:** a C++20 project that FetchContent-pulls spdlog (which bundles its
+own `fmt`) fails to compile under Cray-clang 20.1.6 (`PrgEnv-cray`/`cce/20.0.0`)
+with errors like:
+
+```
+.../spdlog-src/include/spdlog/logger-inl.h:139:13: error: call to consteval function
+'fmt::basic_format_string<...>::basic_format_string<FMT_COMPILE_STRING, 0>' is not a constant expression
+```
+
+**Root cause:** Clang 20 enforces `consteval` constant-expression rules more
+strictly than older/bundled `fmt` releases expect. This is a genuine
+clang20/bundled-fmt incompatibility — unrelated to dftracer, MPI, or any
+project-specific code. Confirmed on `llnl/ygm` (2026-08-04).
+
+**Fix:** switch to the GNU toolchain instead of fighting Clang 20's checker.
+Tuolumne's `cray-mpich` module has a GNU-built wrapper directory:
+
+```bash
+module swap PrgEnv-cray PrgEnv-gnu
+module load gcc-native/11.2        # matches the available cray-mpich gnu/11.2 wrapper dir
+export CC=/opt/cray/pe/mpich/9.0.1/ofi/gnu/11.2/bin/mpicc
+export CXX=/opt/cray/pe/mpich/9.0.1/ofi/gnu/11.2/bin/mpicxx
+```
+
+GCC 11.2.1 compiles the same spdlog/fmt code cleanly. Note: only `gnu/11.2` has
+a matching `cray-mpich` wrapper directory under
+`/opt/cray/pe/mpich/9.0.1/ofi/gnu/` at the time of writing — newer GCC modules
+(`gcc-native/12`, `12.1`, `12.2`, `13`, `13.2`) are available on Tuolumne but do
+NOT have a matching pre-built cray-mpich gnu wrapper dir; using one of those
+would need a different MPI-linking mechanism (verify with
+`ls /opt/cray/pe/mpich/9.0.1/ofi/gnu/` before assuming a version is available).
+Always `rm -rf` the build directory before switching compilers on an existing
+CMake build tree — CMakeCache.txt pins the compiler and CMake refuses to
+silently swap it.
+
+See [[dftracer-annotation-lessons]] LESSONS_LOG.md (2026-08-04, YGM session)
+for the full build log and the other unrelated fixes made in the same session.

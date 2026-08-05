@@ -1,0 +1,51 @@
+{
+  "run_id": "ygm/20260804_221748",
+  "key": "STEP 2: dftracer-build-dftracer",
+  "index": 3,
+  "agent": "dftracer-build-dftracer",
+  "notes": "Retry: git auth failed; attempting PyPI release install",
+  "status": "superseded",
+  "tries": 2,
+  "retries": 1,
+  "failed_attempts": 1,
+  "successful_attempts": 0,
+  "exec_s": 719.923,
+  "wall_s": 736.882,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "failed",
+      "duration_s": 19.95,
+      "error": "git clone https auth failed (gnome-ssh-askpass can't open display)",
+      "start_ns": 1785882910439465922,
+      "end_ns": 1785882930389574420
+    },
+    {
+      "number": 2,
+      "status": "superseded",
+      "duration_s": 699.972,
+      "error": "",
+      "start_ns": 1785882947348587519,
+      "end_ns": 1785883647321005635
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}

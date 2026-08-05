@@ -25,8 +25,7 @@ web_search = false
 # See docs/harnesses.rst for the full Codex CLI notes.
 
 [mcp_servers.dftracer]
-url = "http://127.0.0.1:5000/mcp"
-
+url = "http://127.0.0.1:10000/mcp"
 [mcp_servers.dftracer.tools.memory_list]
 approval_mode = "approve"
 

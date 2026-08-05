@@ -1,0 +1,43 @@
+{
+  "run_id": "ygm/20260804_221748",
+  "key": "STEP: dftracer-annotate-cpp (ygm)",
+  "index": 1,
+  "agent": "dftracer-annotate-cpp",
+  "notes": "Annotate YGM comm.hpp/comm.ipp/collective.hpp/comm_router.hpp/mpi.hpp/comm_environment.hpp/ygm_ptr.hpp + test_comm.cpp smoke test",
+  "status": "ok",
+  "tries": 1,
+  "retries": 0,
+  "failed_attempts": 0,
+  "successful_attempts": 1,
+  "exec_s": 400.229,
+  "wall_s": 400.229,
+  "attempts": [
+    {
+      "number": 1,
+      "status": "ok",
+      "duration_s": 400.229,
+      "error": "",
+      "start_ns": 1785882150695601066,
+      "end_ns": 1785882550924125191
+    }
+  ],
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "tokens_cache_read": 0,
+  "tokens_cache_creation": 0,
+  "cost_usd": 0.0,
+  "api_calls": 0,
+  "api_errors": 0,
+  "api_duration_ms": 0.0,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "tool_duration_ms": 0.0,
+  "mcp_tool_calls": 0,
+  "compactions": 0,
+  "prompts": 0,
+  "tools": {},
+  "models": {},
+  "agents": {},
+  "skills": {},
+  "tokens_total": 0
+}
