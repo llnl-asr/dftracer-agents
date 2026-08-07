@@ -54,3 +54,5 @@ workspaces/_graph/
 .env
 src/dftracer_agents/.agents/workspace/setup-state.json
 .codex/config.toml
+.claude/hooks/inject_context.py
+.codex/hooks
