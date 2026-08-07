@@ -19,6 +19,19 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/inject_context.py",
+            "statusMessage": "Loading relevant project memory...",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   },
   "permissions": {
@@ -107,6 +120,7 @@
       "mcp__dftracer__list_presets",
       "mcp__dftracer__memory_list",
       "mcp__dftracer__memory_read",
+      "mcp__dftracer__memory_recall",
       "mcp__dftracer__memory_write",
       "mcp__dftracer__merge",
       "mcp__dftracer__ml_annotate_plan",
@@ -172,6 +186,7 @@
       "mcp__dftracer__session_generate_optimization_proposals",
       "mcp__dftracer__session_get_run_paths",
       "mcp__dftracer__session_identify_smoke_test_files",
+      "mcp__dftracer__session_import_local_tree",
       "mcp__dftracer__session_init_run",
       "mcp__dftracer__session_init_structure",
       "mcp__dftracer__session_install_dftracer",
@@ -226,5 +241,5 @@
       "mcp__dftracer__view"
     ]
   },
-  "model": "sonnet"
+  "effortLevel": "high"
 }

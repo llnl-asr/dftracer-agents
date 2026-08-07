@@ -183,6 +183,7 @@ def _run_startup_setup(args: argparse.Namespace) -> None:
     from dftracer_agents.skills import ensure_setup, resolve_default_target
     from dftracer_agents.agents import ensure_agents_setup
     from dftracer_agents.permissions import ensure_permissions_setup
+    from dftracer_agents.hooks import ensure_hooks_setup
     from dftracer_agents.mcp_tools.tools.papers.local_library_service import ensure_resources_setup
 
     target_root = (
@@ -202,6 +203,10 @@ def _run_startup_setup(args: argparse.Namespace) -> None:
     # "already_done" no-op is never mistaken for "setup didn't run".
     for label, fn in (("Skills", ensure_setup), ("Agents", ensure_agents_setup),
                       ("Permissions", ensure_permissions_setup),
+                      # Hooks BEFORE Workspace: hook scripts are rendered into the
+                      # packaged workspace, and ensure_workspace_setup is what
+                      # symlinks .claude/hooks etc. out to the target root.
+                      ("Hooks", ensure_hooks_setup),
                       ("Workspace", ensure_workspace_setup), ("Resources", ensure_resources_setup)):
         result = fn(target_root=target_root, force=args.force_setup)
         status = result.get("status")
@@ -546,38 +551,54 @@ def _register_no_auth_routes(server: FastMCP) -> None:
         )(_not_found)
 
 
+def _with_context_injection(server: FastMCP) -> FastMCP:
+    """Attach memory/validation/learning injection to every built server.
+
+    Applied here rather than per-harness because all four harnesses (claude,
+    opencode, copilot, codex) reach this one server — it is the only injection
+    point that covers tool traffic uniformly with no per-harness config. See
+    context_middleware for the budgeting/dedup rationale.
+    """
+    try:
+        from dftracer_agents.context_middleware import install
+        install(server)
+    except Exception:
+        pass  # a server that starts without memory beats one that fails to start
+    return server
+
+
 def build_server(service: str) -> FastMCP:
     """Build and return the combined FastMCP server for the requested service(s)."""
     if service == "utils":
-        return _build_utils_server()
+        return _with_context_injection(_build_utils_server())
 
     if service == "analyzer":
         combined = _new_server("DFAnalyzer+Plot+Diagnoser")
         for srv in (_build_analyzer_server(), _build_plot_server(), _build_diagnoser_server()):
             for tool in asyncio.run(srv.list_tools()):
                 combined.add_tool(tool)
-        return combined
+        return _with_context_injection(combined)
 
     if service == "diagnoser":
-        return _build_diagnoser_server()
+        return _with_context_injection(_build_diagnoser_server())
 
     if service == "papers":
-        return _build_papers_server()
+        return _with_context_injection(_build_papers_server())
 
     if service == "session":
-        return _build_session_server()
+        return _with_context_injection(_build_session_server())
 
     if service == "docs":
-        return _build_docs_server()
+        return _with_context_injection(_build_docs_server())
 
     if service == "skills":
-        return _build_skills_server()
+        return _with_context_injection(_build_skills_server())
 
     if service == "system":
-        return _build_system_server()
+        return _with_context_injection(_build_system_server())
 
     if service == "agent_trace":
-        return _build_agent_trace_server()
+        return _with_context_injection(_build_agent_trace_server())
 
     # both — all services
     combined = _new_server("DFTracer")
@@ -595,7 +616,7 @@ def build_server(service: str) -> FastMCP:
     ):
         for tool in asyncio.run(srv.list_tools()):
             combined.add_tool(tool)
-    return combined
+    return _with_context_injection(combined)
 
 
 # ---------------------------------------------------------------------------

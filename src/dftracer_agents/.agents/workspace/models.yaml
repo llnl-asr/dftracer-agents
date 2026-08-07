@@ -8,6 +8,13 @@
 # NOTE: "copilot" and "codex" share the same model ids (gpt-5-codex family) —
 # both surfaces run OpenAI's Codex models, just via different auth/
 # subscription paths (GitHub Copilot vs. the standalone Codex CLI).
+#
+# NOTE: "livai" is the site OpenAI-compatible gateway; the provider block
+# (base URL, API key env var, full model list) lives in
+# src/dftracer_agents/.agents/workspace/.opencode/opencode.jsonc.
+# livai maps to the four Claude models it serves, in ascending capability
+# order. The gateway serves no opus, so level_4 ("opus" class) takes the
+# strongest sonnet available rather than an exact class match.
 
 levels:
   level_1:
@@ -18,6 +25,7 @@ levels:
       claude: claude-haiku-4-20250514
       copilot: gpt-5-codex-mini
       codex: gpt-5-codex-mini
+      livai: claude-haiku-3
   level_2:
     purpose: routing, planning, and limited reasoning
     default: sonnet
@@ -26,6 +34,7 @@ levels:
       claude: claude-sonnet-4-20250514
       copilot: gpt-5-codex
       codex: gpt-5-codex
+      livai: anthropic.claude-3-5-sonnet-20240620-v1:0
   level_3:
     purpose: analysis, diagnosis, and stage-to-stage decisions
     default: sonnet
@@ -34,6 +43,7 @@ levels:
       claude: claude-sonnet-4-20250514
       copilot: gpt-5-codex
       codex: gpt-5-codex
+      livai: claude-sonnet-3.7
   level_4:
     purpose: deep synthesis, optimization, and cross-stage reasoning
     default: opus
@@ -42,24 +52,39 @@ levels:
       claude: claude-opus-4-20250514
       copilot: gpt-5-codex-pro
       codex: gpt-5-codex-pro
+      livai: claude-sonnet-4.5
 
+# Each harness reads exactly ONE provider column from `levels` above — the one
+# named by its `provider:` key below. Do NOT read a level's other provider
+# entries; they belong to other harnesses. (An agent that ignored this read
+# opencode's level_2 as `ollama: qwen3.5:32b` and tried to call a model that
+# isn't served here.)
+#
+# `provider:` is the checked-in default. The LIVE value is
+# `active-models.json` ("harnesses" -> <harness> -> "provider"), which
+# `dftracer-configure-harness --harness <h> --provider <p>` writes; that file
+# wins if the two ever disagree.
 harness_mapping:
   claude_code:
     instructions: CLAUDE.md
+    provider: claude
     model_file: src/dftracer_agents/.agents/workspace/models.yaml
     levels: [level_1, level_2, level_3, level_4]
   opencode:
     instructions: AGENTS.md
+    provider: livai
     config: .opencode/opencode.jsonc
     model_file: src/dftracer_agents/.agents/workspace/models.yaml
     levels: [level_1, level_2, level_3, level_4]
   copilot:
     instructions: copilot-instructions.md
+    provider: copilot
     config: .vscode/mcp.json
     model_file: src/dftracer_agents/.agents/workspace/models.yaml
     levels: [level_1, level_2, level_3, level_4]
   codex:
     instructions: AGENTS.md
+    provider: codex
     config: .codex/config.toml
     model_file: src/dftracer_agents/.agents/workspace/models.yaml
     levels: [level_1, level_2, level_3, level_4]

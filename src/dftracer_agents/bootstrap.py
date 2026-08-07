@@ -146,6 +146,10 @@ def ensure_workspace_setup(target_root: Optional[Path] = None, force: bool = Fal
         (".opencode/opencode.jsonc", ".opencode/opencode.jsonc"),
         (".vscode/mcp.json", ".vscode/mcp.json"),
         (".codex/config.toml", ".codex/config.toml"),
+        # Codex reads hook wiring from a dedicated file, not config.toml. Without
+        # this link a bootstrapped project gets the hook SCRIPT (via the
+        # .codex/hooks dir link below) but nothing telling Codex to run it.
+        (".codex/hooks.json", ".codex/hooks.json"),
         # Claude Code's project-level MCP config. Like the other two, it points at
         # the HTTP server `dftracer_agents_stack` manages, rather than telling the
         # harness to spawn a private stdio copy that bypasses it.
@@ -167,10 +171,18 @@ def ensure_workspace_setup(target_root: Optional[Path] = None, force: bool = Fal
     # templates (src/dftracer_agents/.agents/agents/*.yaml) that no harness can
     # read directly; ensure_agents_setup renders them into .claude/agents/,
     # .opencode/agents/ and .github/agents/ per harness dialect.
+    # .claude/hooks and .codex/hooks hold the hook SCRIPTS that the settings
+    # files reference by relative path. Without these links a bootstrapped
+    # workspace has hook config pointing at files that do not exist — which is
+    # exactly what happened to the hand-written rm/drm guard, silently disabling
+    # it everywhere except this repo's own checkout.
     for relative, source in (
         (".agents/skills", skills_dir),
         (".agents/agents", agents_dir),
         (".opencode/skills", skills_dir),
+        (".claude/hooks", workspace / ".claude" / "hooks"),
+        (".codex/hooks", workspace / ".codex" / "hooks"),
+        (".opencode/plugin", workspace / ".opencode" / "plugin"),
     ):
         dest = root / relative
         if force and dest.exists() and (dest.is_symlink() or dest.is_file()):

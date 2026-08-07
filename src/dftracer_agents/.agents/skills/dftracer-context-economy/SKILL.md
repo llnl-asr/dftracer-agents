@@ -60,6 +60,47 @@ but it does **not** check freshness — the MCP tools do.
    costs ~0.1 s to validate. Self-learning skill edits therefore *do* invalidate it.
 4. **Budget queries** (`budget=1200`). BFS depth 2 pulls in generic nodes (`_ok`,
    `json`); ignore them rather than widening.
+5. **NEVER load full skills for reference lookups.** Use `graph_query(mode="docs", 
+   question=...)` to find relevant sections, then `graph_get_node(node=<id>)` to 
+   fetch ONLY what's needed. This saves 95%+ context vs `skill_load`.
+
+## Documentation/skill lookup pattern (MANDATORY)
+
+**The anti-pattern (wasteful):**
+```
+skill_load(name="dftracer-ml-annotate")  # loads 5000+ lines for 1 fact
+```
+
+**The correct pattern (95% savings):**
+```
+# Step 1: Find relevant sections (cheap — returns node IDs + brief context)
+graph_query(mode="docs", question="how to annotate training loops", limit=5)
+# Returns: NODE <id> [src=.agents/skills/dftracer-ml-annotate/SKILL.md loc=L142]
+
+# Step 2: Fetch ONLY the needed section (hundreds of lines vs thousands)
+graph_get_node(node="<id-from-step-1>")
+# Returns: just the ## Step 4a section text, not the entire 5000-line skill
+```
+
+**When to use each:**
+- **Reference lookup** (specific fact/rule/example) → `graph_query(mode="docs")` + 
+  `graph_get_node` (this is 95%+ of cases)
+- **First-time task** (never seen this task before, need full context) → `skill_load`
+  (use sparingly)
+- **Section-only load** → `skill_load(name="...", section="<heading>")` when you 
+  know the exact section name (middle ground)
+
+**Real example:**
+Agent needs to know "what's the ML-specific comp type for checkpoint save":
+- ❌ `skill_load("dftracer-ml-annotate")` → 5247 lines loaded
+- ✅ `graph_query(mode="docs", question="checkpoint comp type")` → 98 tokens, 
+  returns node ID
+- ✅ `graph_get_node(node=<id>)` → 134 lines of the relevant section
+
+**Why this matters:**
+Large skills (dftracer-ml-annotate, dftracer-annotate-c, workload-*/software-*) 
+routinely exceed 3000-5000 lines. Loading one whole for a single lookup wastes 
+the majority of your context budget and crowds out the actual work.
 
 ## Honest limits
 

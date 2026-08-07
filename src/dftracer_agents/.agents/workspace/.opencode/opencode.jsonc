@@ -7,6 +7,92 @@
   //   src/dftracer_agents/.agents/workspace/permissions.yaml
 
   "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "compaction": {
+      "model": "livai/gpt-4.1"
+    }
+  },
+  "provider": {
+    "livai": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LLNL LivAI",
+      "options": {
+        "baseURL": "https://livai-api.llnl.gov/v1",
+        "apiKey": "{env:OPENAI_API_KEY}"
+      },
+      "models": {
+        "gpt-5.5": {
+          "name": "GPT-5.5"
+        },
+        "gpt-5.4": {
+          "name": "GPT-5.4"
+        },
+        "gpt-5.4-mini": {
+          "name": "GPT-5.4 mini"
+        },
+        "gpt-5.2": {
+          "name": "GPT-5.2"
+        },
+        "gpt-5.1": {
+          "name": "GPT-5.1"
+        },
+        "gpt-5": {
+          "name": "GPT-5"
+        },
+        "gpt-5-mini": {
+          "name": "GPT-5 mini"
+        },
+        "gpt-5-nano": {
+          "name": "GPT-5 nano"
+        },
+        "gpt-4.1": {
+          "name": "GPT-4.1"
+        },
+        "gpt-4.1-mini": {
+          "name": "GPT-4.1 mini"
+        },
+        "gpt-4.1-nano": {
+          "name": "GPT-4.1 nano"
+        },
+        "gpt-4o": {
+          "name": "GPT-4o"
+        },
+        "gpt-4o-mini": {
+          "name": "GPT-4o mini"
+        },
+        "gpt-35-turbo": {
+          "name": "GPT-3.5 Turbo"
+        },
+        "o1": {
+          "name": "o1"
+        },
+        "o3": {
+          "name": "o3"
+        },
+        "o3-mini": {
+          "name": "o3-mini"
+        },
+        "o4-mini": {
+          "name": "o4-mini"
+        },
+        "claude-sonnet-4.5": {
+          "name": "Claude Sonnet 4.5"
+        },
+        "claude-sonnet-3.7": {
+          "name": "Claude Sonnet 3.7"
+        },
+        "claude-haiku-3": {
+          "name": "Claude Haiku 3"
+        },
+        "anthropic.claude-3-5-sonnet-20240620-v1:0": {
+          "name": "Claude 3.5 Sonnet (Bedrock)"
+        },
+        "text-embedding-ada-002": {
+          "name": "Ada 002 (embeddings, not a chat model)"
+        }
+      }
+    }
+  },
   "mcp": {
     "dftracer": {
       "type": "remote",

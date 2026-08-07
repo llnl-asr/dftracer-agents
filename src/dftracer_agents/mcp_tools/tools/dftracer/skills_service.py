@@ -430,6 +430,35 @@ def _register_skill_tools(mcp: FastMCP) -> None:
 
 
     @mcp.tool()
+    def hooks_sync(target_root: str = "") -> str:
+        """Re-render the prompt-injection hooks for every harness.
+
+        Companion to ``permissions_sync`` / ``agents_sync``. Writes the shared
+        hook script plus each harness's wiring — Claude ``UserPromptSubmit``,
+        Codex ``.codex/hooks.json``, and the OpenCode ``chat.message`` plugin —
+        and installs the scripts into ``target_root`` as well, since a hook
+        command is a relative path resolved against the project the harness
+        runs in, not against this package.
+
+        Call this after editing ``hooks.py``. Copilot has no hook mechanism and
+        is reported as ``not_applicable``; its tool calls are still covered by
+        the MCP context middleware.
+
+        Returns JSON: {status, claude, codex, opencode, copilot, changed,
+        target_scripts, advisories, summary}.
+        """
+        from pathlib import Path as _Path
+        from dftracer_agents.hooks import ensure_hooks_setup
+        from dftracer_agents.skills import resolve_default_target
+
+        root = (_Path(target_root).expanduser().resolve() if target_root
+                else resolve_default_target())
+        try:
+            return json.dumps(ensure_hooks_setup(target_root=root), indent=2)
+        except Exception as exc:
+            return json.dumps({"status": "error", "error": str(exc)})
+
+    @mcp.tool()
     def memory_list() -> str:
         """List the project's persistent memories (name + one-line description).
 
@@ -464,6 +493,50 @@ def _register_skill_tools(mcp: FastMCP) -> None:
             "count": len(memories),
             "memories": memories,
             "usage": "memory_read(name=...) for full text; memory_write(...) to record.",
+        }, indent=2)
+
+    @mcp.tool()
+    def memory_recall(
+        query: str,
+        k: int = 5,
+        types: str = "",
+        expand_links: bool = True,
+    ) -> str:
+        """Search memory by relevance instead of listing all of it.
+
+        ``memory_list`` dumps every memory's name and description and leaves the
+        picking to you; this ranks them against *query* by matching the name,
+        the description AND the body, then walks one hop of the ``[[wikilink]]``
+        graph so a memory that names the right neighbour pulls it in too.
+
+        Use it whenever you are about to do something the project may already
+        have a lesson about — a build, a run, a site-specific step, an
+        optimization — rather than reading memories at random.
+
+        Args:
+            query: free text; a task description or an error message both work.
+            k: how many directly-matched memories to keep before link expansion.
+            types: comma-separated filter, e.g. "feedback" or "project,feedback".
+            expand_links: include 1-hop [[wikilink]] neighbours of the hits.
+
+        Returns JSON: {status, count, results: [{name, description, type,
+        score, via}], digest, usage}. ``via`` is "match" for a direct hit or the
+        linking memory's name. Bodies are not included — ``memory_read`` those
+        that matter.
+        """
+        from dftracer_agents.memory_graph import recall, render_digest
+
+        wanted = [t.strip() for t in types.split(",") if t.strip()] or None
+        try:
+            results = recall(query, k=k, types=wanted, expand_links=expand_links)
+        except Exception as exc:
+            return json.dumps({"status": "error", "error": str(exc)})
+        return json.dumps({
+            "status": "ok" if results else "no_match",
+            "count": len(results),
+            "results": results,
+            "digest": render_digest(results, budget_chars=2000),
+            "usage": "memory_read(name=...) for the full text of any of these.",
         }, indent=2)
 
     @mcp.tool()
@@ -562,6 +635,17 @@ def _register_skill_tools(mcp: FastMCP) -> None:
         lines = [l for l in lines if f"]({slug}.md)" not in l]
         lines.append(line)
         index.write_text("\n".join(lines) + "\n")
+
+        # The knowledge graph rebuilds on a content hash, so a memory written
+        # mid-session stays invisible to graph_query(mode="docs") until the next
+        # sweep. Marking dirty here is what makes a just-recorded lesson
+        # retrievable in the same session. (memory_recall reads the store
+        # directly and is unaffected, but the graph path must not go stale.)
+        try:
+            from dftracer_agents.mcp_tools.tools.session.code_graph import mark_graph_dirty
+            mark_graph_dirty(f"memory_write:{slug}")
+        except Exception:
+            pass  # retrieval degrades to the next hash sweep; never fail a write
 
         return json.dumps({
             "status": "ok",

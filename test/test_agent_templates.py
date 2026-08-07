@@ -525,11 +525,43 @@ class TestHarnessModels:
             assert "ollama" in providers
             assert "claude" in providers
             assert "copilot" in providers
+            assert "livai" in providers
+
+    def test_harness_mapping_declares_provider(self):
+        """models.yaml is what AGENTS.md/CLAUDE.md point agents at, so each
+        harness must declare WHICH provider column is its own — otherwise an
+        agent reading the file guesses (one picked opencode's ollama entry and
+        tried to call a model the gateway doesn't serve).
+        """
+        import yaml
+        from pathlib import Path
+        from dftracer_agents.harness_models import DEFAULT_PROVIDER_BY_HARNESS
+        path = (Path(__file__).resolve().parent.parent / "src" / "dftracer_agents"
+                / ".agents" / "workspace" / "models.yaml")
+        mapping = yaml.safe_load(path.read_text())["harness_mapping"]
+        aliases = {"claude_code": "claude"}
+        for key, entry in mapping.items():
+            harness = aliases.get(key, key)
+            assert "provider" in entry, f"{key} declares no provider"
+            assert entry["provider"] == DEFAULT_PROVIDER_BY_HARNESS[harness], key
+
+    def test_livai_models_yaml_matches_fallback(self):
+        """FALLBACK_LEVEL_MAP is the no-YAML fallback and must not drift from
+        models.yaml — a mismatch silently changes model selection depending on
+        whether PyYAML happened to import.
+        """
+        from dftracer_agents.harness_models import (
+            FALLBACK_LEVEL_MAP, LEVELS, _read_level_map_from_yaml,
+        )
+        from_yaml = _read_level_map_from_yaml()
+        for level in LEVELS:
+            assert (from_yaml[level]["providers"]["livai"]
+                    == FALLBACK_LEVEL_MAP[level]["providers"]["livai"]), level
 
     def test_default_provider_by_harness(self):
         from dftracer_agents.harness_models import DEFAULT_PROVIDER_BY_HARNESS
         assert DEFAULT_PROVIDER_BY_HARNESS["claude"] == "claude"
-        assert DEFAULT_PROVIDER_BY_HARNESS["opencode"] == "ollama"
+        assert DEFAULT_PROVIDER_BY_HARNESS["opencode"] == "livai"
         assert DEFAULT_PROVIDER_BY_HARNESS["copilot"] == "copilot"
 
     def test_load_active_config(self, tmp_path):
@@ -680,7 +712,7 @@ class TestInstallAgentsE2E:
         assert "generated-by: dftracer-agents (opencode)" in content
         fm = _parse_frontmatter(content)
         assert fm["mode"] == "subagent"
-        assert "ollama/" in fm["model"]
+        assert "livai/" in fm["model"]
         perm = fm["permission"]
         assert perm["*"] == "deny"
         assert perm["dftracer_analyze"] == "allow"
@@ -759,6 +791,59 @@ class TestOpenCodeJsonc:
         assert dftracer["type"] == "remote"
         assert "url" in dftracer
         assert dftracer["enabled"] is True
+
+    def test_livai_provider_block(self):
+        """The livai provider block must stay parseable and carry every model
+        harness_models offers, or the opencode picker and the level map disagree.
+        """
+        import json
+        from pathlib import Path
+        from dftracer_agents.mcp_setup import _strip_jsonc
+        from dftracer_agents.harness_models import AVAILABLE_MODELS_BY_PROVIDER
+        jsonc_path = (Path(__file__).resolve().parent.parent
+                      / "src" / "dftracer_agents" / ".agents" / "workspace"
+                      / ".opencode" / "opencode.jsonc")
+        config = json.loads(_strip_jsonc(jsonc_path.read_text()))
+        livai = config["provider"]["livai"]
+        assert livai["npm"] == "@ai-sdk/openai-compatible"
+        assert livai["options"]["baseURL"] == "https://livai-api.llnl.gov/v1"
+        assert livai["options"]["apiKey"] == "{env:OPENAI_API_KEY}"
+        assert set(livai["models"]) == set(AVAILABLE_MODELS_BY_PROVIDER["livai"])
+
+    def test_sync_preserves_user_owned_keys(self, tmp_path):
+        """sync_opencode_config must only rewrite "permission".
+
+        .opencode/opencode.jsonc is symlinked to this template and
+        ensure_permissions_setup() runs on every MCP server startup, so a full
+        regenerate silently destroys the user's provider/model/agent config.
+        """
+        import json
+        from dftracer_agents.mcp_setup import _strip_jsonc
+        from dftracer_agents.permissions import load_policy, sync_opencode_config
+
+        path = tmp_path / ".opencode" / "opencode.jsonc"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({
+            "$schema": "https://opencode.ai/config.json",
+            "provider": {"livai": {"options": {"baseURL": "https://example/v1"}}},
+            "model": "livai/gpt-5.1",
+            "agent": {"custom": {"model": "livai/gpt-5-nano"}},
+            "mcp": {"dftracer": {"type": "remote", "url": "http://127.0.0.1:9/mcp"}},
+            "permission": {"stale": "wipe-me"},
+        }, indent=2))
+
+        sync_opencode_config(load_policy(), base=tmp_path)
+        after = json.loads(_strip_jsonc(path.read_text()))
+
+        assert after["model"] == "livai/gpt-5.1"
+        assert after["agent"] == {"custom": {"model": "livai/gpt-5-nano"}}
+        assert after["provider"]["livai"]["options"]["baseURL"] == "https://example/v1"
+        assert after["mcp"]["dftracer"]["url"] == "http://127.0.0.1:9/mcp"
+        assert "stale" not in after["permission"]
+        assert "edit" in after["permission"] and "bash" in after["permission"]
+
+        # ...and re-running changes nothing.
+        assert sync_opencode_config(load_policy(), base=tmp_path) == "already_current"
 
 
 # ---------------------------------------------------------------------------

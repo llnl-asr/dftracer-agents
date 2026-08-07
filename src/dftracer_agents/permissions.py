@@ -150,34 +150,35 @@ def render_opencode_permissions(policy: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def sync_opencode_config(policy: Dict[str, Any], base: Optional[Path] = None) -> str:
-    """Fully regenerates the packaged opencode.jsonc template (schema header,
-    mcp block, generated permission block) — this file is entirely ours, not
-    a live user config, so there's no comment-preservation concern the way
-    there is for a project's own copy (see mcp_setup.configure_opencode).
+    """Targeted key-merge into the packaged opencode.jsonc — only the
+    ``permission`` key is generated from permissions.yaml; every other key is
+    preserved verbatim.
+
+    This file is reachable as a *live* user config: bootstrap.py symlinks
+    ``<root>/.opencode/opencode.jsonc`` at it, and ensure_permissions_setup()
+    runs on every MCP server startup. So anything the user adds here —
+    ``provider`` blocks, a default ``model``, ``agent`` overrides — plus the
+    ``mcp`` block that configure_opencode() (mcp_setup.py) writes with a
+    possibly non-default port, must survive a re-render. Regenerating the
+    whole document silently destroyed all of it.
+
+    Caveat: the JSON round-trip still drops user-added *inline comments*
+    outside the canonical header below. Keys survive; stray comments do not.
     """
     path = (base or bundled_workspace_dir()) / ".opencode" / "opencode.jsonc"
     existing = path.read_text() if path.exists() else ""
 
-    # Preserve the existing "mcp" block verbatim — configure_opencode() (in
-    # mcp_setup.py) writes a possibly non-default port/host into this same
-    # file via the .opencode symlink, and a full regenerate must not clobber
-    # that back to the placeholder default.
-    default_mcp = {"dftracer": {"type": "remote", "url": "http://127.0.0.1:20000/mcp", "enabled": True}}
-    mcp_block = default_mcp
+    body: Dict[str, Any] = {}
     if existing:
         try:
             parsed = json.loads(_strip_jsonc(existing))
-            if isinstance(parsed.get("mcp"), dict):
-                mcp_block = parsed["mcp"]
+            if isinstance(parsed, dict):
+                body = parsed
         except json.JSONDecodeError:
             pass
 
-    permission = render_opencode_permissions(policy)
-    body = {
-        "$schema": "https://opencode.ai/config.json",
-        "mcp": mcp_block,
-        "permission": permission,
-    }
+    body.setdefault("$schema", "https://opencode.ai/config.json")
+    body["permission"] = render_opencode_permissions(policy)
     rendered = (
         "{\n"
         "  // OpenCode project configuration for dftracer-agents\n"

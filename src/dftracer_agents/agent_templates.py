@@ -183,6 +183,8 @@ _OPENCODE_PROVIDER_PREFIX = {
     "ollama": "ollama",
     "claude": "anthropic",
     "copilot": "github-copilot",
+    # Custom provider id declared in opencode.jsonc's "provider" block.
+    "livai": "livai",
 }
 
 

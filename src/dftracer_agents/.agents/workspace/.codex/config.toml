@@ -25,7 +25,7 @@ web_search = false
 # See docs/harnesses.rst for the full Codex CLI notes.
 
 [mcp_servers.dftracer]
-url = "http://127.0.0.1:10000/mcp"
+url = "http://127.0.0.1:48235/mcp"
 [mcp_servers.dftracer.tools.memory_list]
 approval_mode = "approve"
 
@@ -67,29 +67,6 @@ approval_mode = "approve"
 
 [mcp_servers.dftracer.tools.memory_write]
 approval_mode = "approve"
-
-[projects."/usr/WS2/haridev/agent-tracer"]
-trust_level = "trusted"
-
-[hooks.state]
-
-[hooks.state."/usr/WS2/haridev/agent-tracer/.codex/hooks.json:pre_tool_use:0:0"]
-trusted_hash = "sha256:fd466b23007eedd3cf589a4b2f156699c140e3fcec72619c591b7fcf6dc92603"
-
-[hooks.state."/usr/WS2/haridev/agent-tracer/.codex/hooks.json:permission_request:0:0"]
-trusted_hash = "sha256:d776853b4aa0db520112834c64e275401788227fff47174625ba56a314895ba7"
-
-[hooks.state."/usr/WS2/haridev/agent-tracer/.codex/hooks.json:post_tool_use:0:0"]
-trusted_hash = "sha256:42be6d158edaa446ddc99687f1e4ca5b52a4f5fe65e84a5eec991d53a71f381f"
-
-[hooks.state."/usr/WS2/haridev/agent-tracer/.codex/hooks.json:session_start:0:0"]
-trusted_hash = "sha256:5c0d42dea9674711676c42145129b63944d390b01e06b6e236d82467a6d3227b"
-
-[hooks.state."/usr/WS2/haridev/agent-tracer/.codex/hooks.json:user_prompt_submit:0:0"]
-trusted_hash = "sha256:066bdd2709c6b9083a647e46aae77955878465b0c6d9f6226d996b6d6e437a33"
-
-[hooks.state."/usr/WS2/haridev/agent-tracer/.codex/hooks.json:stop:0:0"]
-trusted_hash = "sha256:7610d0c21d1290d477e66dc318a2a2cc819e2a146082e28110cb6af22e90a1a0"
 
 [model_providers.my-custom-proxy]
 name = "LivAI"

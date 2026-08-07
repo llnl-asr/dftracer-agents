@@ -1392,6 +1392,144 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             **structure,
         )
 
+
+    @mcp.tool()
+    def session_import_local_tree(
+        run_id: str,
+        local_path: str,
+        include_git: bool = False,
+        overwrite: bool = False,
+    ) -> str:
+        """Import a local source tree into an existing session workspace.
+
+        This is the non-git counterpart to ``session_create``.
+
+        Use this when you already have a prepared checkout on the filesystem
+        (possibly with uncommitted changes) and want to seed a dftracer session
+        without re-cloning.
+
+        What it does:
+        - Copies ``local_path`` into ``<ws>/source/``.
+        - Copies that imported tree into ``baseline/source/`` and
+          ``annotated/source/`` (so annotation can proceed without touching the
+          imported original).
+
+        Safety / defaults:
+        - By default, ``.git`` is excluded (``include_git=False``) to avoid
+          copying large git object stores.
+        - Common build/bytecode caches are excluded.
+        - If any destination directory is non-empty and ``overwrite=False``,
+          the tool returns an error to prevent accidental clobbering.
+
+        Args:
+            run_id: Existing session identifier (from ``pipeline_create_run`` or
+                ``session_create``).
+            local_path: Absolute path to a directory tree to copy.
+            include_git: If True, include ``.git/`` in the import.
+            overwrite: If True, delete any existing ``source/`` and
+                ``baseline/source`` and ``annotated/source`` contents first.
+
+        Returns:
+            JSON string with ``status`` and a short summary of what was copied.
+        """
+        ws = _ws(run_id)
+        if not ws.exists():
+            return _err(f"Unknown run_id: {run_id}")
+
+        src_in = Path(local_path)
+        if not src_in.is_absolute():
+            return _err("local_path must be absolute", local_path=local_path)
+        if not src_in.exists() or not src_in.is_dir():
+            return _err("local_path is not an existing directory", local_path=local_path)
+
+        structure = _init_structure(ws, dataset_path=None)
+
+        def _is_non_empty_dir(p: Path) -> bool:
+            return p.exists() and p.is_dir() and any(p.iterdir())
+
+        def _maybe_clear_dir(p: Path) -> None:
+            if p.exists():
+                shutil.rmtree(p, ignore_errors=True)
+            p.mkdir(parents=True, exist_ok=True)
+
+        def _ignore(directory: str, names: list[str]) -> set[str]:
+            ignore_names: set[str] = {
+                "__pycache__",
+                ".pytest_cache",
+                ".mypy_cache",
+                ".ruff_cache",
+                ".tox",
+                "dist",
+                "build",
+                ".eggs",
+            }
+            if not include_git:
+                ignore_names.add(".git")
+            ignored = {n for n in names if n in ignore_names}
+            ignored |= {n for n in names if n.endswith(".pyc") or n.endswith(".pyo")}
+            return ignored
+
+        dest_source = ws / "source"
+        dest_baseline = Path(structure["baseline"]) / "source"
+        dest_annotated = Path(structure["annotated"]) / "source"
+
+        for dest in (dest_source, dest_baseline, dest_annotated):
+            if _is_non_empty_dir(dest) and not overwrite:
+                return _err(
+                    "Destination is non-empty; pass overwrite=True to replace it",
+                    destination=str(dest),
+                )
+
+        if overwrite:
+            _maybe_clear_dir(dest_source)
+            _maybe_clear_dir(dest_baseline)
+            _maybe_clear_dir(dest_annotated)
+
+        shutil.copytree(
+            src_in,
+            dest_source,
+            dirs_exist_ok=True,
+            symlinks=True,
+            ignore_dangling_symlinks=True,
+            ignore=_ignore,
+        )
+
+        for target in (dest_baseline, dest_annotated):
+            shutil.copytree(
+                dest_source,
+                target,
+                dirs_exist_ok=True,
+                symlinks=True,
+                ignore_dangling_symlinks=True,
+                ignore=_ignore,
+            )
+
+        _save_state(run_id, {
+            "step": "imported",
+            "imported_from": str(src_in),
+            "import_include_git": include_git,
+        })
+        _write_artifact_log(ws, 1, "session_import_local_tree", {
+            "run_id": run_id,
+            "local_path": str(src_in),
+            "include_git": include_git,
+            "overwrite": overwrite,
+            "dest_source": str(dest_source),
+            "dest_baseline": str(dest_baseline),
+            "dest_annotated": str(dest_annotated),
+        }, run_id)
+
+        return _ok(
+            "Imported local tree",
+            run_id=run_id,
+            local_path=str(src_in),
+            include_git=include_git,
+            overwrite=overwrite,
+            source=str(dest_source),
+            baseline_source=str(dest_baseline),
+            annotated_source=str(dest_annotated),
+        )
+
     @mcp.tool()
     def session_init_structure(
         run_id: str,

@@ -58,6 +58,7 @@ dftracer-bootstrap-workspace = "dftracer_agents.bootstrap:main"
 dftracer-configure-harness = "dftracer_agents.harness_models:main"
 dftracer-configure-env  = "dftracer_agents.env_setup:main"
 dftracer-sync-permissions = "dftracer_agents.permissions:main"
+dftracer-sync-hooks = "dftracer_agents.hooks:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -48,7 +48,11 @@ HDF5, rebuild from source before proceeding.
 
 ### Standard build
 
+**Note:** On Cray PE systems (Tuolumne), GitHub release downloads return 404 due to
+network/firewall restrictions. Use the HDF Group FTP method shown in the next section.
+
 ```bash
+# For non-Cray systems:
 wget https://github.com/HDFGroup/hdf5/releases/download/hdf5_1.14.4/hdf5-1.14.4.tar.gz
 tar xf hdf5-1.14.4.tar.gz && cd hdf5-1.14.4
 CC=mpicc ./configure \
@@ -61,9 +65,26 @@ h5cc -showconfig | grep "Version:"   # must show 1.14.x
 
 ### Cray PE: GitHub 404s on tarballs — use HDF Group FTP
 
+**Confirmed:** GitHub releases return 404 on Cray/Tuolumne systems (tested hdf5_1.14.5,
+hdf5_1.14.4). This is a Cray PE network/firewall issue affecting all GitHub release
+downloads, not version-specific. The HDF Group FTP server is the only reliable source.
+
+**Always use FTP for Tuolumne/Cray systems:**
+
 ```bash
+# Working URL pattern:
 curl -fkL https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.14/hdf5-1.14.3/src/hdf5-1.14.3.tar.gz \
   -o hdf5-1.14.3.tar.gz
+
+# For other versions, substitute the version number in the path:
+# https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-<major>.<minor>/hdf5-<full-version>/src/hdf5-<full-version>.tar.gz
+```
+
+**Do NOT use** on Cray systems:
+```bash
+# These return 404 (GitHub releases blocked):
+wget https://github.com/HDFGroup/hdf5/releases/download/hdf5_1.14.5/hdf5-1.14.5.tar.gz
+wget https://github.com/HDFGroup/hdf5/releases/download/hdf5_1.14.4/hdf5-1.14.4.tar.gz
 ```
 
 ### Cray HDF5 `chid_t` typo (H5Apublic.h:932)

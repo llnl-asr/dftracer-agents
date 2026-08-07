@@ -12,7 +12,7 @@
       "model_by_level": {}
     },
     "opencode": {
-      "provider": "ollama",
+      "provider": "livai",
       "class_by_level": {
         "level_1": "haiku",
         "level_2": "sonnet",
