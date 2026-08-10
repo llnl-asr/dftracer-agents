@@ -114,6 +114,7 @@
       "mcp__dftracer__graph_ensure",
       "mcp__dftracer__graph_get_node",
       "mcp__dftracer__graph_query",
+      "mcp__dftracer__hooks_sync",
       "mcp__dftracer__index",
       "mcp__dftracer__info",
       "mcp__dftracer__list_local_resources",

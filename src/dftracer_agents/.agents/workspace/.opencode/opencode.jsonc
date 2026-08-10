@@ -7,6 +7,9 @@
   //   src/dftracer_agents/.agents/workspace/permissions.yaml
 
   "$schema": "https://opencode.ai/config.json",
+  "experimental": {
+    "mcp_timeout": 86400000
+  },
   "agent": {
     "compaction": {
       "model": "livai/gpt-4.1"
@@ -18,7 +21,12 @@
       "name": "LLNL LivAI",
       "options": {
         "baseURL": "https://livai-api.llnl.gov/v1",
-        "apiKey": "{env:OPENAI_API_KEY}"
+        "apiKey": "{env:OPENAI_API_KEY}",
+        "timeout": {
+          "totalMs": 86400000,
+          "stepMs": 86400000,
+          "chunkMs": 600000
+        }
       },
       "models": {
         "gpt-5.5": {

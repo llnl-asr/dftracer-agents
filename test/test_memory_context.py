@@ -299,6 +299,54 @@ def run_hook(payload):
     return run(json.dumps(payload))
 
 
+class TestOpencodeTimeouts:
+    """opencode aborts long dftracer tools (builds, flux runs, trace analysis)
+    unless BOTH ceilings are raised. Values live in the packaged opencode.jsonc
+    and must survive a permissions re-render."""
+
+    def _config(self):
+        import json
+        from pathlib import Path
+        from dftracer_agents.mcp_setup import _strip_jsonc
+        path = (Path(__file__).resolve().parent.parent / "src" / "dftracer_agents"
+                / ".agents" / "workspace" / ".opencode" / "opencode.jsonc")
+        return json.loads(_strip_jsonc(path.read_text()))
+
+    def test_mcp_execution_timeout_is_raised(self):
+        """experimental.mcp_timeout, NOT mcp.<name>.timeout — the latter only
+        bounds tool discovery (5s default) and would not help."""
+        cfg = self._config()
+        assert cfg["experimental"]["mcp_timeout"] >= 3600000
+
+    def test_provider_step_timeout_overrides_the_120s_ceiling(self):
+        """stepMs defaults to 120000 in the AI SDK and is the OUTER bound: left
+        alone, every tool call dies at ~2 min regardless of mcp_timeout."""
+        timeout = self._config()["provider"]["livai"]["options"]["timeout"]
+        assert timeout["stepMs"] > 120000
+        assert timeout["totalMs"] >= timeout["stepMs"]
+
+    def test_chunk_timeout_stays_finite(self):
+        """chunkMs is the only guard against a genuinely dead stream; infinite
+        would turn a hung call into a permanently stuck session."""
+        timeout = self._config()["provider"]["livai"]["options"]["timeout"]
+        assert 0 < timeout["chunkMs"] <= 3600000
+
+    def test_settings_survive_a_permissions_resync(self, tmp_path):
+        import json
+        from dftracer_agents.mcp_setup import _strip_jsonc
+        from dftracer_agents.permissions import load_policy, sync_opencode_config
+        path = tmp_path / ".opencode" / "opencode.jsonc"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({
+            "experimental": {"mcp_timeout": 86400000},
+            "provider": {"livai": {"options": {"timeout": {"stepMs": 86400000}}}},
+        }, indent=2))
+        sync_opencode_config(load_policy(), base=tmp_path)
+        after = json.loads(_strip_jsonc(path.read_text()))
+        assert after["experimental"]["mcp_timeout"] == 86400000
+        assert after["provider"]["livai"]["options"]["timeout"]["stepMs"] == 86400000
+
+
 class TestPackagedConfigHygiene:
     def test_codex_config_has_no_absolute_user_paths(self):
         """Rule 9: git-tracked files must not carry usernames or user paths.
