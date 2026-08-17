@@ -265,13 +265,141 @@ def _has_comments(text: str) -> bool:
     return False
 
 
+def _jsonc_iter(text: str, start: int = 0, end: int | None = None):
+    """Yield ``(kind, a, b)`` spans of *text*, eliding comments.
+
+    ``kind`` is ``"str"`` for a whole string literal (quotes included) or
+    ``"chr"`` for a single structural character. Comments are skipped, so a
+    caller never has to worry about ``//`` inside a URL — the string literal
+    holding it is yielded whole.
+    """
+    n = len(text) if end is None else end
+    i = start
+    while i < n:
+        if text[i] == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            j = min(j + 1, n)
+            yield "str", i, j
+            i = j
+        elif text.startswith("//", i):
+            nl = text.find("\n", i, n)
+            i = n if nl == -1 else nl + 1
+        elif text.startswith("/*", i):
+            e = text.find("*/", i, n)
+            i = n if e == -1 else e + 2
+        else:
+            yield "chr", i, i + 1
+            i += 1
+
+
+def _jsonc_next_significant(text: str, i: int, end: int) -> int:
+    """Index of the next character that is neither whitespace nor a comment."""
+    while i < end:
+        if text.startswith("//", i):
+            nl = text.find("\n", i, end)
+            i = end if nl == -1 else nl + 1
+        elif text.startswith("/*", i):
+            e = text.find("*/", i, end)
+            i = end if e == -1 else e + 2
+        elif text[i].isspace():
+            i += 1
+        else:
+            return i
+    return -1
+
+
+def _jsonc_find_key(text: str, key: str, start: int = 0, end: int | None = None) -> int:
+    """Index just past the ``:`` of object key *key*, or -1.
+
+    Requiring the colon is what keeps this from matching a string that merely
+    happens to equal the key — a ``"url"`` sitting in a value position, say.
+    """
+    end = len(text) if end is None else end
+    for kind, a, b in _jsonc_iter(text, start, end):
+        if kind != "str" or text[a + 1:b - 1] != key:
+            continue
+        c = _jsonc_next_significant(text, b, end)
+        if c != -1 and text[c] == ":":
+            return c + 1
+    return -1
+
+
+def _jsonc_object_span(text: str, start: int, end: int | None = None) -> tuple[int, int]:
+    """``(open, close)`` indices of the ``{...}`` beginning at/after *start*."""
+    end = len(text) if end is None else end
+    depth, open_idx = 0, -1
+    for kind, a, _b in _jsonc_iter(text, start, end):
+        if kind != "chr":
+            # A string before the opening brace means this value is not an
+            # object; inside one it is just a key or a value, so skip it.
+            if depth == 0:
+                return -1, -1
+            continue
+        ch = text[a]
+        if ch == "{":
+            if depth == 0:
+                open_idx = a
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return open_idx, a
+        elif depth == 0 and not ch.isspace():
+            return -1, -1
+    return -1, -1
+
+
+def _jsonc_string_span(text: str, start: int, end: int | None = None) -> tuple[int, int]:
+    """``(a, b)`` span of the string literal at/after *start*, quotes included."""
+    end = len(text) if end is None else end
+    for kind, a, b in _jsonc_iter(text, start, end):
+        if kind == "str":
+            return a, b
+        if not text[a].isspace():
+            return -1, -1
+    return -1, -1
+
+
+def _jsonc_set_server_url(text: str, server: str, url: str) -> str | None:
+    """Rewrite only the ``mcp.<server>.url`` string, preserving every comment.
+
+    Returns the new text, or ``None`` if the block is not shaped the way we
+    expect — in which case the caller falls back to asking a human, rather than
+    guessing at a config it cannot faithfully reproduce.
+    """
+    i = _jsonc_find_key(text, "mcp")
+    if i == -1:
+        return None
+    m_open, m_close = _jsonc_object_span(text, i)
+    if m_open == -1:
+        return None
+    j = _jsonc_find_key(text, server, m_open + 1, m_close)
+    if j == -1:
+        return None
+    s_open, s_close = _jsonc_object_span(text, j, m_close)
+    if s_open == -1:
+        return None
+    k = _jsonc_find_key(text, "url", s_open + 1, s_close)
+    if k == -1:
+        return None
+    a, b = _jsonc_string_span(text, k, s_close)
+    if a == -1:
+        return None
+    return text[:a] + json.dumps(url) + text[b:]
+
+
 def configure_opencode(root: Path, url: str, dry_run: bool = False) -> Path:
     """Point ``.opencode/opencode.jsonc`` (OpenCode) at the managed server.
 
     ``opencode.jsonc`` carries comments that a JSON round-trip would silently
     delete, and that file also holds the user's provider and model settings. So
-    when comments are present we print the exact snippet to paste rather than
-    rewriting a config we cannot faithfully reproduce.
+    we never round-trip it. In practice the only thing that drifts is the url
+    (the managed server's port moves), which is a single string we can replace
+    in place without touching a byte of the surrounding comments. Anything else
+    still gets the paste-this-snippet message — printing that for a stale port
+    is how this file silently fell out of sync with the other harnesses.
     """
     config_path = root / ".opencode" / "opencode.jsonc"
     entry = {"type": "remote", "url": url, "enabled": True}
@@ -288,6 +416,20 @@ def configure_opencode(root: Path, url: str, dry_run: bool = False) -> Path:
         if current == entry:
             print(f"  OpenCode: {config_path} already up to date")
             return config_path
+
+        if isinstance(current, dict) and {**current, "url": url} == entry:
+            new_text = _jsonc_set_server_url(raw, MCP_SERVER_NAME, url)
+            if new_text is not None:
+                if dry_run:
+                    print(f"  [dry-run] Would update {config_path}: "
+                          f"mcp.{MCP_SERVER_NAME}.url = {url}")
+                    return config_path
+                config_path.write_text(new_text)
+                print(f"  OpenCode: Updated {config_path} ({url})")
+                if config_path.is_symlink():
+                    print(f"    note: symlink → {config_path.resolve()} "
+                          f"(repo source was edited)")
+                return config_path
 
         print(f"  OpenCode: {config_path} has comments — not rewriting it.")
         print("    Add (or replace) this block by hand:")

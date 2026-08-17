@@ -72,6 +72,68 @@ sections:
     - Is the library actually preloaded? (`ldd <binary> | grep dftracer`)
     - Are there permission errors on the log file path?
     - Is `DFTRACER_ENABLE=1` exported to all MPI ranks?
+- title: Pin service + app to the SAME hosts, and count zero-byte traces (MANDATORY)
+  body: |
+    **Pin every job to explicit hosts when the allocation is bigger than the run.**
+    Three separate `flux submit -N<n>` calls inside a larger allocation get three
+    DIFFERENT node subsets, so `dftracer_service start`, the application, and
+    `dftracer_service stop` land on different nodes. Nothing errors: the daemons
+    profile nodes the app never touched, `stop` says `No running server found.`,
+    orphan daemons keep holding a core, and their `service_<host>.pfw.gz` files
+    stay 0 bytes because the trace only flushes on stop.
+
+    Resolve the hosts once and reuse them for all three:
+
+    ```bash
+    flux jobs -a --format="{id} {name} {status} {nnodes} {nodelist}" | grep RUN  # who else is here
+    REQ="--requires=host:<nodeA>,<nodeB>,<nodeC>,<nodeD>"
+    flux submit -N4 -n4  -c1  $REQ --setattr=exclusive=false "$DFT_BIN" start "$SVC_DIR"
+    flux run    -N4 -n16 -g1 -c23 $REQ --setattr=exclusive=false ./app_launch.sh
+    flux submit -N4 -n4  -c1  $REQ --setattr=exclusive=false "$DFT_BIN" stop  "$SVC_DIR"
+    ```
+
+    An allocation may be shared with another live session — never assume the whole
+    allocation is yours, and pick hosts nothing else is running on.
+
+    **A trace is complete only if its LAST event is the `end` event.** File count and
+    zero-byte count are necessary but NOT sufficient — a rank that dies at teardown leaves
+    a large, plausible-looking file. Gate on all three, in order:
+
+    ```bash
+    tot=$(ls <trace_dir>/*-app.pfw.gz | wc -l)                          # 1. rank count
+    zero=$(find <trace_dir> -name "*-app.pfw.gz" -size 0 | wc -l)       # 2. zero-byte
+    # 3. trailing end event -- the only check that proves the logger flushed:
+    #    last parseable record must be {"cat":"dftracer","name":"end"}
+    ```
+
+    Report it as `N/total end-terminated`. If the app crashed but every trace is
+    `end`-terminated, the crash was post-flush and the data is usable — say so explicitly
+    rather than discarding a good run or silently trusting a bad one.
+
+    **Never edit a shell script while it is executing.** Bash reads scripts incrementally
+    by byte offset; rewriting the file mid-run makes it resume at the wrong offset and
+    execute garbage. Copy to a new name and run that instead.
+
+    **Always count zero-byte trace files before reporting a run as complete.**
+    A rank that dies during teardown still leaves an empty `*-app.pfw.gz`, so the
+    file count alone looks right:
+
+    ```bash
+    tot=$(ls <trace_dir>/*-app.pfw.gz | wc -l)
+    zero=$(find <trace_dir> -name "*-app.pfw.gz" -size 0 | wc -l)
+    echo "flushed $((tot-zero))/$tot ranks"
+    ```
+
+    Report the flushed/total ratio explicitly. A shortfall is a real finding (e.g.
+    the open PAPI teardown SIGSEGV in [[system-tuolumne]]), never something to
+    round up to "ok". Same check for `service_<host>.pfw.gz`: one non-empty file
+    per node in the job, or a daemon was never stopped.
+
+    **Attribute any crash before blaming the instrumentation.** Re-run the
+    PRISTINE, un-annotated binary at the same scale with the same arguments. If it
+    fails identically, the app owns the failure. This turned a suspected annotation
+    bug into a confirmed miniFE `verify_solution` cap, and separately isolated a
+    real dftracer PAPI teardown crash.
 - title: Return
   body: |
     Raw + compact trace dir paths, file count, total event count.

@@ -64,8 +64,24 @@ _VENDOR_PREFIXES: tuple[str, ...] = (
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def extract_functions(filepath: str | Path) -> list[dict]:
+def extract_functions(
+    filepath: str | Path,
+    compile_flags: Optional[list[str]] = None,
+    diagnostics: Optional[dict] = None,
+) -> list[dict]:
     """Return a list of function-info dicts for *filepath*.
+
+    Args:
+        filepath: file to parse.
+        compile_flags: extra flags handed to clang (``-I``/``-D``/``-std=``...).
+            REQUIRED for most real C++ projects: a header clang cannot find is a
+            FATAL error that aborts the parse, and out-of-line member functions
+            (``void Foo::bar() {...}``) then vanish from the AST entirely because
+            their class declaration was never seen. The file looks
+            function-free instead of unparseable.
+        diagnostics: optional dict; when given it is populated with
+            ``clang_stderr``, ``fatal_error`` (bool) and ``fatal_messages`` so
+            callers can distinguish "no functions here" from "did not compile".
 
     Raises ClangNotFoundError for C/C++ files when clang is not installed.
     """
@@ -74,7 +90,7 @@ def extract_functions(filepath: str | Path) -> list[dict]:
     if suffix == ".py":
         return _extract_python(path)
     if suffix in (".c", ".cpp", ".cxx", ".cc", ".h", ".hpp"):
-        return _extract_c_cpp(path)
+        return _extract_c_cpp(path, compile_flags, diagnostics)
     return []
 
 
@@ -82,8 +98,12 @@ def extract_functions(filepath: str | Path) -> list[dict]:
 # C / C++ extraction
 # ---------------------------------------------------------------------------
 
-def _extract_c_cpp(path: Path) -> list[dict]:
-    result = _try_clang(path)
+def _extract_c_cpp(
+    path: Path,
+    compile_flags: Optional[list[str]] = None,
+    diagnostics: Optional[dict] = None,
+) -> list[dict]:
+    result = _try_clang(path, compile_flags, diagnostics)
     if result is None:
         raise ClangNotFoundError(
             "clang binary not found — install clang to enable C/C++ function extraction"
@@ -127,18 +147,50 @@ def _resolve_line(loc: dict, line_offsets: list[int]) -> int:
     return 0
 
 
-def _try_clang(path: Path) -> Optional[list[dict]]:
+def _try_clang(
+    path: Path,
+    compile_flags: Optional[list[str]] = None,
+    diagnostics: Optional[dict] = None,
+) -> Optional[list[dict]]:
     lang = "c" if path.suffix.lower() == ".c" else "c++"
+    # `-x<lang>` must stay LAST before the file: any `-x` in caller-supplied
+    # flags (MFEM's config.mk passes `-x hip`) would otherwise decide how this
+    # file is parsed.
+    cmd = ["clang", "-Xclang", "-ast-dump=json", "-fsyntax-only", "-w"]
+    if compile_flags:
+        cmd.extend(compile_flags)
+    cmd.extend([f"-x{lang}", str(path)])
     try:
         proc = subprocess.run(
-            ["clang", "-Xclang", "-ast-dump=json", "-fsyntax-only", "-w",
-             f"-x{lang}", str(path)],
-            capture_output=True, text=True, timeout=60,
+            cmd, capture_output=True, text=True, timeout=300,
         )
     except FileNotFoundError:
         return None
     except subprocess.TimeoutExpired:
+        if diagnostics is not None:
+            diagnostics.update({
+                "clang_stderr": "timed out",
+                "fatal_error": True,
+                "fatal_messages": ["clang -ast-dump timed out"],
+                "clang_argv": cmd,
+            })
         return []
+
+    # Record diagnostics BEFORE deciding what to return. A missing header is a
+    # `fatal error:` that stops the parse, and the resulting AST is silently
+    # truncated (often to zero functions) rather than absent -- so an empty
+    # result must never be reported to the user as a clean "no functions".
+    if diagnostics is not None:
+        fatal = [
+            ln for ln in (proc.stderr or "").splitlines()
+            if "fatal error:" in ln
+        ]
+        diagnostics.update({
+            "clang_stderr": (proc.stderr or "")[:4000],
+            "fatal_error": bool(fatal),
+            "fatal_messages": fatal[:10],
+            "clang_argv": cmd,
+        })
 
     stdout = proc.stdout
     if not stdout:

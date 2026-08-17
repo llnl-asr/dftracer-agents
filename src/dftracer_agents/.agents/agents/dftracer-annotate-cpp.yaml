@@ -43,6 +43,57 @@ sections:
     \nChecks it enforces: every I/O / checkpoint / collective-comm function is\ninstrumented; init and finalize both exist (a missing finalize truncates the\ntrace); app-parameter metadata is emitted; annotated functions pass the cost gate\n(AI-API `dft_ai.*` regions are exempt); and every file still parses/compiles.\n"
 - title: "Verify the write, not just the response (defense-in-depth)"
   body: "`clang_annotate_file` writes to disk immediately by default\n(`write_immediately=True`) and reports `written_to_disk` / `bytes_written` /\n`disk_mtime_ns` in its response — check those fields rather than assuming a\nplausible-looking insertion count means the file changed on disk. This is now\na structural guarantee, not something you have to remember to trigger with a\nseparate call: do NOT call `clang_write_annotated_file` reflexively after every\n`clang_annotate_file` — it already wrote the file, and only exists for the\ndeliberate `clang_add_braces` → `clang_annotate_file(write_immediately=False)`\n→ `clang_syntax_check` → write compose pipeline.\n\nSeparately, `clang_annotate_project` / `clang_annotate_file` can report\n`already_annotated: true` (0 insertions) from a stale in-memory cache even when\nthe file on disk currently has ZERO dftracer macros — this is most likely right\nafter a source tree is reset/re-copied mid-session. Trusting that response\nblindly can make a whole annotation stage silently no-op.\n\n**Standing rule:** any time a tool call reports `already_annotated: true` (or\nan unexpectedly low insertion count), ground-truth it immediately with:\n\n```bash\ngrep -rl \"DFTRACER_CPP_INIT\\|DFTRACER_CPP_FUNCTION\" annotated/\n```\n\nIf grep finds nothing despite `already_annotated: true`, the cache is stale —\nre-run the annotation call, do not report success. See [[dftracer-annotate-general]]\nRule G for the full explanation.\n"
+- title: "Template-heavy C++: `functions: 0` is expected, not a green light"
+  body: |
+    Projects that put their real work in **templates inside `.hpp` files** (miniFE,
+    and Kokkos/Thrust/RAJA-style code) cannot be parsed standalone by clang, so
+    `clang_extract_functions` / `clang_annotate_file` legitimately return nothing
+    for those headers. Only `main.cpp` and other real translation units yield
+    functions. The net effect is indistinguishable from a silent failure: the entry
+    point gets instrumented and the entire solver does not.
+
+    When a header returns 0 functions, do NOT accept it. Either:
+    - pass `compile_flags` with the project's real `-I`/`-D` set (from the build's
+      own variables, not a guess) and retry — this fixes the *fatal-include* case; or
+    - if the file genuinely only contains templates, annotate it with an explicit
+      anchor-driven script that inserts `DFTRACER_CPP_FUNCTION()` +
+      `DFTRACER_CPP_FUNCTION_UPDATE("comp", ...)` after each target function's
+      opening brace. Keep the script and its anchor list under the session's
+      `scripts/` so the placement is reviewable, make it idempotent (skip if the
+      next line already has the macro), and print one line per insertion.
+
+    Be deliberate about **exclusions**. Static cost analysis cannot know a function
+    is called once per element or per timer tick; annotating those buries the trace.
+    Name the excluded functions in your report alongside the annotated ones.
+
+    Substring anchors overlap — `exchange_externals(MatrixType& A,` also matches
+    `begin_exchange_externals(MatrixType& A,`. Verify the final macro count equals
+    the intended function count.
+
+- title: "`main()`: END + FINI on EVERY exit, before the MPI teardown WRAPPER"
+  body: |
+    A C++ `main()` uses the explicit `DFTRACER_CPP_REGION_START/END` pair plus
+    `DFTRACER_CPP_INIT`/`FINI` — none of which are RAII, so placement is on you.
+
+    The tool used to anchor END+FINI at the closing brace whenever it could not
+    find a literal `MPI_Finalize`, which puts them **after** `return` — dead code.
+    Finalize never ran, the logger never flushed, and the trace had ZERO
+    `CPP_APP` events while still looking healthy, because POSIX/STDIO (GOTCHA) and
+    PAPI flush independently. This is fixed in `annotation_clang.py` (wrapper-aware
+    MPI detection + a `_falls_through` check), but **verify it anyway**:
+
+    ```bash
+    grep -n "REGION_START\|REGION_END\|_FINI\|_INIT\|return\|MPI_Finalize\|finalize_mpi" <entry>.cpp
+    ```
+
+    Every exit path of `main()` — including the normal `return 0` and every early
+    error return — needs END+FINI ahead of it, and FINI must precede the MPI
+    teardown call. That call is often a **wrapper** (`miniFE::finalize_mpi()`,
+    not `MPI_Finalize`), so grep for both.
+
+    Red flag in a finished trace: POSIX/STDIO/PAPI present but `CPP_APP` absent or
+    tiny. That is this bug, not a quiet application.
+
 - include: context-economy-locate-don-t-read
 - title: Step Profiling (MANDATORY)
   body: "This pipeline profiles itself. Bracket your entire execution with the profile\ntools, using the plan's `## STEP N: <agent-name>` heading verbatim as `step`:\n\n```\nprofile_step_begin(step=\"STEP N: dftracer-annotate-cpp\", agent=\"dftracer-annotate-cpp\", notes=\"<diagnostic detail>\")\n... your work ...\nprofile_step_end(step=\"STEP N: dftracer-annotate-cpp\", status=\"ok\")\n```\n\nIf you fail and retry, close the attempt with the real reason and reopen with the\nSAME `step` string \u2014 that records a retry rather than a new step:\n\n```\nprofile_step_end(step=\"STEP N: dftracer-annotate-cpp\", status=\"failed\", error=\"<what broke>\")\nprofile_step_begin(step=\"STEP N: dftracer-annotate-cpp\", agent=\"dftracer-annotate-cpp\")\n```\n\nNever call `profile_bind` \u2014 that is the orchestrator's job. Never report\n`status=\"ok\"` for a step that did not succeed; the report's Rework section is the\nwhole point. Load [[dftracer-profiling]] for the full rules.\n"

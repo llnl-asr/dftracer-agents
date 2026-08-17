@@ -54,6 +54,7 @@ only for individual, ad-hoc corrections.
 from __future__ import annotations
 
 import re
+import shlex
 from typing import Dict, List
 
 from fastmcp import FastMCP
@@ -125,6 +126,42 @@ _VENDOR_PREFIX_RE = re.compile(
     r"^(gpfs_|beegfs_|llapi_|cuFile|hdfs_|daos_|ceph_|gfarm_)",
     re.IGNORECASE,
 )
+
+
+_TERMINATES_RE = re.compile(
+    r'^\s*(?:return\b|goto\b|throw\b|break\b|continue\b'
+    r'|(?:std::)?(?:exit|_exit|quick_exit|abort|terminate)\s*\('
+    r'|__builtin_unreachable\s*\()'
+)
+
+
+def _falls_through(lines: list[str], close_brace_line: int) -> bool:
+    """Return True if control can reach a function's closing brace.
+
+    Insertions anchored at ``close_brace_line`` land immediately BEFORE the
+    ``}``.  That is the right place for a void/fall-through function, but it is
+    dead code when the last statement is ``return`` -- the macro sits after the
+    return and never executes.  That produced traces with no application events
+    at all (laghos, miniFE): the END/FINI pair was written, looked correct in a
+    diff, and never ran.
+
+    Args:
+        lines: The file's lines (0-based list, 1-based line numbers).
+        close_brace_line: 1-based line number of the function's closing ``}``.
+
+    Returns:
+        ``False`` when the last executable statement before the brace
+        unconditionally leaves the function (``return``/``exit``/``throw``/...),
+        ``True`` otherwise -- including when the preceding line is an inner
+        block's ``}``, since control then continues past it.
+    """
+    for _i in range(close_brace_line - 2, -1, -1):
+        _s = lines[_i].strip()
+        if (not _s or _s.startswith("//") or _s.startswith("/*")
+                or _s.startswith("*") or _s.startswith("#")):
+            continue
+        return not _TERMINATES_RE.match(_s)
+    return True
 
 
 def _should_annotate(fn: dict) -> bool:
@@ -283,12 +320,22 @@ def register_clang_tools(mcp: FastMCP) -> None:
         )
 
     @mcp.tool()
-    def clang_extract_functions(run_id: str, filepath: str) -> str:
+    def clang_extract_functions(
+        run_id: str, filepath: str, compile_flags: str = ""
+    ) -> str:
         """Extract function definitions with exact line numbers from a source file.
 
         Uses clang ``-ast-dump=json`` for C/C++ files and Python's ``ast`` module
         for ``.py`` files.  Falls back to ``ctags`` then regex-based brace counting
         if clang is not available.
+
+        **Pass ``compile_flags`` for any project with external headers.** A header
+        clang cannot find is a *fatal* error that aborts the parse, and out-of-line
+        member functions (``void Foo::bar() { ... }``) then disappear from the AST
+        because their class declaration was never seen — the file looks
+        function-free rather than unparseable. When that happens this tool now
+        returns ``status: "error"`` with the clang diagnostic instead of a
+        misleading ``ok``/``count: 0``.
 
         Each returned function record has:
 
@@ -310,6 +357,10 @@ def register_clang_tools(mcp: FastMCP) -> None:
         Args:
             run_id:   Session identifier returned by ``session_create``.
             filepath: Path to the file relative to the ``annotated/`` sub-folder.
+            compile_flags: Extra clang flags as one shell-quoted string, e.g.
+                ``"-I/prefix/include -I/prefix/include/mfem -D__HIP_PLATFORM_AMD__=1"``.
+                For a Makefile project the reliable source of these is the build's
+                own variables (e.g. MFEM's ``MFEM_INCFLAGS``) rather than a guess.
 
         Returns:
             JSON string with keys:
@@ -319,6 +370,7 @@ def register_clang_tools(mcp: FastMCP) -> None:
                 * ``functions`` — list of function-info dicts.
                 * ``count``     — number of functions found.
                 * ``extractor`` — which backend produced the result.
+                * ``clang_fatal_errors`` — clang ``fatal error:`` lines, when any.
         """
         from .source_parser import extract_functions, ClangNotFoundError
 
@@ -327,12 +379,32 @@ def register_clang_tools(mcp: FastMCP) -> None:
         if not abs_path.exists():
             return _err(f"File not found in annotated/: {filepath}")
 
+        _flags = shlex.split(compile_flags) if compile_flags else None
+        _diag: dict = {}
         try:
-            functions = extract_functions(str(abs_path))
+            functions = extract_functions(str(abs_path), _flags, _diag)
         except ClangNotFoundError as exc:
             return _err(str(exc), filepath=filepath)
 
         extractor = functions[0].get("source", "unknown") if functions else "clang"
+
+        # A fatal parse error that yielded nothing is a FAILURE, not an empty
+        # file. Reporting "ok, 0 functions" here is what let a whole
+        # translation unit (every out-of-line method in it) go silently
+        # un-annotated while the pipeline reported success.
+        if _diag.get("fatal_error") and not functions:
+            return _err(
+                f"clang could not parse {filepath}: "
+                f"{'; '.join(_diag.get('fatal_messages') or [])}. "
+                f"No functions were extracted, so this file would be left "
+                f"UNANNOTATED. Supply the project's include flags via "
+                f"compile_flags.",
+                filepath=filepath,
+                functions=[],
+                count=0,
+                extractor=extractor,
+                clang_fatal_errors=_diag.get("fatal_messages") or [],
+            )
 
         return _ok(
             f"Extracted {len(functions)} function(s) from {filepath} "
@@ -341,6 +413,7 @@ def register_clang_tools(mcp: FastMCP) -> None:
             functions=functions,
             count=len(functions),
             extractor=extractor,
+            clang_fatal_errors=_diag.get("fatal_messages") or [],
         )
 
     @mcp.tool()
@@ -434,6 +507,7 @@ def register_clang_tools(mcp: FastMCP) -> None:
         comp_overrides: str = None,
         exclude_functions: str = None,
         write_immediately: bool = True,
+        compile_flags: str = "",
     ) -> str:
         """Annotate a C/C++ source file with dftracer macros AND write it to disk.
 
@@ -680,14 +754,44 @@ def register_clang_tools(mcp: FastMCP) -> None:
         ) as tmp:
             tmp.write("\n".join(lines) + "\n")
             tmp_path = tmp.name
+        # The content is parsed from a COPY in the system temp dir, which throws
+        # away the original file's directory. Quoted includes
+        # (`#include "laghos_solver.hpp"`, `#include "general/forall.hpp"`) are
+        # resolved relative to the including file, so without putting the real
+        # directory back on the search path they all fail -- and a failed include
+        # is a fatal error that empties the AST. Add the source's own directory
+        # (and the annotated/ root) ahead of any caller flags.
+        _extract_diag: dict = {}
+        _auto_flags = [f"-I{abs_path.parent}", f"-I{ws / 'annotated'}"]
+        _user_flags = shlex.split(compile_flags) if compile_flags else []
         try:
-            functions = extract_functions(tmp_path)
+            functions = extract_functions(
+                tmp_path,
+                _auto_flags + _user_flags,
+                _extract_diag,
+            )
         except ClangNotFoundError as exc:
             os.unlink(tmp_path)
             return _err(str(exc), filepath=filepath)
         finally:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
+
+        # Never silently annotate nothing. A fatal parse error with zero
+        # functions means every function in this translation unit -- including
+        # out-of-line class methods, which are the ones that matter in C++ --
+        # would be skipped while the call still reported success.
+        if _extract_diag.get("fatal_error") and not functions:
+            return _err(
+                f"clang could not parse {filepath}: "
+                f"{'; '.join(_extract_diag.get('fatal_messages') or [])}. "
+                f"Refusing to report success for a file where 0 functions were "
+                f"found due to a parse failure — pass the project's include "
+                f"flags via compile_flags.",
+                filepath=filepath,
+                functions_found=0,
+                clang_fatal_errors=_extract_diag.get("fatal_messages") or [],
+            )
 
         # ── Step 3: build insertion list (0-based indices, original line nums) ─
         # Each entry: (index_0based, text_to_insert)
@@ -702,17 +806,44 @@ def register_clang_tools(mcp: FastMCP) -> None:
         skipped_functions: list[str] = []
 
         # ── Pre-scan for MPI boundary lines (needed for entry-point handling) ──
-        # Find the last MPI startup call (MPI_Init / MPI_Comm_rank / MPI_Comm_size)
-        # and the first MPI_Finalize line.  Only used when is_entry=True.
-        _mpi_init_line = None    # 1-based; line AFTER which INIT/START should go
-        _mpi_finalize_line = None  # 1-based; line BEFORE which END/FINI should go
+        # Find the last MPI startup call and EVERY MPI teardown call.  Only used
+        # when is_entry=True.
+        #
+        # Matching the literal MPI_Init/MPI_Finalize symbols alone is not enough:
+        # many apps wrap them (miniFE's `miniFE::initialize_mpi(argc, argv, ...)` /
+        # `miniFE::finalize_mpi()`, laghos likewise).  When the literal symbol was
+        # missing, `_mpi_finalize_line` stayed None and END/FINI fell back to the
+        # closing brace -- i.e. AFTER `return return_code;`, which is dead code, so
+        # finalize never ran and the trace had zero app events.  The early-exit
+        # END/FINI pass was additionally gated on `_mpi_init_line is not None`, so
+        # it was skipped entirely for those same apps.  Both were real
+        # zero-CPP_APP-event bugs (laghos, then miniFE).  Match the wrappers too.
+        _MPI_INIT_RE = re.compile(
+            r'\bMPI_(?:Init|Init_thread|Comm_rank|Comm_size)\s*\('
+            r'|\b(?:initiali[sz]e|init|setup|start)_mpi\s*\('
+            r'|\bmpi_(?:initiali[sz]e|init|setup|start)\s*\(',
+            re.IGNORECASE,
+        )
+        _MPI_FINI_RE = re.compile(
+            r'\bMPI_Finalize\s*\('
+            r'|\b(?:finali[sz]e|cleanup|shutdown|stop)_mpi\s*\('
+            r'|\bmpi_(?:finali[sz]e|cleanup|shutdown|stop)\s*\(',
+            re.IGNORECASE,
+        )
+        _mpi_init_line = None      # 1-based; line AFTER which INIT/START should go
+        _mpi_finalize_line = None  # 1-based; FIRST teardown line (back-compat)
+        _mpi_fini_lines: list[int] = []  # 1-based; ALL teardown lines
         if is_entry:
             for _i, _ln in enumerate(lines, start=1):
                 _s = _ln.strip()
-                if re.search(r'\bMPI_(Init|Comm_rank|Comm_size)\s*\(', _s):
+                if _s.startswith("//") or _s.startswith("*"):
+                    continue
+                if _MPI_INIT_RE.search(_s):
                     _mpi_init_line = _i
-                if _mpi_finalize_line is None and re.search(r'\bMPI_Finalize\s*\(', _s):
-                    _mpi_finalize_line = _i
+                if _MPI_FINI_RE.search(_s):
+                    _mpi_fini_lines.append(_i)
+                    if _mpi_finalize_line is None:
+                        _mpi_finalize_line = _i
 
         for fn in functions:
             body_first = fn.get("body_first_line")
@@ -781,49 +912,65 @@ def register_clang_tools(mcp: FastMCP) -> None:
             # RAII — the RAII exemption applies only to DFTRACER_CPP_FUNCTION()
             # in non-main C++ functions, which never reach this block).
             if not is_cpp or is_main_fn:
-                if is_main_fn:
-                    # A4: place END+FINI before MPI_Finalize (not at last return)
-                    if _mpi_finalize_line is not None:
-                        fin_idx = _mpi_finalize_line - 1  # 0-based index of MPI_Finalize line
-                        fin_ind = _indent(lines, fin_idx, ind)
-                        insertions.append((fin_idx, fin_ind + FINI))
-                        insertions.append((fin_idx, fin_ind + fn_end))
-                    else:
-                        # No MPI_Finalize found — fall back to close brace
-                        close_idx = close - 1
-                        insertions.append((close_idx, ind + FINI))
-                        insertions.append((close_idx, ind + fn_end))
+                _exit_lines = sorted({
+                    (ex.get("line") if isinstance(ex, dict) else ex)
+                    for ex in (exits or [])
+                    if (ex.get("line") if isinstance(ex, dict) else ex) is not None
+                })
 
-                    # A5: add END+FINI at returns that occur AFTER MPI_Init
-                    # but BEFORE MPI_Finalize (error paths with early teardown)
-                    if exits and _mpi_init_line is not None:
-                        for ex in exits:
-                            ex_line = ex.get("line") if isinstance(ex, dict) else ex
-                            if ex_line is None:
-                                continue
-                            after_init = ex_line > _mpi_init_line
-                            before_fini = (_mpi_finalize_line is None or
-                                           ex_line < _mpi_finalize_line)
-                            if after_init and before_fini:
-                                ex_idx = ex_line - 1
-                                ex_ind = _indent(lines, ex_idx, ind)
-                                insertions.append((ex_idx, ex_ind + FINI))
-                                insertions.append((ex_idx, ex_ind + fn_end))
+                if is_main_fn:
+                    # A4/A5: END+FINI must run on EVERY exit path of main().
+                    #
+                    # Resolve each exit to the line the pair must precede: the
+                    # nearest MPI teardown call above it with no other exit in
+                    # between (so FINI precedes MPI_Finalize -- lint rule L3),
+                    # otherwise the exit itself.  This replaces the old logic,
+                    # which anchored only at the FIRST MPI_Finalize and fell
+                    # back to the closing brace when none was found -- putting
+                    # END+FINI *after* `return`, where they never execute, so
+                    # the logger never flushed and the trace had zero app
+                    # events while still looking healthy (POSIX/STDIO/PAPI
+                    # flush independently).  Hit on laghos, then miniFE.
+                    _anchors: set[int] = set()
+                    for _ex in _exit_lines:
+                        _anchor = _ex
+                        _cands = [f for f in _mpi_fini_lines if f < _ex]
+                        if _cands:
+                            _f = max(_cands)
+                            if not any(_f < _o < _ex for _o in _exit_lines):
+                                _anchor = _f
+                        _anchors.add(_anchor)
+
+                    if _falls_through(lines, close):
+                        # Control also reaches the closing brace (no trailing
+                        # return).  Anchor before a trailing teardown call if
+                        # there is one, else immediately before the brace.
+                        _tail = [f for f in _mpi_fini_lines
+                                 if f not in _anchors
+                                 and (not _exit_lines or f > max(_exit_lines))]
+                        _anchors.add(max(_tail) if _tail else close)
+                    if not _anchors:
+                        _anchors.add(close)
+
+                    for _a in sorted(_anchors):
+                        _a_idx = _a - 1
+                        _a_ind = _indent(lines, _a_idx, ind)
+                        insertions.append((_a_idx, _a_ind + FINI))
+                        insertions.append((_a_idx, _a_ind + fn_end))
                 else:
                     # Regular (non-entry-point) C functions only — C++ regular
                     # functions never reach here (RAII covers them; guarded by
                     # the `not is_cpp or is_main_fn` check above).
-                    if exits:
-                        for ex in exits:
-                            ex_line = ex.get("line") if isinstance(ex, dict) else ex
-                            if ex_line is None:
-                                continue
-                            ex_idx = ex_line - 1
-                            ex_ind = _indent(lines, ex_idx, ind)
-                            insertions.append((ex_idx, ex_ind + END))
-                    else:
-                        close_idx = close - 1
-                        insertions.append((close_idx, ind + END))
+                    for _ex in _exit_lines:
+                        _ex_idx = _ex - 1
+                        _ex_ind = _indent(lines, _ex_idx, ind)
+                        insertions.append((_ex_idx, _ex_ind + END))
+                    # A function can BOTH return early and fall through to its
+                    # closing brace; the old `if exits / else close-brace` split
+                    # missed the fall-through path in that case, silently losing
+                    # the span on the most common route through the function.
+                    if not _exit_lines or _falls_through(lines, close):
+                        insertions.append((close - 1, ind + END))
 
         # ── Step 4: sort highest-index-first, apply all in one pass ───────────
         # For same index, insertion order (bottom-to-top within the index)
@@ -918,6 +1065,7 @@ def register_clang_tools(mcp: FastMCP) -> None:
         language: str = "c",
         init_args: str = "NULL, NULL, NULL",
         exclude_patterns: List[str] = None,
+        compile_flags: str = "",
     ) -> str:
         """Annotate every C/C++ source file in the ``annotated/`` workspace in one call.
 
@@ -1027,6 +1175,7 @@ def register_clang_tools(mcp: FastMCP) -> None:
                     language=language,
                     is_entry=is_entry_file,
                     init_args=init_args,
+                    compile_flags=compile_flags,
                 )
                 result = _json.loads(raw)
                 already = result.get("already_annotated", False)

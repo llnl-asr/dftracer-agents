@@ -22,11 +22,11 @@
       "options": {
         "baseURL": "https://livai-api.llnl.gov/v1",
         "apiKey": "{env:OPENAI_API_KEY}",
-        "timeout": {
-          "totalMs": 86400000,
-          "stepMs": 86400000,
-          "chunkMs": 600000
-        }
+        // OpenCode flattens these; it does NOT accept an AI-SDK-style
+        // {totalMs, stepMs, chunkMs} object here (schema: number | false).
+        "timeout": 86400000,
+        "headerTimeout": 86400000,
+        "chunkTimeout": 600000
       },
       "models": {
         "gpt-5.5": {
@@ -104,7 +104,7 @@
   "mcp": {
     "dftracer": {
       "type": "remote",
-      "url": "http://127.0.0.1:5000/mcp",
+      "url": "http://127.0.0.1:10000/mcp",
       "enabled": true
     }
   },

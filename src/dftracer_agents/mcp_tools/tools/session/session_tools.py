@@ -1336,13 +1336,54 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 timeout=300,
             )
             if not clone_result["success"]:
-                # Retry without --branch (bare clone then checkout)
+                # `--branch` only accepts a branch or tag name, so it fails for a
+                # raw commit SHA. Retry with a plain clone, then check out the ref.
                 shutil.rmtree(src, ignore_errors=True)
                 src.mkdir(exist_ok=True)
                 r2 = _run(["git", "clone", "--depth", "1", url, str(src)], timeout=300)
                 if not r2["success"]:
                     return _err("git clone failed", clone_stderr=r2["stderr"])
-                _run(["git", "checkout", ref], cwd=src)
+                # A --depth 1 clone contains ONLY the default branch tip, so a
+                # commit SHA is almost never present and `git checkout <sha>`
+                # fails. This used to be fire-and-forget: the failure was
+                # swallowed and the session silently continued on the default
+                # branch's HEAD while reporting status "ok" for the requested
+                # ref -- i.e. every downstream build/trace ran against the wrong
+                # source. Deepen and verify instead of assuming.
+                co = _run(["git", "checkout", "--detach", ref], cwd=src)
+                if not co["success"]:
+                    unshallow = _run(
+                        ["git", "fetch", "--unshallow"], cwd=src, timeout=900
+                    )
+                    if not unshallow["success"]:
+                        # Not all remotes/refs support --unshallow (already
+                        # complete, or a partial-clone filter); a full fetch of
+                        # all refs is the next-best deepening step.
+                        _run(["git", "fetch", "--tags", "origin"], cwd=src, timeout=900)
+                    co = _run(["git", "checkout", "--detach", ref], cwd=src)
+                    if not co["success"]:
+                        return _err(
+                            f"git checkout of ref {ref!r} failed even after "
+                            f"deepening the clone -- refusing to continue on the "
+                            f"wrong commit",
+                            checkout_stderr=co.get("stderr", ""),
+                        )
+
+            # Verify HEAD really is the requested ref. `git clone --branch` can
+            # succeed while a later local step moves HEAD, and the SHA path above
+            # is easy to regress, so confirm rather than trust.
+            head = _run(["git", "rev-parse", "HEAD"], cwd=src)
+            head_sha = (head.get("stdout") or "").strip()
+            if head_sha and not already_cloned:
+                # `ref` may be a branch, a tag, an abbreviated SHA, or a full SHA;
+                # resolving it locally normalizes all four to a full SHA.
+                want = _run(["git", "rev-parse", f"{ref}^{{commit}}"], cwd=src)
+                want_sha = (want.get("stdout") or "").strip()
+                if want_sha and want_sha != head_sha:
+                    return _err(
+                        f"clone is on {head_sha[:12]} but ref {ref!r} resolves to "
+                        f"{want_sha[:12]} -- refusing to continue on the wrong commit"
+                    )
 
             # No-op when the repo has no .gitmodules; required for repos that
             # vendor dependencies as submodules (e.g. LLNL/RAJAPerf pulling in
@@ -2608,19 +2649,26 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         jobs: int = 4,
         venv_path: str = "",
         hdf5: Optional[bool] = None,
+        dftracer_repo: str = "",
+        papi: Optional[bool] = None,
+        hip: Optional[bool] = None,
+        rocm_path: str = "",
+        variorum: Optional[bool] = None,
+        variorum_build: str = "",
     ) -> str:
         """Install dftracer via pip for all project types, then locate dirs in site-packages.
 
-        Always uses ``pip install git+https://github.com/llnl/dftracer.git@<ref>``
-        regardless of whether the project is C/C++ or Python.  Feature flags
-        detected from the application source are forwarded as environment
-        variables so the dftracer wheel's C extension is built with the correct
-        support compiled in:
+        Installs ``pip install git+<dftracer_repo>@<ref>`` (defaulting to
+        ``https://github.com/llnl/dftracer.git``) regardless of whether the
+        project is C/C++ or Python.  Feature flags detected from the application
+        source are forwarded as environment variables so the dftracer wheel's C
+        extension is built with the correct support compiled in:
 
         * ``DFTRACER_ENABLE_MPI=ON``   — when MPI is detected in the project
         * ``DFTRACER_ENABLE_HDF5=ON``  — when HDF5 is detected in the project
         * ``HDF5_ROOT=<prefix>``       — when the system HDF5 prefix is known
         * ``HDF5_DIR=<prefix>``        — same as ``HDF5_ROOT`` for cmake backends
+        * ``DFTRACER_ENABLE_PAPI_TRACING=ON`` — when ``papi=True``
 
         After a successful install, include and lib directories are discovered
         by probing the dftracer package inside site-packages (no cmake prefix
@@ -2661,6 +2709,60 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 auto-enabled. Pass ``True`` to force HDF5 on even if detection
                 did not find it in the app source (still requires a usable
                 system HDF5 to build against).
+            dftracer_repo: Git URL to install dftracer FROM. Defaults to empty,
+                which means ``https://github.com/llnl/dftracer.git``. Pass an
+                explicit URL to install a branch that only exists on another
+                remote — notably LLNL's internal GitLab
+                (``ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git``),
+                which is where in-development feature branches live and is only
+                reachable from inside the LC network. ``dftracer_ref`` is
+                resolved against THIS repo, so a ref that exists only on the
+                GitLab remote requires setting both.
+            papi: Explicit override for PAPI hardware-counter tracing
+                (``DFTRACER_ENABLE_PAPI_TRACING``). Defaults to ``None``
+                (leave off). Pass ``True`` to compile PAPI counter sampling in;
+                this requires a PAPI development install and is only present on
+                dftracer builds whose source actually has the PAPI support (the
+                ``feature/papi-counter-tracing`` branch and its successors) —
+                on a build without it the flag is silently ignored by cmake, so
+                ALWAYS verify ``DFTRACER_PAPI_TRACING_ENABLE`` in the installed
+                ``dftracer_config.hpp`` rather than trusting a green install.
+            variorum: Enable Variorum node-level POWER tracing
+                (``DFTRACER_ENABLE_VARIORUM``). Defaults to ``None`` (off).
+                Power is node-wide, so it is sampled by ``dftracer_service`` and
+                appears in the per-node service traces as ``type 13`` counter
+                records with the power family (``cpu``/``gpu``/``memory``/
+                ``network``/``node``) as ``cat`` -- NOT in the per-rank app
+                traces. Which domains are compiled in is decided from the build
+                machine: the AMD GPU domain needs ``librocm_smi64`` reachable via
+                ``ROCM_PATH``, the AMD CPU domain needs E-SMI. A domain whose
+                vendor library is absent is silently omitted, so verify the
+                build log line ``variorum power domains to build: ...``.
+            variorum_build: When to build variorum from source --
+                ``AUTO`` (reuse an installed one), ``ALWAYS``, or ``NEVER``.
+                Defaults to ``ALWAYS``, because a distribution variorum is
+                usually built for none of an accelerator node's power domains
+                and then fails at run time with
+                ``_ERROR_VARIORUM_UNSUPPORTED_PLATFORM``, reporting no power at
+                all with no build-time warning.
+            hip: Explicit override for HIP/GPU tracing
+                (``DFTRACER_ENABLE_HIP_TRACING``), bypassing auto-detection.
+                Defaults to ``None`` (trust detection). Detection only looks for
+                HIP in the APP's own source, which produces a false negative for
+                apps that reach the GPU through a library abstraction
+                (MFEM's ``MFEM_FORALL``, RAJA, Kokkos): the app source has no
+                ``hip`` token but the run genuinely launches HIP kernels worth
+                tracing. Pass ``True`` for those. Pass ``False`` to force it off
+                on a GPU-capable system where the app is CPU-only (the inverse
+                false positive).
+            rocm_path: Explicit ROCm install prefix to build HIP tracing
+                against, overriding the auto-detected one. Detection resolves
+                ROCm from ``module avail``, which returns the NEWEST available
+                version -- not necessarily the one the application was compiled
+                with. dftracer's HIP tracing must be built against the SAME
+                ROCm/rocprofiler-sdk the app uses, or tracing silently collects
+                nothing (or crashes on a version-skewed rocprofiler ABI). Set
+                this whenever the app pins a specific ROCm.
 
         Returns:
             JSON string with keys:
@@ -2714,6 +2816,43 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 features["hdf5_system"] = {}
 
         hdf5_override_applied = hdf5 is not None
+
+        # PAPI is never auto-detected from app source: unlike MPI/HDF5/HIP it is
+        # not something the application itself calls, it is a tracing backend the
+        # OPERATOR asks for. So it is opt-in via this argument only.
+        if papi is not None:
+            features = dict(features)
+            features["papi"] = bool(papi)
+
+        # Variorum node power. Like PAPI it is never auto-detected from app
+        # source -- it is a node-level telemetry backend the operator asks for,
+        # collected by dftracer_service rather than by the traced process.
+        if variorum is not None:
+            features = dict(features)
+            features["variorum"] = bool(variorum)
+        if variorum_build:
+            features = dict(features)
+            features["variorum_build"] = variorum_build
+
+        # HIP override: detection greps the app's own source for HIP, so it
+        # false-negatives on apps that reach the GPU only through MFEM/RAJA/
+        # Kokkos abstractions. Honour the caller instead of re-deriving.
+        if hip is not None:
+            features = dict(features)
+            features["hip"] = bool(hip)
+
+        # ROCm prefix override: detection takes the newest module available,
+        # which is frequently NOT the ROCm the app was built against. HIP
+        # tracing must match the app's rocprofiler-sdk exactly.
+        if rocm_path:
+            features = dict(features)
+            _rocm_info = dict(features.get("rocm") or {})
+            _rocm_info.update({
+                "found": True,
+                "path": rocm_path,
+                "source": "caller override",
+            })
+            features["rocm"] = _rocm_info
 
         features_enabled = []
         compat_warnings: list = []
@@ -2770,6 +2909,18 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
 
         if features.get("hip"):
             features_enabled.append("hip")
+        # PAPI was missing from this list even when DFTRACER_ENABLE_PAPI_TRACING
+        # was forwarded and the build genuinely compiled it in -- the returned
+        # `features=[...]` message read as "PAPI is off" while the installed
+        # dftracer_config.hpp said DFTRACER_PAPI_TRACING_ENABLE 1.  Reporting
+        # only; the flag itself was always passed through correctly.
+        if features.get("papi"):
+            features_enabled.append("papi")
+        # Same omission as papi above: variorum compiled in (DFTRACER_VARIORUM_ENABLE 1
+        # in the installed dftracer_config.hpp, libvariorum.so linked into the service)
+        # while the returned `features=[...]` message read as though it were off.
+        if features.get("variorum"):
+            features_enabled.append("variorum")
         if features.get("hwloc"):
             features_enabled.append("hwloc")
 
@@ -2842,9 +2993,65 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             )
         _save_state(run_id, {"session_venv_python": venv_python_str, "session_venv_dir": str(_venv_dir)})
 
+        # Reconcile detection's PRE-COMPUTED pip env with the caller's explicit
+        # overrides. This is required, not cosmetic: _install_dftracer_pip_direct
+        # merges `dftracer_pip_env` with setdefault() BEFORE it applies the
+        # per-feature blocks, so a detection-supplied "DFTRACER_ENABLE_HDF5=ON"
+        # wins and the later `setdefault(..., "OFF")` is a silent no-op. Without
+        # this, hdf5=False did not actually disable HDF5 -- and the same value is
+        # ALSO embedded in the DFTRACER_CMAKE_ARGS string, which is passed
+        # straight through to cmake and would override the env var regardless.
+        _pip_env_in = dict(info.get("dftracer_pip_env") or {})
+
+        def _force_flag(env_key: str, cmake_key: str, on: bool) -> None:
+            env_val = "ON" if on else "OFF"
+            _pip_env_in[env_key] = env_val
+            args = _pip_env_in.get("DFTRACER_CMAKE_ARGS", "")
+            if args:
+                kept = [
+                    tok for tok in args.split()
+                    if not tok.startswith(f"-D{cmake_key}=")
+                ]
+                kept.append(f"-D{cmake_key}={env_val}")
+                _pip_env_in["DFTRACER_CMAKE_ARGS"] = " ".join(kept)
+
+        if hdf5 is not None:
+            _force_flag("DFTRACER_ENABLE_HDF5", "DFTRACER_ENABLE_HDF5", bool(hdf5))
+            if not hdf5:
+                # Drop the HDF5 prefix hints too, so cmake's find_package(HDF5)
+                # cannot re-enable it off a system copy the app never uses.
+                for _hk in ("HDF5_ROOT", "HDF5_DIR"):
+                    _pip_env_in.pop(_hk, None)
+                _args = _pip_env_in.get("DFTRACER_CMAKE_ARGS", "")
+                if _args:
+                    _pip_env_in["DFTRACER_CMAKE_ARGS"] = " ".join(
+                        tok for tok in _args.split()
+                        if not tok.startswith(("-DHDF5_ROOT=", "-DHDF5_PREFER_PARALLEL="))
+                    )
+        if papi is not None:
+            _force_flag(
+                "DFTRACER_ENABLE_PAPI_TRACING", "DFTRACER_ENABLE_PAPI_TRACING", bool(papi)
+            )
+        if hip is not None:
+            _force_flag(
+                "DFTRACER_ENABLE_HIP_TRACING", "DFTRACER_ENABLE_HIP_TRACING", bool(hip)
+            )
+        if rocm_path:
+            _pip_env_in["ROCM_PATH"] = rocm_path
+            _pip_env_in["HIP_PATH"] = rocm_path
+        if variorum is not None:
+            _force_flag(
+                "DFTRACER_ENABLE_VARIORUM", "DFTRACER_ENABLE_VARIORUM", bool(variorum)
+            )
+            if variorum:
+                _pip_env_in["DFTRACER_BUILD_VARIORUM"] = (
+                    variorum_build or "ALWAYS"
+                ).upper()
+
         result = _install_dftracer_pip_direct(
             dftracer_ref=dftracer_ref,
-            features={**features, "dftracer_pip_env": info.get("dftracer_pip_env", {})},
+            dftracer_repo=dftracer_repo,
+            features={**features, "dftracer_pip_env": _pip_env_in},
             python_exe=venv_python_str,
             jobs=jobs,
             ws=ws,

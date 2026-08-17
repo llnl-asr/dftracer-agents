@@ -297,3 +297,42 @@ schemas would sit in context permanently. See [[dftracer-context-economy]].
 Both reported for confirmation, not yet fixed at the tool-code level — see
 [[dftracer-annotation-lessons]] LESSONS_LOG.md 2026-08-04 (YGM/ygm-bench
 session) for the full context these were found in.
+
+## Trace completeness: check the trailing `end` event, not the file size
+
+A rank that dies during teardown still leaves a trace file on disk, often a large and
+perfectly plausible one. Counting files, or even counting zero-byte files, does NOT tell
+you whether a trace is complete.
+
+**A complete dftracer app trace ends with an `end` event**, written when the logger
+finalizes:
+
+```json
+{"cat": "dftracer", "name": "end", ...}
+```
+
+So the completeness check is: read the LAST parseable record of every `*-app.pfw.gz` and
+require `cat == "dftracer"` and `name == "end"`.
+
+```python
+def is_complete(path):
+    last = None
+    for line in gzip.open(path, 'rt'):
+        line = line.strip().rstrip(',')
+        if line and line not in '[]':
+            last = line
+    e = json.loads(last)
+    return e.get("cat") == "dftracer" and e.get("name") == "end"
+```
+
+Use this as the gate before analysing or compacting a run, and report it as
+`N/total end-terminated`. Layer it with the cheaper checks rather than replacing them:
+
+1. file count == expected rank count,
+2. zero-byte count == 0,
+3. **trailing `end` event on every file** — the only one that proves the logger flushed.
+
+Worked example: a miniFE sweep whose app SIGABRTed at teardown on every run still produced
+16/16 non-empty traces per run, and all 96 were `end`-terminated — proving the abort was
+strictly post-flush and the data was safe to use. The reverse case (missing `end`) means
+the tail is lost even though the file looks healthy.

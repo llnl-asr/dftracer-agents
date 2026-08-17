@@ -815,6 +815,67 @@ def _run_pip_via_module_script(
     return _run(["bash", "-lc", script_body], timeout=timeout)
 
 
+_DFTRACER_DEFAULT_REPO = "https://github.com/llnl/dftracer.git"
+
+
+def _patch_dftracer_source(src_dir: Path) -> List[Dict[str, Any]]:
+    """Apply known-needed source fixes to a dftracer checkout, idempotently.
+
+    These are real upstream defects, not local preferences. Each entry records
+    what broke and why the fix is safe, so an entry can be dropped once the
+    corresponding upstream commit lands.
+
+    Returns a list of ``{"patch", "applied", "reason"}`` records for logging.
+    """
+    src_dir = Path(src_dir)
+    applied: List[Dict[str, Any]] = []
+
+    # -- generic_function.h is missing an include guard ---------------------
+    # Symptom: building with BOTH DFTRACER_ENABLE_PAPI_TRACING=ON and
+    #   DFTRACER_ENABLE_HIP_TRACING=ON fails with
+    #   "error: redefinition of 'GenericFunction'" in
+    #   src/dftracer/core/function/generic_function.h, and clang itself notes
+    #   "unguarded header; consider using #ifdef guards or #pragma once".
+    # Root cause: generic_function.h has NO include guard whatsoever, and it is
+    #   included by BOTH function/hip/intercept.h and function/papi/counters.h.
+    #   core/common/dftracer_main.cpp includes both of those, so the class is
+    #   parsed twice in one translation unit. Either backend alone builds fine,
+    #   which is why the branch's CI never caught it.
+    # Fix: add an include guard matching the tree's convention (its siblings
+    #   hip/intercept.h and papi/counters.h both use DFTRACER_<NAME>_H #ifndef
+    #   guards, so use that rather than #pragma once).
+    # Status: fixed upstream on feature/papi-counter-tracing as of d876823, so
+    #   this normally no-ops now. Kept because it is cheap, idempotent, and this
+    #   combination silently breaks the build when the guard is absent.
+    gf = src_dir / "src" / "dftracer" / "core" / "function" / "generic_function.h"
+    if gf.is_file():
+        text = gf.read_text()
+        has_guard = ("#pragma once" in text) or bool(
+            re.search(r"^\s*#ifndef\s+\w+", text, re.MULTILINE)
+        )
+        if not has_guard:
+            gf.write_text(
+                "#ifndef DFTRACER_GENERIC_FUNCTION_H\n"
+                "#define DFTRACER_GENERIC_FUNCTION_H\n\n"
+                + text
+                + "\n#endif  // DFTRACER_GENERIC_FUNCTION_H\n"
+            )
+            applied.append({
+                "patch": "generic_function.h:include-guard",
+                "applied": True,
+                "reason": "unguarded header -> 'redefinition of GenericFunction' "
+                          "when PAPI and HIP tracing are both enabled",
+            })
+        else:
+            applied.append({
+                "patch": "generic_function.h:include-guard",
+                "applied": False,
+                "reason": "guard already present (fixed upstream in d876823)",
+            })
+
+    return applied
+
+
 def _install_dftracer_pip_direct(
     dftracer_ref: str = "v2.0.3",
     features: Optional[Dict[str, Any]] = None,
@@ -823,6 +884,7 @@ def _install_dftracer_pip_direct(
     pip_env_override: Optional[Dict[str, str]] = None,
     ws: Optional[Path] = None,
     run_id: str = "",
+    dftracer_repo: str = "",
 ) -> Dict[str, Any]:
     """Install dftracer via pip with all setup.py env vars derived from detected features.
 
@@ -870,7 +932,38 @@ def _install_dftracer_pip_direct(
         ``pip_env`` (the env dict actually used, for diagnostics).
     """
     features = features or {}
+
+    # Hoisted deliberately. These aliases used to be imported inside individual
+    # feature branches (`_os` inside the HDF5 block, `_Path` further down in the
+    # OpenMPI block), which made them local-but-conditionally-bound for the WHOLE
+    # function. Any branch that used them without being preceded by its importing
+    # branch raised "cannot access local variable '_os' where it is not
+    # associated with a value". That is exactly what happened the first time
+    # hip=True was combined with hdf5=False: the HIP block reads
+    # _os.environ/_os.pathsep but only the HDF5 block imported `_os`, so
+    # disabling HDF5 broke HIP. Import once, unconditionally, so no ordering of
+    # feature flags can reintroduce this.
+    import os as _os
+    from pathlib import Path as _Path
+
     py = python_exe or sys.executable
+    # Which remote to install FROM. Feature branches under development live on
+    # LLNL's internal GitLab (LC-network-only) rather than the public GitHub
+    # mirror, so the repo has to be selectable alongside the ref.
+    repo_url = (dftracer_repo or "").strip() or _DFTRACER_DEFAULT_REPO
+    # A LOCAL directory is installed from as-is, with no clone and no checkout,
+    # so an in-progress fix in that working tree is what actually gets built.
+    # Cloning a local repo would silently install the last COMMIT instead and
+    # quietly drop uncommitted work -- the exact trap that makes "I fixed it but
+    # the build still fails" so confusing. Mirrors the existing local-brahma-fix
+    # workflow further down this function. `dftracer_ref` is ignored here: the
+    # tree's current checkout is the ref, by definition.
+    repo_is_local_dir = Path(repo_url).expanduser().is_dir()
+    if repo_is_local_dir:
+        repo_url = str(Path(repo_url).expanduser().resolve())
+        pip_spec = repo_url
+    else:
+        pip_spec = f"git+{repo_url}@{dftracer_ref}"
 
     # Never silently fall back to a bare system/module interpreter here: `py`
     # MUST be a path inside a real venv (pyvenv.cfg present in its
@@ -1122,6 +1215,67 @@ def _install_dftracer_pip_direct(
         if _rocm_prefix:
             _cur_cpp = pip_env.get("CMAKE_PREFIX_PATH", _os.environ.get("CMAKE_PREFIX_PATH", ""))
             pip_env["CMAKE_PREFIX_PATH"] = _rocm_prefix + (_os.pathsep + _cur_cpp if _cur_cpp else "")
+    if features.get("variorum"):
+        pip_env.setdefault("DFTRACER_ENABLE_VARIORUM", "ON")
+        # AUTO reuses an already-installed variorum; ALWAYS builds one from
+        # source regardless. Prefer ALWAYS on accelerator nodes: a distribution
+        # variorum is typically built for none of the machine's power domains
+        # and fails at RUN time with
+        #   _ERROR_VARIORUM_UNSUPPORTED_PLATFORM: Cannot set function pointers
+        # reporting no power at all. Nothing at build time can detect that, so
+        # the failure mode is a silent absence of power records rather than an
+        # error. Callers override via variorum_build.
+        pip_env.setdefault(
+            "DFTRACER_BUILD_VARIORUM",
+            (features.get("variorum_build") or "ALWAYS").upper(),
+        )
+        # Which power domains variorum compiles in is decided from the BUILD
+        # machine: the AMD GPU domain needs librocm_smi64 found via ROCM_PATH.
+        # Without ROCM_PATH set at configure time the GPU domain is silently
+        # left out and the build still succeeds -- so make sure it is exported.
+        _rocm_for_variorum = (features.get("rocm") or {}).get("path")
+        if _rocm_for_variorum:
+            pip_env.setdefault("ROCM_PATH", _rocm_for_variorum)
+    if features.get("papi"):
+        pip_env.setdefault("DFTRACER_ENABLE_PAPI_TRACING", "ON")
+        # dftracer's cmake/modules/FindPAPI.cmake resolves PAPI in this order:
+        # the PAPI_DIR/PAPI_INCDIR/PAPI_LIBDIR cache vars, then those same names
+        # read from the ENVIRONMENT, then pkg-config. Two traps on Cray systems:
+        #
+        #  1. The `papi/<ver>` modulefile does NOT export PAPI_DIR -- it exports
+        #     CRAY_PAPI_PREFIX and adds its lib64/pkgconfig to PKG_CONFIG_PATH.
+        #     So the env-var hints are empty unless we translate.
+        #  2. There is usually an ANCIENT distro PAPI in the default search path
+        #     (/usr/include/papi.h + /lib64/libpapi.so.5, i.e. PAPI 5.6). With no
+        #     hints, find_path/find_library happily resolve to THAT instead of the
+        #     loaded 7.x module, mixing a 5.x header with a 7.x runtime.
+        #
+        # Setting PAPI_DIR explicitly puts the intended prefix in HINTS, which
+        # find_path/find_library consult before the default system paths, so the
+        # module wins over the distro copy.
+        _papi_prefix = (features.get("papi_system") or {}).get("prefix") or ""
+        if not _papi_prefix:
+            for _pv in ("PAPI_DIR", "CRAY_PAPI_PREFIX", "PAPI_ROOT", "PAPI_HOME"):
+                _cand = _os.environ.get(_pv, "").strip()
+                if _cand and (_Path(_cand) / "include" / "papi.h").exists():
+                    _papi_prefix = _cand
+                    break
+        if _papi_prefix:
+            pip_env.setdefault("PAPI_DIR", _papi_prefix)
+            _cur_cpp = pip_env.get("CMAKE_PREFIX_PATH", _os.environ.get("CMAKE_PREFIX_PATH", ""))
+            pip_env["CMAKE_PREFIX_PATH"] = _papi_prefix + (_os.pathsep + _cur_cpp if _cur_cpp else "")
+            # The PAPI probe (cmake/probes/papi_probe.c) is try_run, not just
+            # try_compile -- cmake BUILDS AND EXECUTES it at configure time to
+            # enumerate which presets this CPU actually implements. It therefore
+            # needs libpapi resolvable at *runtime* during configure, or the probe
+            # exits non-zero and the build silently falls back to a portable
+            # default counter list instead of the machine's real set.
+            for _sub in ("lib64", "lib"):
+                _pl = _Path(_papi_prefix) / _sub
+                if _pl.is_dir():
+                    _cur_ld = pip_env.get("LD_LIBRARY_PATH", _os.environ.get("LD_LIBRARY_PATH", ""))
+                    pip_env["LD_LIBRARY_PATH"] = str(_pl) + (_os.pathsep + _cur_ld if _cur_ld else "")
+                    break
     if features.get("hwloc"):
         pip_env.setdefault("DFTRACER_DISABLE_HWLOC", "OFF")
 
@@ -1418,10 +1572,11 @@ def _install_dftracer_pip_direct(
         clone_dir = _Path(_tempfile.mkdtemp(prefix="dftracer_src_"))
         r_clone = _run(
             ["git", "clone", "--depth=1", "--branch", dftracer_ref,
-             "https://github.com/llnl/dftracer.git", str(clone_dir)],
+             repo_url, str(clone_dir)],
             timeout=600,
         )
         if r_clone["success"]:
+            _source_patches = _patch_dftracer_source(clone_dir)
             # Patch dftracer's main cmake: the MPI impl compile definition is
             # set via target_compile_definitions(dftracer_core ...) at line 527,
             # but dftracer_core is only created at line 722.  When cmake finds
@@ -1747,32 +1902,150 @@ bool MPIDFTracer::stop_trace = false;
             # will cause build failure if using OPENMPI 4.1.x, but nothing we can do)
             r = _run_pip_via_module_script(
                 py,
-                ["install", "-v", "--no-cache-dir", "--upgrade",
-                 f"git+https://github.com/llnl/dftracer.git@{dftracer_ref}"],
+                ["install", "-v", "--no-cache-dir", "--upgrade", pip_spec],
                 pip_env,
                 _install_modules,
                 ws=ws,
-                timeout=900,
+                timeout=1800,
                 env_script=_install_env_script,
             )
     else:
-        r = _run_pip_via_module_script(
-            py,
-            ["install", "-v", "--no-cache-dir", "--upgrade",
-             f"git+https://github.com/llnl/dftracer.git@{dftracer_ref}"],
-            pip_env,
-            _install_modules,
-            ws=ws,
-            timeout=900,
-            env_script=_install_env_script,
-        )
+        # Non-OpenMPI (e.g. Cray MPICH). This path used to pip-install straight
+        # from the git URL, which leaves NO opportunity to apply source patches
+        # -- so an upstream source defect was unfixable here even though the
+        # OpenMPI path above already had patch machinery. Clone first, patch,
+        # then install from the local tree; fall back to the direct git+ install
+        # if cloning fails (e.g. no network/credentials for the remote).
+        import tempfile as _tempfile3, shutil as _shutil3
+
+        def _pip_install_dftracer_from(target: str):
+            return _run_pip_via_module_script(
+                py,
+                ["install", "-v", "--no-cache-dir", "--upgrade", target],
+                pip_env,
+                _install_modules,
+                ws=ws,
+                timeout=1800,
+                env_script=_install_env_script,
+            )
+
+        _clone_dir2 = None
+        if repo_is_local_dir:
+            # Do NOT pip install the caller's directory directly, and do NOT
+            # copy it wholesale. Two reasons:
+            #   1. pip installing a path builds IN that tree, so a stale build/
+            #      from an earlier build makes the wheel step die with
+            #      "error: [Errno 39] Directory not empty:
+            #       build/bdist.linux-x86_64/wheel/dftracer" -- and it dirties
+            #      the user's working copy as a side effect of "install".
+            #   2. A dev tree is not small (116G observed, mostly build output),
+            #      so copytree is not an option either.
+            # Instead: clone the local repo (git hardlinks objects, so this is
+            # fast and tiny) and replay the uncommitted diff on top, so
+            # in-progress edits to tracked files are what gets built.
+            _clone_dir2 = _Path(_tempfile3.mkdtemp(prefix="dftracer_src_"))
+            _shutil3.rmtree(str(_clone_dir2), ignore_errors=True)
+            _r_clone2 = _run(
+                ["git", "clone", "--no-hardlinks", repo_url, str(_clone_dir2)],
+                timeout=900,
+            )
+            _source_patches = []
+            if _r_clone2["success"]:
+                # Match the source tree's exact checkout, so a detached HEAD or
+                # a non-default branch is reproduced rather than silently
+                # becoming the clone's default branch.
+                _head = _run(["git", "rev-parse", "HEAD"], cwd=_Path(repo_url))
+                _head_sha = (_head.get("stdout") or "").strip()
+                if _head_sha:
+                    _run(["git", "checkout", "--detach", _head_sha], cwd=_clone_dir2)
+                # Write the diff STRAIGHT to a file with subprocess rather than
+                # through _run(): _run strips leading/trailing whitespace from
+                # captured output, which eats the patch's final newline and makes
+                # `git apply` reject the whole thing with "corrupt patch at line
+                # N". A patch is binary-ish data, not a message -- never round it
+                # through a whitespace-normalising helper.
+                _patch_file = _clone_dir2 / ".dftracer_uncommitted.patch"
+                with open(_patch_file, "wb") as _pf:
+                    _diff_proc = subprocess.run(
+                        ["git", "diff", "HEAD", "--binary"],
+                        cwd=str(Path(repo_url)),
+                        stdout=_pf,
+                        stderr=subprocess.PIPE,
+                        timeout=300,
+                    )
+                _diff_bytes = _patch_file.stat().st_size
+                if _diff_proc.returncode == 0 and _diff_bytes > 0:
+                    _apply = _run(
+                        ["git", "apply", "--whitespace=nowarn",
+                         str(_patch_file)],
+                        cwd=_clone_dir2,
+                    )
+                    _patch_file.unlink(missing_ok=True)
+                    _source_patches.append({
+                        "patch": "local-tree uncommitted diff",
+                        "applied": bool(_apply["success"]),
+                        "reason": (
+                            f"replayed {_diff_bytes} bytes of uncommitted "
+                            f"changes from {repo_url}"
+                            if _apply["success"] else
+                            f"FAILED to apply uncommitted diff from {repo_url}: "
+                            f"{_apply.get('stderr', '')[:400]}"
+                        ),
+                    })
+                    if not _apply["success"]:
+                        # Building the committed state while the caller believes
+                        # their edit is in would be worse than failing loudly.
+                        _shutil3.rmtree(str(_clone_dir2), ignore_errors=True)
+                        return {
+                            "success": False,
+                            "steps": {"pip_install": _apply},
+                            "pip_env": pip_env,
+                            "source_patches": _source_patches,
+                        }
+                else:
+                    _patch_file.unlink(missing_ok=True)
+                _source_patches.extend(_patch_dftracer_source(_clone_dir2))
+                r = _pip_install_dftracer_from(str(_clone_dir2))
+            else:
+                _source_patches.append({
+                    "patch": "(none)", "applied": False,
+                    "reason": f"git clone of local tree {repo_url} failed: "
+                              f"{_r_clone2.get('stderr','')[:300]}",
+                })
+                r = _r_clone2
+            _shutil3.rmtree(str(_clone_dir2), ignore_errors=True)
+        else:
+            _clone_dir2 = _Path(_tempfile3.mkdtemp(prefix="dftracer_src_"))
+            _r_clone2 = _run(
+                ["git", "clone", "--depth=1", "--branch", dftracer_ref,
+                 repo_url, str(_clone_dir2)],
+                timeout=600,
+            )
+            if _r_clone2["success"]:
+                _source_patches = _patch_dftracer_source(_clone_dir2)
+                r = _pip_install_dftracer_from(str(_clone_dir2))
+            else:
+                _source_patches = [{
+                    "patch": "(none)", "applied": False,
+                    "reason": f"clone of {repo_url}@{dftracer_ref} failed; "
+                              f"installing directly with no source patches",
+                }]
+                r = _pip_install_dftracer_from(pip_spec)
+            _shutil3.rmtree(str(_clone_dir2), ignore_errors=True)
     if ws is not None:
         _write_artifact_log(ws, 6, "session_install_dftracer", {
             "python_exe": py,
+            "dftracer_repo": repo_url,
             "dftracer_ref": dftracer_ref,
+            "source_patches": locals().get("_source_patches", []),
             "pip_env": str(pip_env),
             "pip_install": r,
         }, run_id)
-    return {"success": r["success"], "steps": {"pip_install": r}, "pip_env": pip_env}
+    return {
+        "success": r["success"],
+        "steps": {"pip_install": r},
+        "pip_env": pip_env,
+        "source_patches": locals().get("_source_patches", []),
+    }
 
 

@@ -574,3 +574,112 @@ never at file/global scope. If app-parameter metadata annotation is placed
 at global scope (e.g. right after the `#include <dftracer/dftracer.h>`
 line, sibling to the constructor), move those calls inside the
 `__attribute__((constructor))` init function, after `DFTRACER_C_INIT`.
+
+## Two silent-failure modes in the clang annotator (2026-08-12, laghos/MFEM)
+
+Both produced a **green "annotation complete"** report on a file that was in
+fact left un-instrumented. Check for both explicitly — the tool's own counts are
+not evidence.
+
+### 1. A fatal clang parse error silently yields `functions: 0`
+
+C++ projects define the interesting work as out-of-line class methods
+(`void LagrangianHydroOperator::Mult(...)`). If clang cannot find a header, that
+is a **fatal** error which aborts the parse; the class declaration is never seen,
+so every method defined against it disappears from the AST. The extractor then
+legitimately finds nothing, and `clang_annotate_project` reported
+`status: ok, functions: 0, insertions: 1` (the 1 being the `#include`).
+Measured: 0 of 15 solver functions annotated.
+
+Two compounding causes, both now fixed in the tools:
+- No way to pass include paths → added `compile_flags` to
+  `clang_extract_functions` / `clang_annotate_file` / `clang_annotate_project`.
+- `clang_annotate_file` parses a **temp copy in the system temp dir**, which
+  discards the original directory, so *quoted* includes
+  (`#include "laghos_solver.hpp"`) cannot resolve → the tool now auto-adds
+  `-I<original file's dir>` and `-I<annotated/ root>`.
+- Both tools now return `status: "error"` (not `ok`) when clang reported a
+  `fatal error:` and zero functions were extracted.
+
+**Verify, always:** `grep -c DFTRACER_ <file>` per file after annotating, and
+sanity-check the count against the number of function definitions you expect.
+Beware `grep DFTRACER` alone: the inserted `#include <dftracer/dftracer.h>` is
+**lowercase**, so a case-sensitive grep for `DFTRACER` can report 0 on a file
+that did get the include — grep for the macros (`DFTRACER_CPP_`/`DFTRACER_C_`)
+to count real instrumentation.
+
+### 2. `FINI` inserted on only ONE exit path of `main` → zero app events
+
+The annotator put `REGION_END`+`FINI` at the first `return` it found in `main`
+and nowhere else. On any other exit — including the normal `return 0` — finalize
+never ran, the logger never flushed, and the trace contained **no `CPP_APP`
+events at all**.
+
+This is dangerous because the trace still looks populated: brahma's GOTCHA
+interception (`POSIX`/`STDIO`) and the PAPI sampler flush independently of the
+annotation logger, so you get a multi-MB trace with plausible I/O and counter
+activity and *no* application functions. Symptom to watch for: a trace whose
+categories include POSIX/STDIO/PAPI but where `CPP_APP` (or `C_APP`) is absent
+or tiny.
+
+Check the balance before building, and keep `FINI` before any `MPI_Finalize()`:
+
+```bash
+grep -n "REGION_START\|REGION_END\|_FINI\|_INIT" <entry>.cpp
+# then: every `return` inside main() needs END+FINI ahead of it
+```
+
+#### Root cause, and the fix (2026-08-13, found again on miniFE)
+
+The same bug reproduced verbatim on miniFE — `REGION_END`+`FINI` emitted *after*
+`return return_code;`, plus nothing at all on the early-exit path. Root-caused
+and **now fixed in `annotation_clang.py`**. Two compounding defects:
+
+1. **Teardown was detected by the literal symbol only.** The pre-scan matched
+   `\bMPI_Finalize\s*\(` and nothing else. Both laghos and miniFE call a
+   *wrapper* (`miniFE::finalize_mpi()`), so `_mpi_finalize_line` stayed `None`
+   and placement fell back to the closing brace — which is *after* the trailing
+   `return`, i.e. dead code. Same for startup: the early-exit END/FINI pass was
+   gated on `_mpi_init_line is not None`, and `miniFE::initialize_mpi(...)` never
+   matched `MPI_Init`, so that pass was skipped entirely. Both regexes now also
+   match `(initialize|init|setup|start)_mpi(...)` /
+   `(finalize|cleanup|shutdown|stop)_mpi(...)` and the `mpi_*` orderings.
+
+2. **Anchoring at the closing brace is only valid for a fall-through function.**
+   Insertions land immediately *before* the `}`, which is correct for a void
+   function but dead when the last statement is `return`. Added
+   `_falls_through(lines, close_brace_line)`, which walks up past blanks,
+   comments and preprocessor lines and reports whether the last executable
+   statement terminates (`return`/`exit`/`abort`/`throw`/`goto`/...).
+
+Placement is now: resolve **every** exit of `main()` to the nearest MPI teardown
+call above it with no other exit in between (keeping FINI before `MPI_Finalize`,
+lint rule L3), else to the exit itself; add a closing-brace anchor only when
+`_falls_through` is true. The same fall-through fix applies to regular C
+functions, where the old `if exits / else close-brace` split silently dropped
+the END on a function that *both* returns early and falls through.
+
+Verified against pristine miniFE `main.cpp`: the tool now selects exactly the two
+`miniFE::finalize_mpi()` lines and no closing-brace anchor — identical to the
+hand-fix that took a 16-rank run from 0 to 18,789 `CPP_APP` events.
+
+### 3. Template-only projects yield `functions: 0` legitimately
+
+Header-only / template-heavy C++ (miniFE, and any Kokkos- or Thrust-style code)
+puts the real work in `.hpp` templates that **cannot be parsed standalone**. The
+clang tools then return nothing for those files — correctly, but the effect is
+the same as a silent failure: `main.cpp` gets instrumented and the entire solver
+does not.
+
+Do not fight the tool here. Annotate template headers with an explicit,
+anchor-driven script (insert `DFTRACER_CPP_FUNCTION()` +
+`DFTRACER_CPP_FUNCTION_UPDATE("comp", ...)` after the function's opening brace),
+keep the anchor list in the session's `scripts/` so the placement is auditable,
+and be deliberate about which functions you *exclude* — per-element and
+per-timer-tick helpers will otherwise dominate the trace. See
+[[workload-minife]] for a worked example with its exclusion list.
+
+Substring anchors need care: an anchor of `exchange_externals(MatrixType& A,`
+also matches `begin_exchange_externals(MatrixType& A,`. Make the script
+idempotent (skip if the next line already has the macro) and print one line per
+insertion so the result can be reviewed.

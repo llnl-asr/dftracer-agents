@@ -1076,3 +1076,275 @@ for the full build log and the other unrelated fixes made in the same session.
   single-sample delta is never creditable here.
 - `rocm-smi --setperflevel high` remains admin-only on Tuolumne (no sudo) - not a usable
   L3 lever from inside a `flux run`.
+
+## PAPI: pin `papi/7.2.0.2`, NEVER the newest `papi/7.3.0.1` (2026-08-12, measured)
+
+`papi/7.3.0.1` — the newest available and what a "load the latest module" habit
+picks — **SIGSEGVs at `PAPI_library_init`** on this system. It ships a `rocp_sdk`
+component that `dlopen()`s `librocprofiler-sdk.so`, and it was built against a
+different rocprofiler-sdk than ROCm 6.4.2 provides (0.6.0):
+
+```
+E... agent.cpp:1226] size of rocprofiler agent struct used by caller is
+     ABI-incompatible with rocprofiler_agent_v0_t in rocprofiler
+Segmentation fault (core dumped)
+```
+
+This kills **any** process that initialises that PAPI, so it breaks both
+dftracer's build-time counter probe *and* the traced application at run time.
+
+Measured with dftracer's own `cmake/probes/papi_probe.c` on an MI300A node:
+
+| module | result |
+| --- | --- |
+| `papi/7.3.0.1` | **SIGSEGV** in `PAPI_library_init` |
+| **`papi/7.2.0.2`** (module default) | **30 presets**, 5 hw slots / 7 fitting |
+| `papi/7.1.0.4` | 30 presets |
+| `papi/7.0.1.2` | 19 presets |
+| `papi/6.0.0.16` | 23 presets |
+
+So `7.2.0.2` is both safe and the richest set — and it *does* include cache
+counters (`PAPI_L1_DCM`, `PAPI_L2_DCM/ICM/TCM`, `PAPI_L1_DCA`, TLB, branch,
+`PAPI_FP_OPS`/FMA/vector). Any documentation claiming MI300A exposes no cache
+presets was measured on an older/different PAPI.
+
+Two further PAPI notes on this site:
+
+- **Load `papi` LAST, on its own `module load` line.** `rocmcc` auto-replaces
+  `cce/20.0.0` and triggers a MODULEPATH change that reloads
+  `cray-libsci`/`cray-mpich`; loading `papi` in the *same* command as those gets
+  it silently dropped from the final module list, leaving `CRAY_PAPI_PREFIX`
+  empty with no error.
+- **The modulefile does not export `PAPI_DIR`**, only `CRAY_PAPI_PREFIX` (plus a
+  `pkgconfig` dir). dftracer's `FindPAPI.cmake` reads `PAPI_DIR` from the
+  environment, and the distro ships an ancient PAPI 5.6
+  (`/usr/include/papi.h` + `/lib64/libpapi.so.5`) that `find_path`/`find_library`
+  will otherwise resolve to — mixing a 5.x header with a 7.x runtime. Always
+  `export PAPI_DIR="${CRAY_PAPI_PREFIX}"`.
+
+## GPU profiling: `SYS_PERFMON` is denied, but kernel tracing still works (2026-08-12)
+
+Every ROCm-profiling process on these nodes logs, once per GPU:
+
+```
+W... ioctl.cpp:68] Device NNNNN could not be locked for profiling due to lack of
+     permissions (capability SYS_PERFMON). PMC Counters may be inaccurate and
+     System Counter Collection will be degraded.
+```
+
+This is a *warning*, and it is NOT a blanket denial of GPU profiling —
+`rocprofv3 --kernel-trace` on the same node captured 9,392 kernel rows fine. It
+degrades **PMC hardware counters** only. So do not conclude "GPU profiling is
+blocked here" from this message; test with `rocprofv3 --kernel-trace` before
+blaming the site.
+
+Consequence for cmake probes: `try_run()` merges stdout and stderr, so these
+warnings land in the captured probe output and corrupt any *positional* parsing
+of it. See [[workload-laghos]] and the dftracer PAPI-probe fix.
+
+## dftracer GPU tracing: `force_configure` cannot win the registration race (2026-08-13, FIXED)
+
+**Supersedes the "4 of 5 buffer-tracing kinds are broken under MPI, PAGE_MIGRATION
+works" section above.** That conclusion was wrong about the mechanism. The kinds
+were never individually broken and MPI/KFD was never the distinction — dftracer
+simply never got registered as a rocprofiler client at all.
+
+`HIPFunction::initialize()` registered via `rocprofiler_force_configure()` and
+**discarded the status**. On Cray PE + ROCm the load-time constructors of
+`librocprofiler-register` / `libamdhip64` / the Cray MPICH GTL bring rocprofiler up
+*before `main()` is entered*, so configuration is already locked by the time any
+application code runs — including `DFTRACER_CPP_INIT` as the literal first
+statement of `main`. The call returned
+`ROCPROFILER_STATUS_ERROR_CONFIGURATION_LOCKED (16)` on every run and GPU tracing
+silently collected nothing.
+
+Fix (in dftracer, `src/dftracer/core/function/hip/intercept.cpp`): export the
+supported global `rocprofiler_configure` symbol, which rocprofiler discovers by
+scanning loaded libraries and calls at the correct point in its own init. It
+returns `nullptr` unless `DFTRACER_ENABLE` is set, so merely linking dftracer does
+not turn a process into a profiling tool.
+
+After the fix, ALL FIVE kinds fire. Measured on Laghos at 4 nodes x 16 GPUs:
+`KERNEL_DISPATCH` 133,733, `HIP_RUNTIME_API` 46,150, `MEMORY_COPY` 32,
+`PAGE_MIGRATION` 16, `SCRATCH_MEMORY` 16.
+
+Diagnostic value: the whole thing was invisible for a full baseline because one
+return value was dropped. Check `rocprofiler_force_configure`'s status — a
+`CONFIGURATION_LOCKED` reading names both cause and fix immediately.
+
+## Reserve a core for `dftracer_service`, or Flux hangs the job forever (2026-08-13)
+
+An MI300A node has 96 cores. Requesting `-c 24` for 16 ranks over 4 nodes uses
+every core — and the `dftracer_service` daemon already holds 1 core per node. Flux
+then leaves the application job in state **`S` (pending) indefinitely**, waiting
+for cores the daemon holds. It does not fail, error, or time out; the run just
+never starts. Use `-c 23` (92 of 96 cores) so the daemon's core is available.
+
+Also: a detached `dftracer_service` **survives `flux cancel`** of the job that
+launched it. Its pid file persists and the next `start` refuses with
+"dftracer_service is already running on <host> (PID N) ... refusing to start a
+second instance", so the run proceeds with NO node counters. Always
+`dftracer_service stop <state_dir>` before `start`. The pid files live **flat** in
+the state dir as `dftracer_server_<hostname>.pid`, NOT in per-host subdirectories
+— a readiness poll globbing `<state_dir>/*/…` finds nothing and falls through.
+
+## Pin `dftracer_service` start / app / stop to the SAME hosts inside a shared allocation (2026-08-13)
+
+In an allocation larger than the job you are running, three separate
+`flux submit -N4` calls get three **different** 4-node subsets. Observed inside a
+32-node allocation while running a 4-node job:
+
+- `dftracer_service start` landed on `<nodeA>,<nodeB>,<nodeC>,<nodeD>`
+- the application landed on a different 4 nodes
+- `dftracer_service stop` landed on a third set
+
+Consequences, all silent: the daemons profiled nodes the application never ran on;
+`stop` reported `No running server found.` for nodes whose daemons it had not
+started; the un-stopped daemons kept running as orphans holding a core each; and
+their `service_<host>.pfw.gz` files stayed **0 bytes**, because the trace is only
+flushed on stop. Nothing errors — you get a complete-looking run with four empty
+node-counter traces.
+
+Pin every one of the three jobs to the same explicit hosts:
+
+```bash
+HOSTS=<nodeA>,<nodeB>,<nodeC>,<nodeD>
+REQ="--requires=host:$HOSTS"
+flux submit -N4 -n4 -c1 $REQ --setattr=exclusive=false "$DFT_BIN" start "$SVC_DIR"
+flux run    -N4 -n16 -g1 -c23 $REQ --setattr=exclusive=false ./app_launch.sh
+flux submit -N4 -n4 -c1 $REQ --setattr=exclusive=false "$DFT_BIN" stop  "$SVC_DIR"
+```
+
+Pick the hosts by first listing what is already busy — a shared allocation may be
+carrying someone else's job, and `flux resource list` shows the *cluster*, not the
+allocation's internal occupancy:
+
+```bash
+flux jobs -a --format="{id} {name} {status} {nnodes} {nodelist}" | grep RUN
+```
+
+Verifying afterwards: every `service_<host>.pfw.gz` must be non-empty and there
+must be exactly one per node in the job. A 0-byte service trace means a daemon was
+never stopped — find it with `ls $SVC_DIR/dftracer_server_*.pid` and stop it on its
+own host with `flux run -N1 -n1 -c1 --requires=host:<h> ... stop $SVC_DIR`.
+
+## `feature/papi-counter-tracing` is missing the PAPI-sampler teardown fix (2026-08-13)
+
+On `feature/papi-counter-tracing` with `DFTRACER_ENABLE_PAPI_TRACING=1`, 1-3 ranks
+of 16 segfault **after the application has finished all its work** — the science
+completes and prints correct results, then teardown crashes and those ranks' traces
+never flush. A different rank each run, so it is a race, not a fixed offender.
+
+Isolated by A/B on identical pinned hosts with identical arguments (miniFE
+`nx=768`, 4 nodes x 4 ranks):
+
+| Configuration | Result |
+| --- | --- |
+| annotated, PAPI on | SIGSEGV — 13/16, 14/16, 15/16 ranks flushed across three runs |
+| annotated, `DFTRACER_ENABLE_PAPI_TRACING=0` | clean, **16/16** |
+| pristine un-annotated binary | clean |
+| PAPI on, `DFTRACER_PAPI_EVENTS` cut to 5 fitting counters | still SIGSEGV (15/16) |
+
+So it is neither the annotation nor counter multiplexing. It is duration-dependent:
+the same binary and counter set at `nx=256` (17 s, 16 ranks) was clean at 16/16,
+while ~3-4 minute runs crash.
+
+**This is a KNOWN, already-root-caused bug -- not a new one.** `DFTracerCore::finalize()`
+stops the PAPI sampler AFTER `posix_instance->unbind()/finalize()`. The sampler runs on its
+own libuv timer thread and calls `PAPI_read()` each tick; PAPI reads its perf_event fd with
+`read(2)`, which dftracer's own brahma/GOTCHA wrapper intercepts, so the next sample dies in
+`gotcha_get_wrappee()`. Full backtrace and the fix (finalize the sampler BEFORE releasing
+the I/O bindings) are in the memory entry
+`bug-dftracer-rocprofiler-configure-race-and-papi-sampler-segv`.
+
+The fix simply **has not landed on `feature/papi-counter-tracing`**. A fresh install from
+that branch demonstrably carries the *other* fix from the same work -- `nm -D
+--defined-only libdftracer_core.so | grep rocprofiler_configure` shows the symbol exported
+and GPU tracing works -- while still reproducing this crash. Check the ordering in
+`DFTracerCore::finalize()` on whatever branch you install rather than assuming that PAPI
+support implies the fix.
+
+Workaround, pick per session: keep PAPI on and accept losing a few ranks' traces
+(the survivors are complete, and the run's science is unaffected), or set
+`DFTRACER_ENABLE_PAPI_TRACING=0` for a guaranteed full-rank trace with no hardware
+counters. **Always count zero-byte `*-app.pfw.gz` files after a PAPI run** — that
+count is the number of ranks you lost.
+
+## Two run-wrapper traps that fail SILENTLY (2026-08-13)
+
+**`GROUPS` is a special bash variable.** It holds the current user's group IDs
+(`id -G`). Assigning `GROUPS=("a|1" "b|2")` is **silently ignored** — no error,
+no warning — and a `for x in "${GROUPS[@]}"` loop then iterates over your GIDs.
+A run matrix built that way skips every entry and reports success:
+
+```
+DBG entry=[35619] NAME=[35619]     # these are GIDs, not run names
+```
+
+Name run-matrix arrays anything else (`PAPI_GROUPS`, `RUN_GROUPS`, ...). Other
+bash specials to avoid for the same reason: `SECONDS`, `LINENO`, `RANDOM`,
+`PIPESTATUS`, `BASH_*`, `UID`, `EUID`, `HOSTNAME`, `PWD`, `OLDPWD`.
+
+**The allocation may not be yours alone.** A 32-node allocation was carrying
+another session's `_sweep_laghos` job plus **12.5-hour-old orphaned
+`dftracer_service` daemons** on three of the four nodes that had been picked for
+pinning. `flux resource list` shows the *cluster*, not the allocation's internal
+occupancy. Before pinning hosts, list what is actually running inside it and pick
+free nodes:
+
+```bash
+flux proxy <alloc> flux jobs -a --format="{id} {name} {status} {nnodes} {nodelist}"
+flux proxy <alloc> flux jobs --filter=running -no "{nodelist}"   # subtract these
+```
+
+Orphaned daemons matter beyond stolen cores: they keep appending to
+`service_<host>.pfw.gz`, so a later run's node counters get mixed with hours of
+someone else's. That is how a service trace ends up spanning ~14 days. See
+[[bug-dftracer-service-hosts-must-be-pinned]].
+
+## Two `librocm_smi64` ABIs in one process = heap corruption at exit (2026-08-13, FIXED)
+
+Symptom: the app finishes all its work, prints correct results, then dies with
+
+```
+corrupted size vs. prev_size in fastbins
+Aborted (core dumped)          # exit 134
+```
+
+Deterministic, reproducible at 1 rank / `nx=64` in seconds, and **independent of every
+runtime flag** — it persisted with `DFTRACER_ENABLE_PAPI_TRACING=0` and with
+`DFTRACER_DISABLE_VARIORUM_POWER=1`, which is the tell: the cause is *linked*, not
+*executed*.
+
+Root cause: two different ABIs of the same library loaded simultaneously.
+
+```
+librocm_smi64.so.1 => /usr/lib64/hwloc/librocm_smi64.so.1     # hwloc's bundled copy
+librocm_smi64.so.7 => /opt/rocm-6.4.2/lib/librocm_smi64.so.7  # pulled in by variorum
+```
+
+Different SONAMEs, so the loader maps **both**, and they export **374 identical symbol
+names**. ELF interposition then routes every call into whichever copy is first in the
+lookup scope, while each library keeps its own internal state — so a structure allocated
+under one version's layout gets written or freed under the other's. That is textbook
+fastbins corruption.
+
+Variorum needs `librocm_smi64` for its AMD GPU power domain. As long as variorum is linked
+into `libdftracer_core` — which every application rank links — every traced app inherits
+the conflict.
+
+**Fix:** link variorum only into the service that actually calls it
+(`dftracer_service` / `_service_telemetry`), never into the core. Verify:
+
+```bash
+ldd <prefix>/lib64/libdftracer_core.so | grep -c rocm_smi   # must be 0 or 1, never 2
+ldd <app-binary>                       | grep -c rocm_smi   # must be 1
+```
+
+Note the service binary legitimately still links both (it needs variorum), so the same
+hazard remains *inside the service process* — watch for it if service traces ever come
+back short.
+
+**Generalises:** any time `ldd` shows the same library name at two different SONAME
+versions, treat it as a live heap-corruption risk, not cosmetic. `nm -D --defined-only`
+on both and comparing exported symbols tells you in seconds whether they can collide.
