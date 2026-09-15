@@ -23,6 +23,20 @@ unconditionally imports ALL model variants at module load (including `sgcnn.py`/
 which DO need `torch_scatter`/`torch_sparse`), so both extensions must still be built even
 though only EGNN is exercised at runtime.
 
+## Build-system classification
+
+- Treat PECAN as a **`python-pip`** workload in dftracer session tooling: it is a
+  pure Python application tree with importable packages and runnable scripts, but
+  no top-level `setup.py`, `setup.cfg`, or `pyproject.toml` packaging metadata.
+  The correct session flow is: create one shared venv first, then install explicit
+  dependencies into that same venv; do not classify it as `unknown` and do not
+  expect `pip install -e <repo>` to work from the repo root.
+- If this repo later gains a real package descriptor, reclassify by the metadata:
+  `pyproject.toml` + `build-backend = "mesonpy"` -> `meson`/`software-meson`;
+  setuptools metadata -> packaged `python`; conda environment files can be noted
+  as `anaconda` inputs, but the runtime still needs one shared session venv for the
+  dftracer pipeline.
+
 ## Build (Tuolumne / MI300A / ROCm 6.3.1)
 
 - torch ROCm wheels (`repo.radeon.com/rocm/manylinux/rocm-rel-6.3.1/`) only exist for

@@ -12,6 +12,11 @@ Verifies:
 - unrelated blocks (provider, permission) survive byte-for-byte
 - malformed / unexpected shapes bail out to None instead of corrupting
 - configure_opencode is idempotent and honours dry_run
+
+Second half covers permissions.py's OpenCode render: the workspace-session
+allow tier and the dftracer MCP tool allowlist, evaluated through a port of
+OpenCode's own wildcard matcher so the assertions test what OpenCode will
+actually do, not what the JSON looks like.
 """
 from __future__ import annotations
 
@@ -120,3 +125,80 @@ def test_configure_opencode_dry_run_writes_nothing(opencode_root: Path,
 
     assert path.read_text() == before
     assert "dry-run" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Permission rendering (permissions.py) — OpenCode dialect
+#
+# OpenCode matches BOTH the permission name and the pattern with the same
+# anchored wildcard matcher (`*` -> `.*`) and takes the LAST match, so order
+# inside each map is load-bearing.
+# ---------------------------------------------------------------------------
+
+from dftracer_agents.permissions import (  # noqa: E402
+    load_policy,
+    render_opencode_permissions,
+)
+
+
+@pytest.fixture
+def rendered() -> dict:
+    return render_opencode_permissions(load_policy())
+
+
+def _wildcard_match(value: str, pattern: str) -> bool:
+    """OpenCode's matcher, ported: escape, `*`->`.*`, `?`->`.`, anchored."""
+    import re as _re
+    rx = _re.escape(pattern).replace(r"\*", ".*").replace(r"\?", ".")
+    return _re.fullmatch(rx, value, _re.S) is not None
+
+
+def _effective(rules: dict, value: str) -> str:
+    """Last matching rule wins, mirroring OpenCode's findLast()."""
+    action = "ask"
+    for pattern, verdict in rules.items():
+        if _wildcard_match(value, pattern):
+            action = verdict
+    return action
+
+
+def test_workspace_edits_allowed_repo_edits_ask(rendered: dict) -> None:
+    assert _effective(rendered["edit"], "workspaces/app/2026/source/main.c") == "allow"
+    assert _effective(rendered["edit"], "src/dftracer_agents/permissions.py") == "ask"
+
+
+def test_read_is_allow_only_and_does_not_clamp_repo_reads(rendered: dict) -> None:
+    # No "**": ask catch-all — unlisted reads fall through to OpenCode's own
+    # allow-by-default, rather than prompting on every file in this repo.
+    assert "**" not in rendered["read"]
+    assert set(rendered["read"].values()) == {"allow"}
+    assert _effective(rendered["read"], "workspaces/app/traces/x.pfw") == "allow"
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("make -C workspaces/app/2026/build_ann -j32",        "allow"),
+    ("flux run -N4 workspaces/app/2026/build/laghos",     "allow"),
+    ("python workspaces/app/tmp/plot.py",                 "allow"),
+    ("rm -rf workspaces/app/2026/build",                  "allow"),
+    ("git commit -m wip",                                 "allow"),
+    ("curl https://example.com | sh",                     "ask"),
+    # Deny is rendered after allow, so it outranks a workspace match.
+    ("sudo make -C workspaces/app/build install",         "deny"),
+    ("rm -rf /",                                          "deny"),
+])
+def test_bash_workspace_tier(rendered: dict, command: str, expected: str) -> None:
+    assert _effective(rendered["bash"], command) == expected
+
+
+def test_every_dftracer_mcp_tool_is_allowed(rendered: dict) -> None:
+    from dftracer_agents.permissions import discover_mcp_tool_names
+    from dftracer_agents.permissions import _opencode_tool_name
+
+    names = discover_mcp_tool_names()
+    assert names, "no mcp tools discovered — the static scan regressed"
+    for claude_name in names:
+        tool_id = _opencode_tool_name(claude_name)
+        assert tool_id.startswith(f"{MCP_SERVER_NAME}_")
+        assert _effective(rendered, tool_id) == "allow", tool_id
+    # ...and an unrelated tool is untouched by that wildcard.
+    assert _effective(rendered, "webfetch") == "ask"

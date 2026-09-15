@@ -2,7 +2,6 @@ name: dftracer-annotate-python
 description: Annotates Python files with dftracer decorators and entry-point handling.
 model_level: level_1
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

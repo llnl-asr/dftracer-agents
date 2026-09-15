@@ -1130,7 +1130,8 @@ def _detect_info(
               ``["c", "cpp", "python"]``.  Order reflects discovery order, not
               priority.
             - ``build_tool`` (str): One of ``"cmake"``, ``"autotools"``,
-              ``"meson"``, ``"python"``, ``"make"``, or ``"unknown"``.
+              ``"meson"``, ``"python"``, ``"python-pip"``, ``"anaconda"``,
+              ``"make"``, or ``"unknown"``.
             - ``features`` (Dict[str, Any]): Feature flags and HDF5 probe
               results.  Keys: ``"mpi"`` (bool), ``"python"`` (bool),
               ``"hdf5"`` (bool), ``"hdf5_in_source"`` (bool),
@@ -1176,8 +1177,16 @@ def _detect_info(
         build_tool = "autotools"
     elif "meson.build" in root_names:
         build_tool = "meson"
+    elif root_names & {"environment.yml", "environment.yaml", "conda.yml", "conda.yaml"}:
+        build_tool = "anaconda"
     elif root_names & {"setup.py", "pyproject.toml", "setup.cfg"}:
         build_tool = "python"
+    elif "python" in languages:
+        # Pure Python application trees often have no packaging metadata at the
+        # repo root (just entry scripts plus importable packages). Treat these
+        # as pip-managed workloads rather than "unknown" so the session tools
+        # can create a venv and install explicit dependencies into it.
+        build_tool = "python-pip"
     elif root_names & {"Makefile", "makefile", "GNUmakefile"}:
         build_tool = "make"
     else:

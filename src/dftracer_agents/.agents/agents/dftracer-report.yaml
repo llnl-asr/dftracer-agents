@@ -6,7 +6,6 @@ description: >-
   to memory (memory_write), and runs the privacy scan/redact until clean.
 model_level: level_3
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

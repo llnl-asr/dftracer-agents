@@ -2,7 +2,6 @@ name: dftracer-validate-python
 description: 'Validates an annotated Python tree: every I/O, checkpoint, and collective-comm function is decorated, initialize_log/finalize exist, app-parameter metadata is emitted, and cost-gated skips are justified.'
 model_level: level_2
 effort: medium
-isolation: worktree
 tools:
 - Read
 - Bash

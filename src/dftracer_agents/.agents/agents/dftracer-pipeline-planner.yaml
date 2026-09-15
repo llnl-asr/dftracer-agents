@@ -2,7 +2,6 @@ name: dftracer-pipeline-planner
 description: "Plans a complete dftracer run in detail against an ALREADY-CREATED session, then writes a sectioned execution plan into that session and hands a short summary back to the main thread. Use this FIRST (after the session exists) for any full pipeline request. It does not execute pipeline steps itself \u2014 the main thread dispatches each step to the executor subagent this planner names, and each step agent loads its own section from the written plan."
 model_level: level_2
 effort: low
-isolation: worktree
 tools:
 - Read
 - Grep

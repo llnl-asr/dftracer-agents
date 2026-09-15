@@ -67,7 +67,15 @@ _GRAPHIFYIGNORE_MARK = "# dftracer-agents: re-include the knowledge-graph stage"
 _GRAPHIFYIGNORE_BODY = f"""{_GRAPHIFYIGNORE_MARK}
 # graphify honours .gitignore; the stage lives under a gitignored workspaces/
 # directory and would otherwise report "No code files found".
+#
+# `!workspaces/` re-includes the DIRECTORY so traversal can descend into it.
+# On its own it also re-includes everything under it -- every session, every
+# trace, every copied source tree. That is ~88 GB on a working checkout, and a
+# single graph_query over it was measured at 179 SECONDS, three quarters of a
+# pipeline step's tool time. So exclude the contents, then re-include only the
+# stage.
 !workspaces/
+workspaces/*
 !workspaces/_graph/
 !workspaces/_graph/**
 """

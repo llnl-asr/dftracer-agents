@@ -17,8 +17,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-VENV="$REPO_ROOT/venv"
+# Two levels up: this script lives in src/dftracer_agents/, so one level
+# lands on src/, where no venv exists.
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+VENV="$REPO_ROOT/.venv"
+[[ -d "$VENV" ]] || VENV="$REPO_ROOT/venv"
 PID_FILE="/tmp/dftracer-agents.pid"
 LOG_FILE="/tmp/mcp_server.log"
 PORT="${MCP_PORT:-5000}"

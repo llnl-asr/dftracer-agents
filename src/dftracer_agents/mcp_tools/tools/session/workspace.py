@@ -496,3 +496,45 @@ def _run(
         return {"returncode": -1, "stdout": "", "stderr": "Command timed out", "success": False}
     except Exception as exc:
         return {"returncode": -1, "stdout": "", "stderr": str(exc), "success": False}
+
+
+def _autoreconf_bootstrap(src: Path, timeout: int = 120) -> Dict[str, Any]:
+    """Run ``autoreconf -fi`` for a project whose ``configure`` is missing.
+
+    Adds ``-I <dir>`` for any of ``config/``/``m4/`` that hold custom
+    macros (e.g. IOR's ``X_AC_META``). If ``configure.ac`` pins
+    ``AC_PREREQ`` higher than the system's autoconf — a common mismatch on
+    HPC systems that ship an older autoconf — retries once after lowering
+    ``AC_PREREQ`` to match the installed version, mirroring the manual fix
+    previously required by hand (see the workload-ior skill).
+    """
+    aclocal_dirs = [d for d in ("config", "m4") if (src / d).is_dir()]
+    cmd = ["autoreconf", "-fi"]
+    for d in aclocal_dirs:
+        cmd += ["-I", d]
+    r_boot = _run(cmd, cwd=src, timeout=timeout)
+    if r_boot["success"]:
+        return r_boot
+
+    combined = r_boot.get("stdout", "") + r_boot.get("stderr", "")
+    m = re.search(r"Autoconf version ([\d.]+) or higher is required", combined)
+    if not m:
+        return r_boot
+
+    sys_ver_r = _run(["autoconf", "--version"], timeout=10)
+    sys_ver_m = re.search(r"(\d+\.\d+)", sys_ver_r.get("stdout", ""))
+    if not sys_ver_m:
+        return r_boot
+
+    configure_ac = src / "configure.ac"
+    text = configure_ac.read_text()
+    patched = re.sub(
+        r"AC_PREREQ\(\[[\d.]+\]\)",
+        f"AC_PREREQ([{sys_ver_m.group(1)}])",
+        text,
+    )
+    if patched == text:
+        return r_boot
+
+    configure_ac.write_text(patched)
+    return _run(cmd, cwd=src, timeout=timeout)

@@ -2,7 +2,6 @@ name: dftracer-build-smoke
 description: 'Pipeline stage 3. Builds the annotated source with dftracer linked and runs a single-process smoke test to confirm the instrumented binary works. Mechanical, cheap. Invoke with: run_id, smoke command, subfolder, and any extra build flags. Escalates non-annotation build/runtime failures rather than guessing.'
 model_level: level_3
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

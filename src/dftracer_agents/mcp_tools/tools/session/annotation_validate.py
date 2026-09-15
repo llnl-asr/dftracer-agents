@@ -336,6 +336,51 @@ def _validate_python(path: Path) -> Dict[str, Any]:
             "has_metadata": _MARKER in text or "log_metadata_event" in text}
 
 
+#: Real function-call syntax: the identifier immediately followed by a `(`
+#: (whitespace allowed between), bounded by word boundaries on both sides so
+#: e.g. ``is_open``, ``obj_read.err``, ``update_write_memory_pattern`` (the
+#: substring inside a longer identifier) and ``.open = X`` (a struct
+#: designated-initializer field, no following `(`) never match. This is
+#: still not a full parser, but it is enough to reject the identifier/
+#: comment/string-literal/struct-field collisions that made every one of
+#: IOR's 14 "critical I/O flow not annotated" findings a false positive
+#: (see workload-ior lesson, session ior/20260911_033625).
+_C_CRITICAL_CALL_RE = re.compile(
+    r"\b(" + "|".join(re.escape(c) for c in _C_CRITICAL) + r")\s*\("
+)
+
+
+def _strip_c_comment(line: str, in_block_comment: bool) -> tuple:
+    """Blank out // and /* */ comment text so it can't match as a call.
+
+    Not string-literal aware (a ``"//"`` inside a quoted string would still
+    be treated as a comment start) — acceptable for this coarse check, which
+    only needs to stop matching comment TEXT, not achieve full C lexing.
+    Returns (line_with_comments_blanked, still_in_block_comment).
+    """
+    out = []
+    i = 0
+    n = len(line)
+    while i < n:
+        if in_block_comment:
+            end = line.find("*/", i)
+            if end == -1:
+                i = n
+            else:
+                in_block_comment = False
+                i = end + 2
+            continue
+        if line[i:i + 2] == "//":
+            break
+        if line[i:i + 2] == "/*":
+            in_block_comment = True
+            i += 2
+            continue
+        out.append(line[i])
+        i += 1
+    return "".join(out), in_block_comment
+
+
 def _validate_c_like(path: Path, cpp: bool) -> Dict[str, Any]:
     text = path.read_text(errors="ignore")
     lines = text.splitlines()
@@ -344,20 +389,33 @@ def _validate_c_like(path: Path, cpp: bool) -> Dict[str, Any]:
 
     # Coarse but reliable: a function body containing a critical call must
     # contain the function macro somewhere above the call in the same file.
+    # Brace depth is tracked (comment-stripped) so cur_fn is cleared at the
+    # function's own closing brace instead of leaking into the comments/
+    # struct-literals/next function's signature that follow it — the prior
+    # "nearest preceding function-start line" attribution misattributed
+    # matches in that gap to the wrong function entirely.
     fn_re = re.compile(r"^[A-Za-z_][\w\s\*]*\b(\w+)\s*\([^;]*\)\s*\{")
     cur_fn, cur_start, annotated = None, 0, False
-    for i, line in enumerate(lines):
+    depth = 0
+    in_block_comment = False
+    for i, raw_line in enumerate(lines):
+        line, in_block_comment = _strip_c_comment(raw_line, in_block_comment)
         m = fn_re.match(line)
         if m:
             cur_fn, cur_start, annotated = m.group(1), i, False
-        if cur_fn and marker in line:
-            annotated = True
-        if cur_fn and any(c in line for c in _C_CRITICAL) and not annotated:
-            call = next(c for c in _C_CRITICAL if c in line)
-            findings.append({"function": cur_fn, "line": str(i + 1),
-                             "issue": "critical I/O flow not annotated",
-                             "calls": call})
-            cur_fn = None  # report once per function
+            depth = 0
+        if cur_fn:
+            depth += line.count("{") - line.count("}")
+            if marker in line:
+                annotated = True
+            call_m = _C_CRITICAL_CALL_RE.search(line) if not annotated else None
+            if call_m:
+                findings.append({"function": cur_fn, "line": str(i + 1),
+                                 "issue": "critical I/O flow not annotated",
+                                 "calls": call_m.group(1)})
+                cur_fn = None  # report once per function
+            elif depth <= 0 and i > cur_start:
+                cur_fn = None  # left the function body; stop attributing to it
 
     init = "DFTRACER_CPP_INIT" if cpp else "DFTRACER_C_INIT"
     fini = "DFTRACER_CPP_FINI" if cpp else "DFTRACER_C_FINI"

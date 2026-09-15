@@ -82,6 +82,50 @@ Experimental (available but less battle-tested): `dgrep`, `dparallel`, `dsh`, `d
    count if `dwalk` showed it's genuinely huge (>10M files or >10TB).
 3. **Verify, don't assume** — `dcmp` after a `dcp`/`dsync`, `quota -v` or `du -sh` after a
    `drm`. Job exit code 0 is necessary but not sufficient evidence of correctness at this scale.
+   For the copy-verification step itself, do NOT compare `du` totals — see the next section.
+
+## Never verify a cross-filesystem copy by comparing `du` (2026-08-27, measured)
+
+**Symptom.** A verified move (copy → compare → delete source) reported a byte mismatch on
+*every* directory even though file counts matched exactly, so nothing was ever deleted:
+
+```
+FAIL verify .../ygm_bench_4n/traces   files:96/96      bytes:69681208681/69681196393
+FAIL verify .../h5bench/baseline      files:86167/86167 bytes:42640987464/42529817928
+```
+
+**Root cause.** `du -sb --apparent-size` sums **directory inodes as well as file data**, and
+different filesystems report directory sizes differently. The same 2-directory tree read
+20480 bytes on the NFS workspace and 8192 bytes on the VAST target — a 12288-byte phantom
+delta. It scales with directory count, not data: a tree with 1756 directories showed a
+111 MB phantom delta. The file data was byte-identical in every case.
+
+**Fix — compare regular-file bytes only, then let rsync do the per-file check:**
+
+```bash
+filebytes() { find "$1" -type f -printf '%s\n' | awk '{s+=$1} END{print s+0}'; }
+
+[ "$(filebytes "$src")" = "$(filebytes "$dst")" ]          # data bytes, no dir inodes
+[ "$(find "$src" -type f | wc -l)" = "$(find "$dst" -type f | wc -l)" ]
+[ "$(rsync -a --dry-run --itemize-changes "$src/" "$dst/" \
+       | grep -cE '^[<>ch]')" = 0 ]                        # per-file size+mtime, 0 = clean
+```
+
+The `rsync --dry-run --itemize-changes` pass is the strongest of the three and the one worth
+keeping: it compares **every file individually** against the still-present source, so a
+partial or truncated transfer shows up as a pending transfer. `dcmp` is the mpifileutils
+equivalent and is preferable at genuine scale.
+
+**How to apply.**
+- Never gate a delete on a `du` comparison across two different filesystems.
+- Always run the verification **while the source still exists**, and delete only after it
+  passes — a verifier that fails safe (source kept) costs one re-run; one that fails open
+  costs the data.
+- Expect the first verification pass to be the thing that's wrong, not the data. Diagnose a
+  mismatch before "fixing" it by loosening the check.
+- Pre-existing file corruption (e.g. traces truncated by a killed run) surfaces at the
+  destination and reads like the copy broke it. Distinguish the two *before* deleting the
+  source — see [[dftracer-trace-utils]].
 
 ## Restriction: `drm` never targets the session workspace
 

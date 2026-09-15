@@ -33,6 +33,26 @@ paths:
   - glob: "src/dftracer_agents/.agents/skills/**"
     mode: allow
 
+# Which tools take a filesystem PATH as their permission pattern, and how the
+# `paths` tiers above are rendered onto each. Verified against OpenCode's own
+# ask() call sites: read/edit ask with a worktree-relative path, so a path
+# glob matches. glob/grep are deliberately absent — they ask with the *search*
+# pattern ("**/*.py", "TODO"), never a path, so a path glob there would never
+# match and would only look like coverage we do not have. list/write have no
+# ask site of their own. Claude ignores this key (its dialect is Edit(...)/
+# Write(...) actions, rendered from `paths` directly).
+#
+#   tiers       every entry, catch-all included — the full write policy
+#   allow_only  just the `mode: allow` entries; anything unlisted falls
+#               through to OpenCode's own default for that tool
+path_scoped_tools:
+  edit: tiers
+  # allow_only, NOT tiers: OpenCode reads are allow-by-default (bar *.env), so
+  # rendering the "**": ask catch-all here would make every read of this repo's
+  # own source prompt. The workspace tier is about letting session work run
+  # unattended, not about clamping down on reading.
+  read: allow_only
+
 # Outside the project root: never. Rendered as Write(...) deny entries for
 # claude; opencode has no path outside the project's own tree to speak of
 # under its edit tool, so this only affects claude's render.
@@ -58,6 +78,17 @@ bash:
     - "find /tmp*"
     - "find /opt*"
   allow:
+    # Any command that operates on a session workspace — the Permission Tiers
+    # table's "workspaces/<session>/ = Auto, run freely" tier. OpenCode matches
+    # a bash rule against the whole command string (`*` -> `.*`, anchored), so
+    # this covers `make -C workspaces/...`, `flux run ... workspaces/...`, and
+    # the enumerated cases below alike. The deny list is rendered AFTER this
+    # and last match wins, so `sudo ... workspaces/...` is still denied.
+    #
+    # Caveat, deliberately not papered over: a command whose cwd is inside the
+    # session but whose text never says "workspaces/" cannot match this — bash
+    # rules see the command, not the cwd. Those still prompt.
+    - "* workspaces/*"
     - "git add src/dftracer_agents/.agents/skills/*"
     - "git commit *"
     - "ls workspaces/*"
@@ -73,4 +104,17 @@ bash:
 # "all_dftracer": every mcp__dftracer__<tool> the MCP server registers,
 # discovered by permissions.py statically scanning mcp_tools/tools/**/*.py
 # for @mcp.tool() defs rather than hand-maintained (which drifts).
+#
+# Rendered per harness, because the two dialects name MCP tools differently:
+#   claude   -> the discovered `mcp__dftracer__<tool>` names, listed in
+#               permissions.allow one by one
+#   opencode -> a single `dftracer_*: allow` key. OpenCode's own tool id is
+#               `sanitize(server) + "_" + sanitize(tool)` and it matches a
+#               permission NAME with the same anchored wildcard matcher it
+#               uses for patterns, so the glob covers every tool exactly.
+#               NOTE: as of OpenCode 1.18.18 only builtin tools have ask()
+#               call sites — MCP tool calls are not permission-gated at all,
+#               so this key is a schema-valid statement of intent that has no
+#               effect today. It costs nothing and starts working the moment
+#               OpenCode adds a gate or we add a catch-all deny.
 mcp_tools: all_dftracer

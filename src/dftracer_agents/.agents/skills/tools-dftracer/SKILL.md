@@ -87,6 +87,47 @@ and it already knows the CMake two-pass dependency-bootstrap quirk, see
    not guarantee it: `ldd <prefix>/lib64/libdftracer_core.so | grep -i mpi`
    must show exactly one `libmpi`, not zero.
 
+   **PAPI and Variorum exist ONLY on czgitlab, and asking GitHub for them fails
+   SILENTLY.** The public GitHub `develop` branch (seen as package version
+   2.0.3) has no `DFTRACER_ENABLE_PAPI_TRACING` / `DFTRACER_ENABLE_VARIORUM`
+   option at all. CMake therefore discards both as
+   `CMake Warning (unused-cli): Manually-specified variables were not used by
+   the project`, the build succeeds, and `session_install_dftracer` still
+   returns `status: ok` with
+   `features=['mpi', 'papi', 'variorum', 'hwloc']` — the tool reports what it
+   *requested*, not what was *compiled*. The installed
+   `dftracer_config.hpp` then contains **no `DFTRACER_PAPI_TRACING_ENABLE` and
+   no `DFTRACER_VARIORUM_ENABLE` line at all** (not even as `/* #undef ... */`,
+   because the `#cmakedefine` is absent from that branch's template), and the
+   run produces zero `papi` and zero power events with no error.
+
+   So for any PAPI or Variorum session you MUST pass
+   `dftracer_repo="ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git"`
+   and then verify **in the installed header**, never in the tool's response:
+
+   ```bash
+   CFG=<prefix>/include/dftracer/core/dftracer_config.hpp
+   grep -E "PAPI_TRACING_ENABLE|VARIORUM_ENABLE|MPI_ENABLE|HIP_TRACING_ENABLE" $CFG
+   # want: #define DFTRACER_PAPI_TRACING_ENABLE 1
+   #       #define DFTRACER_VARIORUM_ENABLE 1
+   ```
+
+   A correct czgitlab build also prints, in the install log,
+   `-- [DFTRACER] found PAPI at ...`, `-- [DFTRACER] detected N PAPI counters
+   (M fit in K hardware slots...)` and `-- [DFTRACER] variorum power domains to
+   build: ...`. Absence of those three lines means the feature is not in.
+
+   Linkage check, which doubles as the regression test for
+   [[bug-dftracer-variorum-linked-into-app-heap-corruption]]:
+   `libvariorum` must appear in `ldd <prefix>/bin/dftracer_service` and must
+   **NOT** appear in `ldd <prefix>/lib64/libdftracer_core.so` (nor in any
+   traced application binary). `libpapi` correctly appears in both.
+
+   Reinstalling over a previous dftracer leaves a stale cmake/brahma tree, so
+   remove the session venv first (`session_remove_path(relpath="venv",
+   recursive=True)`) rather than reinstalling in place — see
+   [[bug-dftracer-stale-brahma-after-pip-uninstall]].
+
 Prefer `session_install_dftracer` (the MCP tool) for sources 1-2 and 4 — check
 what it actually does before assuming; it may already default to
 develop-branch pip install with the CMake two-pass bootstrap baked in, and may
@@ -290,3 +331,91 @@ the prerelease wheel, not something to patch per-project each time — worth
 fixing at the distribution level (ship correct `IMPORTED_LOCATION` paths, drop
 the hard `brahma` requirement for FUNCTION-only consumers, package
 `cpp-logger` headers).
+
+---
+
+## dftracer_service: two failure modes that leave a 0-byte trace and no error
+
+Both were found on an Intel 2-socket / Slurm system while running the
+node-counter service alongside every application launch. In both cases the
+service *looks* like it started correctly — `start` returns 0, the pid file
+appears — and the trace file is created but stays **0 bytes forever**.
+
+### 1. variorum calls `exit()` and kills the whole daemon when the service is pinned to one core
+
+The standing rule is to run one `dftracer_service` per node **pinned to a
+single core** (`-N n -n n -c1`) so it does not compete with application ranks —
+see `feedback-dftracer-service-node-counters`. On a **two-socket** node that
+combination is fatal to a variorum-enabled build:
+
+```
+variorum/config_architecture.c:296 hwloc reports the number of cores (1) mod
+the number of sockets (2) is not zero.  Something is amiss.  Exiting.
+```
+
+variorum's init does not return an error — it calls `exit()`, terminating the
+entire `dftracer_service` process. The pid file has already been written by
+that point, so **every liveness check that counts pid files passes** while the
+daemon is gone and its trace never grows.
+
+**Symptom → cause → fix**
+
+| | |
+|---|---|
+| symptom | service trace `service_<host>.pfw.gz` is 0 bytes; pid file present; `start` returned 0 |
+| check | `cat <log_dir>/dftracer_server_<host>.err` — the variorum message is the only evidence |
+| fix | `export DFTRACER_DISABLE_VARIORUM_POWER=1` in the service environment |
+| alternative | give the service ≥1 core per socket (`-c2` on a 2-socket node) so `cores mod sockets == 0` |
+
+Disabling is usually the right call: on a machine where variorum cannot read
+power anyway (root-only `/dev/cpu/*/msr`, no `msr_safe`), it is pure downside.
+Verify a build's variorum linkage with
+`ldd $(which dftracer_service) | grep variorum`.
+
+### 2. `stop` returns before the daemon has flushed — the job step then reaps it
+
+`dftracer_service stop` sends **SIGINT and returns immediately** ("Sent SIGINT
+to server (PID …)"). The daemon flushes and gzips its buffer **asynchronously**
+after that. If `stop` is the last command in a Flux/Slurm job step, the step
+ends, the scheduler tears down the step's cgroup, and the daemon is killed
+mid-flush — leaving a 0-byte trace with no error anywhere.
+
+This is why a quick interactive test "works" (there is usually a `sleep` after
+`stop`) while the same sequence inside an automated sweep does not.
+
+**Do not use a fixed `sleep`** — it is a race either way. Hold the step open
+until the trace is actually non-empty:
+
+```bash
+"$DFT_SVC_BIN" stop "$DFT_SVC_DIR"
+T="${DFTRACER_LOG_FILE}_$(hostname).pfw.gz"
+for _i in $(seq 1 60); do [ -s "$T" ] && break; sleep 1; done
+[ -s "$T" ] || echo "WARN: service trace $T still empty after 60s" >&2
+```
+
+Relatedly, on Slurm the daemon is a child of its job **step**, so a
+fire-and-forget `srun … dftracer_service start` has the daemon reaped the
+moment that step exits. The service must run as a **long-lived step** that
+starts the daemon, waits for a stop signal (e.g. a flag file), stops it, and
+waits for the flush — with the application launched as a separate `--overlap`
+step on the same `--nodelist`.
+
+---
+
+## dftracer_merge: does not recurse, and rejects a `.pfw.gz` output name
+
+`dftracer_merge` is the compaction tool (there is no `dftracer_compact` in
+current builds). Two sharp edges:
+
+* **`-d <dir>` is not recursive.** It only sees `*.pfw`/`*.pfw.gz` directly in
+  that directory. Pointing it at a tree whose traces live one level down fails
+  with `No .pfw or .pfw.gz files found in directory: …` even though the files
+  plainly exist. Invoke it once per leaf directory.
+* **`-o` must end in `.pfw`, not `.pfw.gz`** — otherwise
+  `ERROR Output file should have .pfw extension`. Pass `--compress` and the
+  tool produces the `.pfw.gz` itself.
+
+```bash
+dftracer_merge -d "$leaf/raw/papi_set1" -o "$leaf/compacted/papi_set1.pfw" \
+               --compress --force
+```

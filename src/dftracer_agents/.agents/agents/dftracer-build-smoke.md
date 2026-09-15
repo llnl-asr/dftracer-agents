@@ -9,7 +9,6 @@ description: >
 model: level_3
 model_level: level_3
 effort: low
-isolation: worktree
 tools: Read, Bash, mcp__dftracer__session_build_annotated, mcp__dftracer__session_run_smoke_test, mcp__dftracer__session_annotation_report, mcp__dftracer__session_get_run_paths, mcp__dftracer__skill_load, mcp__dftracer__session_read_file, Edit, mcp__dftracer__session_capture_run_record, mcp__dftracer__validate_annotations, mcp__dftracer__graph_ensure, mcp__dftracer__graph_query, mcp__dftracer__profile_step_begin, mcp__dftracer__profile_step_end, mcp__dftracer__profile_status
 skills: dftracer-context-economy, dftracer-profiling
 ---

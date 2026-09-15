@@ -1816,3 +1816,78 @@ fix: |
   fix in dfanalyzer_service.py than the existing timeout-after-output
   handling.
 tags: [dfanalyzer, dask, hang, timeout, mcp-tool-gap, rajaperf, reconfirmation, needs-followup]
+
+---
+date: 2026-09-10
+app: https://github.com/hpc/ior
+context: First dftracer pipeline run on corona (Intel classic + MVAPICH2 + Flux wrappers), STEP1-5 scoped run, session ior/20260911_033625
+error: |
+  session_configure (autotools): "[Errno 2] No such file or directory: '.../source/configure'"
+  Underlying autoreconf error: "configure.ac:4: error: Autoconf version 2.71 or higher is required"
+  session_install_dftracer: pip clone of https://github.com/llnl/dftracer.git failed with
+  "fatal: could not read Username for 'https://github.com': No such device or address" /
+  GitHub API confirms 404 for anonymous access to llnl/dftracer.
+root_cause: |
+  (1) corona ships autoconf 2.69; IOR's configure.ac pins AC_PREREQ([2.71]). No newer
+  autoconf module is available on corona (module avail autoconf: none found). Same class
+  of mismatch previously hand-fixed on Tuolumne (see the AC_PREREQ note earlier in this
+  workload's build section) but session_configure/session_build_annotated had no automatic
+  handling of it.
+  (2) llnl/dftracer is a PRIVATE GitHub repo. Anonymous HTTPS clone always 404s regardless
+  of system; it only works when the invoking account has an SSH key with repo access
+  (confirmed: `git clone git@github.com:llnl/dftracer.git` succeeds with this account's key,
+  `git clone https://github.com/llnl/dftracer.git` never does, on any system). Tools that
+  hardcode the HTTPS URL will fail identically anywhere the environment lacks a configured
+  HTTPS git credential helper for github.com, not just on corona.
+fix: |
+  Both fixed at the tool level (src/dftracer_agents/mcp_tools/tools/session/):
+  (1) workspace.py: added `_autoreconf_bootstrap()` shared helper, used by both
+      session_configure and session_build_annotated's autotools branches. On an
+      "Autoconf version X or higher is required" failure, reads the system's actual
+      `autoconf --version` and retries once after downgrading configure.ac's
+      AC_PREREQ() to match, instead of failing outright.
+  (2) install.py: the non-OpenMPI dftracer clone path now detects an auth-shaped git
+      failure (could not read Username / Authentication failed / Repository not found /
+      terminal prompts disabled / Permission denied (publickey) against a github.com
+      HTTPS URL, and retries once over the equivalent `git@github.com:OWNER/REPO.git`
+      SSH form (GIT_SSH_COMMAND with BatchMode) before giving up.
+  Both fixes verified to parse cleanly; NEITHER took effect in the session that found
+  them (dftracer MCP server runs over stdio, one process per session, no hot-reload —
+  contrary to the dftracer-mcp-first skill's HTTP/--reload claim, which describes a
+  different deployment mode). They apply starting the NEXT session against this codebase.
+tags: [c, autotools, autoconf, corona, ior, git-auth, private-repo, mcp-tool-gap, session_configure, session_install_dftracer]
+
+---
+date: 2026-09-10
+app: https://github.com/hpc/ior
+context: validate_annotations (C) false-positive audit after a full annotation pass on IOR, session ior/20260911_033625
+error: |
+  validate_annotations reported 14 "critical I/O flow not annotated" / lint findings in
+  src/ that were all, on manual inspection, false positives: matches inside comments,
+  printf format strings, struct designated-initializer fields (.open = fn), struct member
+  names (int is_open;), and substrings of unrelated identifiers/function names
+  (update_write_memory_pattern, s3_curl_xfer_hints's `is_open` field) -- plus two
+  misattributions where the match fell 40-60 lines past a function's own closing brace
+  and got attributed to that function anyway (utilities.c updateParsedOptions/DelaySecs).
+root_cause: |
+  _validate_c_like() in annotation_validate.py used a raw substring test
+  (`any(c in line for c in _C_CRITICAL)`) with no word-boundary or call-syntax check, and
+  tracked "current function" only via "most recent fn_re match by line number" with no
+  brace-depth tracking to know when that function's body actually ended -- so any line
+  between one function's closing brace and the next function's opening line (comments,
+  struct literals, blank lines) still got attributed to the PREVIOUS function.
+fix: |
+  Rewrote the check in annotation_validate.py:
+  - `_C_CRITICAL_CALL_RE`: word-bounded regex requiring the identifier be followed by
+    `(` (real call syntax), so `is_open`/`obj_read`/`.open = fn`/function-name substrings
+    no longer match.
+  - `_strip_c_comment()`: blanks out // and /* */ comment text per line (stateful across
+    lines for block comments) before matching, so comment-text hits are eliminated.
+  - Brace-depth tracking: `cur_fn` is now cleared as soon as depth returns to 0 after the
+    function's own opening line, not just when the next fn_re match appears -- fixes the
+    two misattribution cases.
+  Verified directly (not just by re-running the MCP tool, which is stale in this stdio
+  session): imported the patched `_validate_c_like` and ran it against all 7 previously-
+  flagged files in workspaces/ior/20260911_033625/annotated/src/ -- 0 findings, down from
+  14. Fix confirmed correct; takes effect starting the next MCP session.
+tags: [c, validate_annotations, mcp-tool-gap, false-positive, ior, annotation-validation]

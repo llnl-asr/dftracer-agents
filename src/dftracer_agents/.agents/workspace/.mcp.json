@@ -3,6 +3,13 @@
     "dftracer": {
       "type": "http",
       "url": "http://127.0.0.1:10000/mcp"
+    },
+    "phronix": {
+      "command": "phronix-mcp-server",
+      "args": [
+        "--no-setup",
+        "--quiet"
+      ]
     }
   }
 }

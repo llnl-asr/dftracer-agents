@@ -2,7 +2,6 @@ name: dftracer-build-app
 description: Detects the build system, then DISPATCHES via Task to the matching specialized build agent — dftracer-build-system-cmake, dftracer-build-system-autotools, dftracer-build-system-meson, or dftracer-build-system-pip. Never builds all four itself; picks exactly one per session and records build lessons as it goes.
 model_level: level_1
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

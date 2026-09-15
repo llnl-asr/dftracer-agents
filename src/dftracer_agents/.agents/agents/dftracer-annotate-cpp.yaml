@@ -2,7 +2,6 @@ name: dftracer-annotate-cpp
 description: Annotates C++ files with dftracer using the C++-specific skill set and RAII rules.
 model_level: level_2
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

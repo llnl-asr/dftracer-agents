@@ -22,8 +22,6 @@
       "options": {
         "baseURL": "https://livai-api.llnl.gov/v1",
         "apiKey": "{env:OPENAI_API_KEY}",
-        // OpenCode flattens these; it does NOT accept an AI-SDK-style
-        // {totalMs, stepMs, chunkMs} object here (schema: number | false).
         "timeout": 86400000,
         "headerTimeout": 86400000,
         "chunkTimeout": 600000
@@ -114,8 +112,13 @@
       "workspaces/**": "allow",
       "src/dftracer_agents/.agents/skills/**": "allow"
     },
+    "read": {
+      "workspaces/**": "allow",
+      "src/dftracer_agents/.agents/skills/**": "allow"
+    },
     "bash": {
       "*": "ask",
+      "* workspaces/*": "allow",
       "git add src/dftracer_agents/.agents/skills/*": "allow",
       "git commit *": "allow",
       "ls workspaces/*": "allow",
@@ -138,6 +141,7 @@
       "find /root*": "deny",
       "find /tmp*": "deny",
       "find /opt*": "deny"
-    }
+    },
+    "dftracer_*": "allow"
   }
 }

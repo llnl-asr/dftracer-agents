@@ -2,7 +2,6 @@ name: dftracer-optimizer-io
 description: "Component subagent of the optimizer pipeline: I/O. Turns the I/O slice of a diagnosed bottleneck list into citation-backed L1/L2/L3 optimizations, applies them, and runs the iteration loop against dftracer-io-optimization's exhaustive dimension checklist. Invoked by dftracer-optimizer (the orchestrator) alongside the compute/communication/memory siblings."
 model_level: level_4
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

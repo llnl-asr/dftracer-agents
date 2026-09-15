@@ -2,7 +2,6 @@ name: dftracer-analyzer
 description: 'Pipeline stage 5. Runs dfanalyzer over compacted traces, diagnoses I/O bottlenecks, and (when given two runs) compares them. Interprets the numbers into a ranked bottleneck list. Invoke with: compact trace dir(s), preset (posix|dlio), and checkpoint dir. Sanity-checks trace quality first.'
 model_level: level_3
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

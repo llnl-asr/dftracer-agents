@@ -2,7 +2,6 @@ name: dftracer-build-dftracer
 description: Installs and builds dftracer in the session, preferring the MCP install tool and updating rules when it fails.
 model_level: level_1
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

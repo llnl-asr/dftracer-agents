@@ -2,7 +2,6 @@ name: dftracer-validate-c
 description: 'Validates an annotated C tree: every file-I/O, HDF5, and MPI-IO flow is instrumented, DFTRACER_C_INIT/FINI exist, app-parameter metadata is emitted, every UPDATE carries comp=, and each file still compiles.'
 model_level: level_2
 effort: medium
-isolation: worktree
 tools:
 - Read
 - Bash

@@ -101,7 +101,7 @@ from fastmcp import FastMCP
 from .workspace import (
     _ws, _load_state, _save_state, _write_artifact_log,
     _ok, _err, _new_run_id, _create_run, _run, _workspaces_root,
-    _safe_session_path,
+    _safe_session_path, _autoreconf_bootstrap,
 )
 from .detection import (
     _detect_info,
@@ -258,6 +258,38 @@ def _has_mpi4py_dependency(source_dir: Path) -> bool:
 # The @mcp.tool() wrappers inside register_session_tools() delegate to these.
 # ---------------------------------------------------------------------------
 
+def _run_via_env_script(
+    cmd: List[str],
+    cwd: Path,
+    env_overrides: Dict[str, str],
+    env_script: Optional[Path],
+    timeout: int = 600,
+) -> Dict[str, Any]:
+    """Run *cmd* inside a real ``module load``'d login shell.
+
+    A bare ``env={**os.environ, **overrides}`` dict (what plain ``_run``
+    does) is NOT equivalent to sourcing the session's module-load script:
+    the MCP server process's own inherited ``os.environ`` may predate this
+    session's module loads entirely, so autoconf's own compiled-program
+    execution checks (``./conftest``) can fail with a bare "No such file or
+    directory" (a missing-dynamic-dependency symptom, e.g. Intel compiler
+    runtime libs a linked-against libdftracer_core.so needs) even though the
+    exact same command succeeds in an interactively-moduled shell. Mirrors
+    the pattern ``install.py``'s ``_run_pip_via_module_script`` already uses
+    for the pip install path. Confirmed on corona 2026-09-11
+    (run ior/20260911_043848): configure's compiler-check step consistently
+    passed at "compile" but failed at "run" until routed through this.
+    """
+    lines = ["#!/bin/bash", "set -e", f"cd {shlex.quote(str(cwd))}"]
+    if env_script is not None and Path(env_script).exists():
+        lines.append(f"source {shlex.quote(str(env_script))}")
+    for k, v in env_overrides.items():
+        lines.append(f"export {k}={shlex.quote(str(v))}")
+    lines.append(" ".join(shlex.quote(c) for c in cmd))
+    script_body = "\n".join(lines) + "\n"
+    return _run(["bash", "-lc", script_body], timeout=timeout)
+
+
 def _session_build_annotated_impl(
     run_id: str,
     jobs: int = 4,
@@ -346,37 +378,90 @@ def _session_build_annotated_impl(
             if deps_dir.is_dir():
                 shutil.rmtree(deps_dir, ignore_errors=True)
         if (src_root / "configure.ac").exists() and not (src_root / "configure").exists():
-            _run(["autoreconf", "-fi"], cwd=src_root, timeout=120)
+            _autoreconf_bootstrap(src_root)
 
         env: Dict[str, str] = {}
+        # The MCP server process's own os.environ may predate this session's
+        # module loads (intel-classic/etc.), so it can lack the LD_LIBRARY_PATH
+        # entries a linked-against libdftracer_core.so needs at RUNTIME (e.g.
+        # Intel compiler runtime libs) even though `mpicc` itself still
+        # resolves via PATH. Without this, autoconf's own conftest execution
+        # checks fail with a bare "./conftest: No such file or directory"
+        # (the classic missing-dynamic-interpreter-dependency symptom) even
+        # though the same binary runs fine in an interactively-moduled shell.
+        # Mirrors the same merge already done in session_install_dftracer's
+        # pip path (install.py). Confirmed on corona 2026-09-11
+        # (run ior/20260911_043848).
+        try:
+            from ..system.system_service import get_current_system_env
+            for _k, _v in get_current_system_env().items():
+                env.setdefault(_k, _v)
+        except Exception:
+            pass
         if dft_prefix:
+            # `dft_prefix` (session state's "dftracer_install_prefix") is
+            # actually the resolved LIB dir itself (e.g.
+            # .../site-packages/dftracer/lib64), NOT a standard
+            # prefix/{include,lib} root -- session_install_dftracer probes
+            # site-packages and stores dftracer_pip_include_dir /
+            # dftracer_pip_lib_dir separately for exactly this reason.
+            # Blindly appending "/include" and "/lib" to dft_prefix produced
+            # nonexistent paths (.../lib64/include, .../lib64/lib) and
+            # `ld: cannot find -ldftracer_core` at configure's compiler-check
+            # step. Confirmed on corona 2026-09-11 (run ior/20260911_043848).
+            _inc_dir = state.get("dftracer_pip_include_dir") or f"{dft_prefix}/include"
+            _lib_dir = state.get("dftracer_pip_lib_dir") or dft_prefix
             pc_path = state.get("dftracer_pkg_config_path", "")
             if not pc_path:
-                pc_path = f"{dft_prefix}/lib/pkgconfig"
+                pc_path = f"{_lib_dir}/pkgconfig"
             env["PKG_CONFIG_PATH"] = pc_path
-            env["CPPFLAGS"] = f"-I{dft_prefix}/include"
-            env["LDFLAGS"]  = f"-L{dft_prefix}/lib -Wl,-rpath,{dft_prefix}/lib"
+            env["CPPFLAGS"] = f"-I{_inc_dir}"
+            env["LDFLAGS"]  = f"-L{_lib_dir} -Wl,-rpath,{_lib_dir}"
+            # dftracer ships no libdftracer.pc, so PKG_CONFIG_PATH alone never
+            # adds the link flag -- LIBS must be passed explicitly or the
+            # final link (once annotation macros are present) fails with
+            # undefined references to initialize_main/finalize/etc. (the
+            # DFTRACER_C_INIT/_FUNCTION_START/_END/_FINI macro expansions).
+            # See workload-ior skill, "Annotated build needs
+            # LIBS=-ldftracer_core explicitly".
+            env["LIBS"] = "-ldftracer_core"
 
-        r_cfg = _run(
+        # `extra_cmake_flags` is the only flag-passthrough parameter this tool
+        # exposes; for autotools projects it must reach `./configure` the
+        # same way session_configure's `extra_configure_flags` does, or a
+        # caller-required option (e.g. IOR's `--without-hdf5
+        # --without-mpiio` for a POSIX-only build) is silently dropped and
+        # autotools auto-detects/auto-enables backends the caller explicitly
+        # asked to exclude. Confirmed on corona 2026-09-11 (run
+        # ior/20260911_043848): without this, `--without-mpiio` never
+        # reached configure and USE_MPIIO_AIORI was auto-enabled anyway.
+        _env_script = ws / "scripts" / "env.sh"
+        _env_script = _env_script if _env_script.exists() else None
+        r_cfg = _run_via_env_script(
             [str(src_root / "configure"), f"--prefix={install_ann}",
-             "--disable-dependency-tracking"],
+             "--disable-dependency-tracking"]
+            + (extra_cmake_flags.split() if extra_cmake_flags else []),
             cwd=build_ann,
-            env=env if env else None,
+            env_overrides=env,
+            env_script=_env_script,
             timeout=300,
         )
         steps["configure"] = r_cfg
         if not r_cfg["success"]:
             return _err("configure failed for annotated source", **r_cfg)
 
-        r_bld = _run(
+        r_bld = _run_via_env_script(
             ["make", f"-j{jobs}"],
-            cwd=build_ann, env=env if env else None, timeout=600,
+            cwd=build_ann, env_overrides=env, env_script=_env_script, timeout=600,
         )
         steps["build"] = r_bld
         if not r_bld["success"]:
             return _err("make failed for annotated source", **r_bld)
 
-        r_ins = _run(["make", "install"], cwd=build_ann, timeout=300)
+        r_ins = _run_via_env_script(
+            ["make", "install"], cwd=build_ann, env_overrides=env,
+            env_script=_env_script, timeout=300,
+        )
         steps["install"] = r_ins
 
     elif bt == "meson":
@@ -1658,7 +1743,8 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 * ``message`` — ``"Detection complete"``.
                 * ``languages`` — list of detected languages (e.g. ``["c", "cpp"]``).
                 * ``build_tool`` — one of ``"cmake"``, ``"autotools"``,
-                  ``"make"``, ``"python"``, or ``"unknown"``.
+                  ``"make"``, ``"python"``, ``"python-pip"``, ``"anaconda"``,
+                  ``"meson"``, or ``"unknown"``.
                 * ``features`` — dict of detected optional features
                   (``{"mpi": bool, "hdf5": bool, "python": bool, ...}``).
                 * ``dftracer_cmake_flags`` — recommended ``-D`` flags for cmake.
@@ -1737,12 +1823,37 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         base = _ws(run_id) / subfolder
         if not base.exists():
             return _err(f"{subfolder}/ does not exist in session {run_id}")
-        paths = [
-            str(p.relative_to(base))
-            for p in base.glob(pattern)
-            if p.is_file()
-        ][:max_results]
-        return _ok(f"{len(paths)} files found", files=paths)
+
+        # Two things this must NOT do, both of which it used to.
+        #
+        # Follow symlinks: a session's `dataset/` is a symlink to the dataset
+        # on the parallel filesystem. A recursive pattern walked into it, and
+        # that tree is large enough that a depth-2 `find` exceeds 40 seconds --
+        # measured 14.3s average per call, the slowest tool in the pipeline.
+        #
+        # Walk to completion before truncating: the old code built the whole
+        # match list and then took [:max_results], so the limit bounded the
+        # ANSWER but not the work. Stopping early is what makes it a limit.
+        matched: list[str] = []
+        truncated = False
+        skipped_links: list[str] = []
+        for path in base.glob(pattern):
+            if len(matched) >= max_results:
+                truncated = True
+                break
+            try:
+                if path.is_symlink():
+                    # Report it rather than silently omitting it: a caller
+                    # looking for dataset/ needs to know why it is not here.
+                    skipped_links.append(str(path.relative_to(base)))
+                    continue
+                if path.is_file():
+                    matched.append(str(path.relative_to(base)))
+            except OSError:
+                continue        # unreadable entry: skip, do not fail the call
+
+        return _ok(f"{len(matched)} files found", files=matched,
+                   truncated=truncated, skipped_symlinks=skipped_links)
 
     @mcp.tool()
     def session_read_file(
@@ -2024,6 +2135,12 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
           ``extra_pip_flags='--config-settings=setup-args="-Doption=value"'``
           (see [[software-pip]]) — this branch does not otherwise know about
           meson.options.
+        * **python-pip** — ``python3 -m venv install/`` only. This covers pure
+          Python application trees with no packaging metadata at the repo root;
+          app-specific dependencies are installed later into the same venv.
+        * **anaconda** — treated like ``python-pip`` at the session-tooling
+          level: create the session venv and leave dependency installation to
+          the workload-specific step that reads the environment files.
 
         Side effects:
             * Creates ``<workspace>/build/`` and ``<workspace>/install/``.
@@ -2091,9 +2208,16 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             for deps_dir in build.rglob(".deps"):
                 if deps_dir.is_dir():
                     shutil.rmtree(deps_dir, ignore_errors=True)
-            # Bootstrap if needed
+            # Bootstrap if needed. Some projects (e.g. IOR) keep their
+            # custom m4 macros (X_AC_META, ...) in config/ rather than the
+            # default aclocal search path, so autoreconf must be told about
+            # it explicitly or it fails silently and configure is never
+            # generated (session_configure then errors with a confusing
+            # "No such file or directory: '.../configure'").
             if (src / "configure.ac").exists() and not (src / "configure").exists():
-                _run(["autoreconf", "-fi"], cwd=src, timeout=120)
+                r_boot = _autoreconf_bootstrap(src)
+                if not r_boot["success"]:
+                    return _err("autoreconf bootstrap failed", **r_boot)
             flags = [
                 f"--prefix={install}",
                 "--disable-dependency-tracking",  # avoids config.status .deps failures
@@ -2108,29 +2232,41 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             if (build / "meson-info").exists():
                 flags = ["--reconfigure"] + flags
             r = _run(["meson", "setup", str(build), str(src)] + flags, timeout=300)
-        elif bt == "python":
+        elif bt in {"python", "python-pip", "anaconda"}:
             venv_r = _run([sys.executable, "-m", "venv", str(install)], timeout=60)
             if not venv_r["success"]:
                 return _err("venv creation failed", **venv_r)
             pip = install / "bin" / "pip"
-            flags = ["install", "-e", str(src)] + (
-                extra_pip_flags.split() if extra_pip_flags else []
-            )
+            pip_env: Dict[str, str] = {}
             # mpi4py must be compiled against the system MPI (not a wheel) so
             # that it uses the same ABI as the rest of the MPI stack.
-            pip_env: Dict[str, str] = {}
-            if _has_mpi4py_dependency(src):
-                if "--no-binary=mpi4py" not in flags:
-                    flags.insert(flags.index(str(src)) + 1, "--no-binary=mpi4py")
-                # Point CC/CXX at MPI wrappers for consistent compilation.
-                import shutil as _shutil
-                mpicc = info.get("mpi_impl", {}).get("mpicc") or _shutil.which("mpicc") or ""
-                mpicxx = info.get("mpi_impl", {}).get("mpicxx") or _shutil.which("mpicxx") or _shutil.which("mpic++") or ""
-                if mpicc:
-                    pip_env["CC"] = mpicc
-                if mpicxx:
-                    pip_env["CXX"] = mpicxx
-            r = _run([str(pip)] + flags, env=pip_env if pip_env else None, timeout=300)
+            if bt == "python":
+                flags = ["install", "-e", str(src)] + (
+                    extra_pip_flags.split() if extra_pip_flags else []
+                )
+                if _has_mpi4py_dependency(src):
+                    if "--no-binary=mpi4py" not in flags:
+                        flags.insert(flags.index(str(src)) + 1, "--no-binary=mpi4py")
+                    # Point CC/CXX at MPI wrappers for consistent compilation.
+                    import shutil as _shutil
+                    mpicc = info.get("mpi_impl", {}).get("mpicc") or _shutil.which("mpicc") or ""
+                    mpicxx = info.get("mpi_impl", {}).get("mpicxx") or _shutil.which("mpicxx") or _shutil.which("mpic++") or ""
+                    if mpicc:
+                        pip_env["CC"] = mpicc
+                    if mpicxx:
+                        pip_env["CXX"] = mpicxx
+                r = _run([str(pip)] + flags, env=pip_env if pip_env else None, timeout=300)
+            else:
+                # Pure Python application trees and conda-described repos may
+                # have no installable package metadata at the repo root. Create
+                # the shared session venv here and let the workload-specific step
+                # install explicit dependencies into it.
+                r = {
+                    "success": True,
+                    "returncode": 0,
+                    "stdout": f"Created session venv for build tool {bt}; no package install at configure stage.",
+                    "stderr": "",
+                }
         else:
             return _err(f"Unsupported build tool: {bt}")
 
@@ -2156,6 +2292,9 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
           ``meson install -C build``.
         * **python** — no-op; installation was already performed by
           ``session_configure`` (``pip install -e``).
+        * **python-pip / anaconda** — no-op; ``session_configure`` created the
+          shared session venv and the workload-specific dependency step will
+          populate it.
 
         Side effects:
             * Populates ``<workspace>/install/`` with installed binaries/libraries.
@@ -2215,6 +2354,11 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             _save_state(run_id, {"step": "installed"})
             _write_artifact_log(_ws(run_id), 4, "session_build_install", {"status": "python project installed via pip"}, run_id)
             return _ok("Python project installed via session_configure (pip install -e)")
+
+        if bt in {"python-pip", "anaconda"}:
+            _save_state(run_id, {"step": "installed"})
+            _write_artifact_log(_ws(run_id), 4, "session_build_install", {"status": f"{bt} session venv prepared"}, run_id)
+            return _ok(f"{bt} session venv prepared via session_configure")
 
         return _err(f"Unknown build tool: {bt}")
 
@@ -2655,11 +2799,13 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         rocm_path: str = "",
         variorum: Optional[bool] = None,
         variorum_build: str = "",
+        mpi: Optional[bool] = None,
     ) -> str:
         """Install dftracer via pip for all project types, then locate dirs in site-packages.
 
         Installs ``pip install git+<dftracer_repo>@<ref>`` (defaulting to
-        ``https://github.com/llnl/dftracer.git``) regardless of whether the
+        ``ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git``, ref
+        ``develop``) regardless of whether the
         project is C/C++ or Python.  Feature flags detected from the application
         source are forwarded as environment variables so the dftracer wheel's C
         extension is built with the correct support compiled in:
@@ -2710,12 +2856,11 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 did not find it in the app source (still requires a usable
                 system HDF5 to build against).
             dftracer_repo: Git URL to install dftracer FROM. Defaults to empty,
-                which means ``https://github.com/llnl/dftracer.git``. Pass an
-                explicit URL to install a branch that only exists on another
-                remote — notably LLNL's internal GitLab
-                (``ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git``),
-                which is where in-development feature branches live and is only
-                reachable from inside the LC network. ``dftracer_ref`` is
+                which means LC's GitLab over SSH
+                (``ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git``).
+                That is the canonical readable remote: the GitHub copy is
+                PRIVATE and anonymous HTTPS fails from every LC machine. GitLab
+                is reachable only from inside the LC network. ``dftracer_ref`` is
                 resolved against THIS repo, so a ref that exists only on the
                 GitLab remote requires setting both.
             papi: Explicit override for PAPI hardware-counter tracing
@@ -2728,7 +2873,14 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 ALWAYS verify ``DFTRACER_PAPI_TRACING_ENABLE`` in the installed
                 ``dftracer_config.hpp`` rather than trusting a green install.
             variorum: Enable Variorum node-level POWER tracing
-                (``DFTRACER_ENABLE_VARIORUM``). Defaults to ``None`` (off).
+                (``DFTRACER_ENABLE_VARIORUM``). Defaults to ``None``, which
+                means "ask the node": ``system_service.probe_power`` looks for a
+                power domain variorum can be built against (rocm_smi for GPU
+                package power, RAPL/MSR for CPU, Cray pm_counters) and turns
+                power collection ON when one exists, since it is sampled in a
+                separate service process and costs the application nothing.
+                Pass ``False`` to force it off, ``True`` to force it on where
+                the probe found nothing.
                 Power is node-wide, so it is sampled by ``dftracer_service`` and
                 appears in the per-node service traces as ``type 13`` counter
                 records with the power family (``cpu``/``gpu``/``memory``/
@@ -2745,6 +2897,19 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 and then fails at run time with
                 ``_ERROR_VARIORUM_UNSUPPORTED_PLATFORM``, reporting no power at
                 all with no build-time warning.
+            mpi: Explicit override for MPI tracing (``DFTRACER_ENABLE_MPI``),
+                bypassing auto-detection. Defaults to ``None``, which auto-
+                disables MPI tracing when ``session_detect``'s MPI compat
+                check reports ``compatible: False`` (e.g. mvapich2 2.3.7's
+                brahma_int is not in dftracer's supported range and fails
+                to compile brahma's MPI interception wrapper with
+                ``error: member function declared with "override" does not
+                override a base class member``) instead of building anyway
+                and failing. Pass ``True`` to force MPI tracing on despite
+                an incompatible version (not recommended — it will not
+                build), or ``False`` to explicitly skip it regardless of
+                compatibility (e.g. a POSIX-only run that has no use for
+                MPI-IO interception).
             hip: Explicit override for HIP/GPU tracing
                 (``DFTRACER_ENABLE_HIP_TRACING``), bypassing auto-detection.
                 Defaults to ``None`` (trust detection). Detection only looks for
@@ -2824,12 +2989,37 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             features = dict(features)
             features["papi"] = bool(papi)
 
-        # Variorum node power. Like PAPI it is never auto-detected from app
-        # source -- it is a node-level telemetry backend the operator asks for,
-        # collected by dftracer_service rather than by the traced process.
+        # Variorum node power. Not detectable from app source -- it is node-level
+        # telemetry collected by dftracer_service rather than by the traced
+        # process -- but it IS detectable from the node: system_detect's power
+        # probe reports whether a domain exists that variorum can be built
+        # against. Since it costs the application nothing (separate sampler,
+        # separate process), default it ON wherever the node can measure power,
+        # instead of leaving free data on the floor. An explicit argument still
+        # wins, in either direction.
         if variorum is not None:
             features = dict(features)
             features["variorum"] = bool(variorum)
+        else:
+            try:
+                from ..system.system_service import probe_power
+                _power = probe_power()
+            except Exception:
+                _power = {"can_enable": False}
+            if _power.get("can_enable"):
+                features = dict(features)
+                features["variorum"] = True
+                features.setdefault("variorum_source", "system power probe")
+                # The app-matched ROCm (resolved above) wins over the probe's
+                # newest-on-the-node guess: two rocm_smi ABIs in one process is
+                # a heap corruption, not a warning.
+                if not (features.get("rocm") or {}).get("path"):
+                    _probe_rocm = (_power.get("features") or {}).get("rocm_path_for_variorum")
+                    if _probe_rocm:
+                        features["rocm"] = {**(features.get("rocm") or {}),
+                                            "found": True,
+                                            "path": _probe_rocm,
+                                            "source": "system power probe"}
         if variorum_build:
             features = dict(features)
             features["variorum_build"] = variorum_build
@@ -2856,6 +3046,33 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
 
         features_enabled = []
         compat_warnings: list = []
+
+        # Explicit mpi override (caller-specified) short-circuits
+        # auto-detection, same pattern as hdf5/hip above. When left as the
+        # default (None), auto-disable MPI tracing if session_detect's
+        # compat probe already flagged this MPI as unsupported -- building
+        # anyway fails deterministically rather than just degrading, e.g.
+        # mvapich2 2.3.7 on corona: brahma's MPI wrapper class declares
+        # `override` methods against signatures that don't match this
+        # version's actual mpi.h, producing dozens of "does not override a
+        # base class member" compile errors and failing the whole wheel
+        # build (verified 2026-09-11, run ior/20260911_042538).
+        if mpi is not None:
+            features = dict(features)
+            features["mpi"] = bool(mpi)
+        else:
+            _mpi_info_pre = info.get("mpi_impl") or {}
+            if features.get("mpi") and _mpi_info_pre.get("found") and not _mpi_info_pre.get("compatible", True):
+                features = dict(features)
+                features["mpi"] = False
+                compat_warnings.append(
+                    f"MPI tracing AUTO-DISABLED: detected "
+                    f"{_mpi_info_pre.get('impl_display', _mpi_info_pre.get('impl', 'unknown'))} "
+                    f"{_mpi_info_pre.get('version', 'unknown')} is not in a dftracer-compatible "
+                    f"range and fails to compile brahma's MPI interception wrapper. "
+                    f"Pass mpi=True to force it on anyway (it will not build), or mpi=False "
+                    f"to silence this note."
+                )
 
         # --- MPI version check ---
         if features.get("mpi"):

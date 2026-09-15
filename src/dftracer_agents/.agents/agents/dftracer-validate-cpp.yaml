@@ -2,7 +2,6 @@ name: dftracer-validate-cpp
 description: 'Validates an annotated C++ tree: I/O, HDF5, and MPI-IO flows are instrumented, DFTRACER_CPP_INIT/FINI exist, app-parameter metadata is emitted, UPDATEs carry comp=, and RAII scoping is correct.'
 model_level: level_2
 effort: medium
-isolation: worktree
 tools:
 - Read
 - Bash

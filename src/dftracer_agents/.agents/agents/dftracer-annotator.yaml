@@ -2,7 +2,6 @@ name: dftracer-annotator
 description: "Pipeline stage 2. Scopes which source files to annotate (optionally via a smoke-test filter), then DISPATCHES via Task to the matching file-type subagent per language present \u2014 dftracer-annotate-c, dftracer-annotate-cpp, dftracer-annotate-python \u2014 never routes Python files through the C/C++ (clang_*) path. Also holds the clang_*/python_* MCP tools directly as a fallback for small/scoped fixups that don't warrant a full subagent dispatch. Validates every file with clang_syntax_check+clang_lint_annotations (C/C++) or validate_annotations(language=\"python\") (Python). Invoke with: run_id, language, smoke command (for scoping), and any hot-loop functions to exclude. Never edits source manually \u2014 MCP annotation tools (direct or via subagent) only."
 model_level: level_2
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

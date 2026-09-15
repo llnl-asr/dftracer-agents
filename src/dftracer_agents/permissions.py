@@ -41,7 +41,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from dftracer_agents.bootstrap import bundled_workspace_dir
-from dftracer_agents.mcp_setup import _strip_jsonc
+from dftracer_agents.mcp_setup import MCP_SERVER_NAME, _strip_jsonc
 
 _MCP_TOOL_DEF_RE = re.compile(r"@[A-Za-z_][A-Za-z0-9_.]*\.tool\(\)\s*def\s+(\w+)\s*\(")
 
@@ -135,18 +135,60 @@ def sync_claude_settings(policy: Dict[str, Any], tool_names: List[str], base: Op
 # OpenCode
 # ---------------------------------------------------------------------------
 
+def _opencode_tool_name(claude_name: str) -> str:
+    """``mcp__dftracer__foo`` -> ``dftracer_foo``.
+
+    OpenCode ids an MCP tool as ``sanitize(server) + "_" + sanitize(tool)``
+    with ``sanitize = s.replace(/[^a-zA-Z0-9_-]/g, "_")``.
+    """
+    tool = claude_name.split(f"mcp__{MCP_SERVER_NAME}__", 1)[-1]
+    return f"{MCP_SERVER_NAME}_{re.sub(r'[^a-zA-Z0-9_-]', '_', tool)}"
+
+
 def render_opencode_permissions(policy: Dict[str, Any]) -> Dict[str, Any]:
-    edit: Dict[str, str] = {}
+    """Render the policy into OpenCode's ``permission`` block.
+
+    Shape is ``{<tool>: <action> | {<pattern>: <action>}}``, where BOTH the
+    tool name and the pattern are matched with the same anchored wildcard
+    matcher and — this is the part that bites — **last match wins**. So every
+    map here lists its catch-all first and lets the specific rules override.
+    """
+    paths: Dict[str, str] = {}
     for entry in policy.get("paths", []):
-        edit[entry["glob"]] = entry["mode"]
+        paths[entry["glob"]] = entry["mode"]
+
+    allow_only = {glob: mode for glob, mode in paths.items() if mode == "allow"}
+
+    rendered: Dict[str, Any] = {}
+    # See path_scoped_tools in permissions.yaml for why glob/grep are excluded
+    # and why read is allow_only rather than tiers.
+    scoped = policy.get("path_scoped_tools") or {"edit": "tiers"}
+    if isinstance(scoped, list):  # legacy list form == every tool gets tiers
+        scoped = {tool: "tiers" for tool in scoped}
+    for tool, mode in scoped.items():
+        if mode not in ("tiers", "allow_only"):
+            raise ValueError(
+                f"permissions.yaml: path_scoped_tools.{tool} must be "
+                f"'tiers' or 'allow_only', got {mode!r}"
+            )
+        rendered[tool] = dict(paths if mode == "tiers" else allow_only)
 
     bash: Dict[str, str] = {"*": "ask"}
     for pattern in policy.get("bash", {}).get("allow", []):
         bash[pattern] = "allow"
+    # Deny last: last match wins, so this outranks any allow above it.
     for pattern in policy.get("bash", {}).get("deny", []):
         bash[pattern] = "deny"
+    rendered["bash"] = bash
 
-    return {"edit": edit, "bash": bash}
+    mcp_tools = policy.get("mcp_tools")
+    if mcp_tools == "all_dftracer":
+        rendered[f"{MCP_SERVER_NAME}_*"] = "allow"
+    elif isinstance(mcp_tools, list):
+        for name in mcp_tools:
+            rendered[_opencode_tool_name(name)] = "allow"
+
+    return rendered
 
 
 def sync_opencode_config(policy: Dict[str, Any], base: Optional[Path] = None) -> str:

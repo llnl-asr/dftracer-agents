@@ -175,16 +175,28 @@ because the finer mesh shrinks the CFL timestep.
 
 **Always enable selective aggregation for this workload.** With HIP tracing on,
 `HIP_RUNTIME_API` alone emits thousands of sub-microsecond events per step per
-rank. Aggregating `dur < 1000` cut an identical workload from 165,710 to 10,726
-events — a **93.5% reduction**, 1.49 MB -> 178 KB — with every category still
-represented:
+rank, so an unaggregated laghos run is enormous: a single 4-rank run measured
+10.96 M events / ~30 MB per rank.
+
+**Use `dur < 100` (microseconds).** That is the threshold for any run whose
+purpose is per-event detail — a trace corpus, a kernel/comm timeline, an overlap
+analysis:
 
 ```bash
 export DFTRACER_ENABLE_AGGREGATION=1
 export DFTRACER_AGGREGATION_TYPE=SELECTIVE     # UPPERCASE -- see below
 export DFTRACER_AGGREGATION_FILE=<ws>/scripts/aggregation.yaml
-# aggregation.yaml:  inclusion: ["dur < 1000"]
+# aggregation.yaml:  inclusion: ["dur < 100"]
 ```
+
+`dur < 1000` is a **size-first** setting, not the default. Measured here it cut an
+identical workload from 165,710 to 10,726 events — a 93.5% reduction, 1.49 MB ->
+178 KB — with every category still *represented*. But at 1000 us essentially every
+GPU dispatch and MPI operation in laghos is sub-threshold, so what survives is a
+count-and-duration summary of exactly the events the trace was collected to show.
+Reach for it only when total corpus size is the binding constraint and per-event
+GPU/MPI detail is expendable; `dur < 100` is otherwise the right choice, and is
+what the tuolumne genesis sweep uses.
 
 `DFTRACER_AGGREGATION_TYPE` is compared **case-sensitively** against
 `"SELECTIVE"`; anything else (including lowercase `selective`) silently falls back

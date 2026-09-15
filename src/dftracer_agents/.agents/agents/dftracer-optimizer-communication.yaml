@@ -2,7 +2,6 @@ name: dftracer-optimizer-communication
 description: "Component subagent of the optimizer pipeline: communication. Turns the communication slice of a diagnosed bottleneck list (MPI/collective/network waits) into citation-backed L1/L2/L3 optimizations against dftracer-communication-optimization's exhaustive dimension checklist. Invoked by dftracer-optimizer (the orchestrator) alongside the io/compute/memory siblings."
 model_level: level_4
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

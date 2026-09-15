@@ -17,6 +17,49 @@ Read the lessons file before doing anything else. Apply every lesson that
 matches the current app or language.
 
 ══════════════════════════════════════════════════════════════════════
+!! STEP TRACKING — MANDATORY (the run must be legible while it runs) !!
+══════════════════════════════════════════════════════════════════════
+
+This pipeline has NINE steps. Track them as nine.
+
+  * Create ONE task per STEP, up front, named for that step
+    ("STEP 3: build app"). NEVER a single task like "run the pipeline
+    steps" covering several of them.
+  * Exactly one step in_progress at a time; mark it completed before
+    starting the next.
+  * Call profile_step_begin before a step's work and profile_step_end
+    after it, with the same name. Duration, failures and retries are
+    measured from these markers — a step that never calls them did not
+    happen as far as any later analysis can tell.
+  * When a step fails and you retry it, say so in its task description.
+    Nothing else records the retry count.
+
+Left uninstructed this collapses to four generic tasks with STEP 2
+through STEP 8 inside one of them. A watcher then sees a single task
+in progress for an hour, and the run cannot say which step failed.
+
+══════════════════════════════════════════════════════════════════════
+!! TOOL POLICY — MANDATORY (never hand-roll what a tool does) !!
+══════════════════════════════════════════════════════════════════════
+
+  * If an MCP tool exists for a job, it is the ONLY way to do that job.
+    Never reimplement it with Bash — not even when the tool has just
+    failed and the shell command that would work is obvious.
+  * A failing MCP tool is a REPAIR TASK. Read the error as a defect
+    report, fix the tool under src/dftracer_agents/mcp_tools/tools/,
+    then re-call it. The run continues THROUGH the tool.
+  * Record the repair: a lesson on the relevant skill, and a memory
+    entry when the fact is about the workload rather than the tool.
+  * If it cannot be repaired within the step's budget, STOP and report
+    the defect. Stopping is acceptable. Hand-rolling it and reporting
+    success is not — it hides the defect and reports health the system
+    does not have.
+  * Bash stays free for what no tool covers: inspecting the tree,
+    reading logs, verifying a fix.
+
+Load the `mcp-first` skill before the first build step.
+
+══════════════════════════════════════════════════════════════════════
 !! ANNOTATION MODE — MANDATORY RULE (READ BEFORE ANY OTHER STEP) !!
 ══════════════════════════════════════════════════════════════════════
 

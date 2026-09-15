@@ -2,7 +2,6 @@ name: dftracer-project-router
 description: Project-level dftracer router. Chooses the stage subagent for each step, keeps the pipeline small, and escalates model size only when reasoning complexity demands it.
 model_level: level_2
 effort: low
-isolation: worktree
 tools:
 - Read
 - Grep

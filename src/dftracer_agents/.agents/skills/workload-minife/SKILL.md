@@ -199,3 +199,102 @@ Two dftracer-utils gotchas bite here, both confirmed on this baseline:
 So the trustworthy check that a split is lossless is a per-category comparison of raw vs
 split, not either tool's total. On this baseline that came out exactly equal across all 20
 categories.
+
+---
+
+## The `cuda` variant (NVIDIA GPUs) — three build/run traps
+
+miniFE's `cuda/` variant is the one to use on an NVIDIA machine (the
+`openmp45*` variants target AMD offload). It is old code and does not build or
+launch correctly out of the box on a modern CUDA/H100 system.
+
+### 1. `num_devices` defaults to 2 and `cudaGetDeviceCount` is never called
+
+`setCudaDeviceFromRank()` in `src/main.cu` picks the GPU as:
+
+```c
+if (params.num_devices < 0) cudaGetDeviceCount(&params.num_devices);  // never fires
+...
+local_rank = atoi(getenv("SLURM_LOCALID"));
+params.device = local_rank % params.num_devices;
+cudaSetDevice(params.device);
+```
+
+`num_devices` is a CLI parameter **defaulting to 2** (`utils/utils.cpp`), so the
+`< 0` guard never triggers and the real device count is never queried.
+
+Consequences on a 4-GPU node:
+
+| launch | result |
+|---|---|
+| `--gpus-per-task=1` | Slurm exposes one GPU per task; rank 1 computes `1 % 2 = 1` → **`cudaErrorInvalidDevice: invalid device ordinal`**, rank 1 aborts, rank 0 then **hangs forever** in the next MPI collective |
+| `--gres=gpu:4` alone | works, but `localid % 2` means ppn=4 uses only GPUs 0 and 1, two ranks per GPU — silently wrong for a ppn scaling study |
+| **`--gres=gpu:4` + `num_devices=4`** | ✅ ranks map 1:1 onto GPUs for ppn ∈ {1,2,4} |
+
+Always pass `num_devices=<gpus per node>` explicitly. Pair it with
+`--kill-on-bad-exit=1` and an outer `timeout` so a device error cannot wedge a
+sweep in a collective.
+
+(`skip_device` defaults to 9999, so the `if (device >= skip_device) device++`
+branch is inert — it is not part of this bug.)
+
+### 2. CUDA 12: the legacy `<nvToolsExt.h>` collides with nvtx3
+
+`src/CudaELLMatrix.hpp` does `#include <nvToolsExt.h>`. CUDA 12 ships **both**
+that legacy header and `nvtx3/nvToolsExt.h`, and the CUDA runtime headers pull
+in the nvtx3 copy — so the two definitions collide:
+
+```
+error: "NVTX_RESOURCE_TYPE_GENERIC_HANDLE" has already been declared in the current scope
+error: invalid redeclaration of type name "nvtxResourceGenericType_t"
+... 35 errors detected in the compilation of "main.cu"
+```
+
+Fix — change the include, do **not** delete the NVTX calls:
+
+```c
+#include <nvtx3/nvToolsExt.h>
+```
+
+miniFE only uses `nvtxRangeStartA` / `nvtxRangeEnd` / `nvtxRangeId_t`, all of
+which nvtx3 provides. Keeping them is actively useful under dftracer: the CUPTI
+backend surfaces NVTX markers as `CUDA_MARKER` events (see [[software-cupti]]).
+
+### 3. nvcc: `-Xcompiler` splits on commas, so `-Wl,-rpath,X` breaks
+
+Linking against a session-local dftracer needs an rpath, and nvcc mangles the
+usual spelling two different ways:
+
+| form | result |
+|---|---|
+| `-Wl,-rpath,/path` | `nvcc fatal : Unknown option '-Wl,-rpath,/path'` |
+| `-Xcompiler "-Wl,-rpath,/path"` | nvcc splits the argument on commas → `g++: error: unrecognized command-line option '-Wl'` |
+| **`-Xlinker -rpath -Xlinker /path`** | ✅ |
+
+Working Makefile fragment for H100 + mvapich2 + a session dftracer:
+
+```make
+CUDA_HOME ?= /usr/tce/packages/cuda/cuda-12.6.0
+NVCC       = nvcc -ccbin mpicxx -Xcompiler -fopenmp
+NVCCFLAGS  = -lineinfo -gencode=arch=compute_90,code=\"sm_90,compute_90\"
+LIBS       = -lnvToolsExt -L$(CUDA_HOME)/lib64 \
+             -Xlinker -rpath -Xlinker $(CUDA_HOME)/lib64 \
+             -L$(DFTRACER_DIR)/lib64 -ldftracer_core \
+             -Xlinker -rpath -Xlinker $(DFTRACER_DIR)/lib64
+```
+
+`-ccbin mpicxx` lets the MPI wrapper carry all MPI include/link flags; the stock
+Makefile hardcodes OpenMPI paths (`$(MPI_HOME)`, `-lmpi_cxx`) and `sm_35`, which
+CUDA 12 no longer accepts at all.
+
+### Annotating the cuda variant
+
+`clang_extract_functions` cannot parse these headers as plain C++ (`threadIdx`,
+`__longlong_as_double` undeclared). With
+`-x cuda --cuda-host-only --cuda-path=<root>` plus `-I<root>/include` (for
+`thrust/`) it parses cleanly — but then returns **0 functions**, because the
+work lives in uninstantiated templates. That is the known template-header case,
+not a tool bug: use the anchor-driven header annotator instead, and handle
+`main.cu` separately (`DFTRACER_CPP_INIT` after `initialize_mpi`,
+`DFTRACER_CPP_FINI` **before** `CudaManager::finalize()` and `finalize_mpi()` so
+CUPTI's flush runs while the CUDA context is still alive).

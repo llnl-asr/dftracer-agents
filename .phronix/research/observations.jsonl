@@ -1,0 +1,1 @@
+{"at": 1788977785.0543628, "detail": "[Errno 39] Directory not empty: '/g/g92/haridev/.cache/phronix/graph/knowledge/stage/project-skills/mcp-first'", "kind": "tooling", "stage": "mcp-server", "topic": "", "what": "the knowledge graph failed to rebuild: OSError", "worked": false}

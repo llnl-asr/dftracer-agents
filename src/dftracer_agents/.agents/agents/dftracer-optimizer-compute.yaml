@@ -2,7 +2,6 @@ name: dftracer-optimizer-compute
 description: "Component subagent of the optimizer pipeline: compute. Turns the compute slice of a diagnosed bottleneck list (kernel/vectorization/precision/threading) into citation-backed L1/L2/L3 optimizations against dftracer-compute-optimization's exhaustive dimension checklist. Invoked by dftracer-optimizer (the orchestrator) alongside the io/communication/memory siblings."
 model_level: level_4
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

@@ -132,6 +132,37 @@ tooling fix if it keeps happening.
 mkdir -p /p/lustre5/$USER/workspaces/ior
 ```
 
+### Archiving bulky traces off the workspace to `/p/vast1` (2026-08-27)
+
+The NFS workspace filesystem is small and fills up; accumulated dftracer traces are usually
+the largest thing on it (one project held 767 GB across 344 `traces/` dirs, ~90% of it in
+just 8 directories). `/p/vast1/$USER` is the archive target — multi-PB, and writable.
+
+Relocate the bulky ones and symlink back, preserving the workspace-relative path so
+`<WS>/traces/` still resolves and the pipeline tooling keeps working:
+
+```bash
+dst=/p/vast1/$USER/dftracer-agents/$rel     # $rel = workspaces/<app>/<session>/.../traces
+mkdir -p "$(dirname "$dst")"
+rsync -a "$src/" "$dst/"
+# verify (see software-mpifileutils), THEN:
+rm -rf "$src" && ln -s "$dst" "$src"
+```
+
+This matches the existing `dataset` → PFS symlink convention already used across sessions.
+
+**Two caveats:**
+- Verify with regular-file bytes + an rsync dry-run, never a `du` comparison — the workspace
+  NFS and VAST report **different directory-inode sizes**, which produces a phantom mismatch
+  on every directory. Full details in [[software-mpifileutils]].
+- Traces written *through* such a symlink land on VAST NFS, not the workspace. That conflicts
+  with the traces-stay-in-workspace rule ([[feedback-lustre-io]],
+  [[feedback-optimization-pipeline-traces]]). Fine for archived/finished sessions; think
+  twice before reusing one for a live optimization loop.
+
+Sizing first is worth it — trace size is extremely top-heavy, so moving the top handful
+recovers nearly all the space for a fraction of the symlinks and NFS round-trips.
+
 ### Rabbit near-node flash accelerators
 
 Tuolumne compute nodes have **Rabbit** node-local NVMe accelerators that can be
@@ -844,7 +875,7 @@ when building via session_install_dftracer after STEP 1 has resolved a newer CCE
    export HDF5_ROOT=/usr
    export DFTRACER_ENABLE_HIP_TRACING=ON
    pip install setuptools_scm pybind11
-   pip install "git+https://github.com/llnl/dftracer.git@develop"
+   pip install "git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git@develop"
    ```
 
 **Important:** For Python/AI/ML apps, **dftracer MUST install into the same venv as the app** (not a separate `install/` directory). The session_install_dftracer MCP tool may create a separate environment; if so, manually install via pip into the shared venv instead.

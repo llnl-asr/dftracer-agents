@@ -2,7 +2,6 @@ name: dftracer-tracer
 description: 'Pipeline stage 4. Runs the annotated binary under dftracer to collect traces, then splits/compacts them. Mechanical. Invoke with: run_id, run command, data_dir, env_extra, and the run_name (baseline/opt<n>). Routes traces to Lustre on LLNL systems.'
 model_level: level_1
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

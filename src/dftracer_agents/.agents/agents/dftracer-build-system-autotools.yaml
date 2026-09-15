@@ -2,7 +2,6 @@ name: dftracer-build-system-autotools
 description: Builds the original application in the session when its build system is Autotools (configure.ac/Makefile.am or a checked-in configure script). Specialized sibling of dftracer-build-system-cmake/dftracer-build-system-meson/dftracer-build-system-pip — dispatch to the ONE matching this session's detected build_tool, never combine.
 model_level: level_1
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

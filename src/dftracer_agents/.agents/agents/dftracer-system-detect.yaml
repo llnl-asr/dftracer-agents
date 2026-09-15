@@ -2,7 +2,6 @@ name: dftracer-system-detect
 description: Detects the target system and records site-specific assumptions for downstream dftracer agents.
 model_level: level_1
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

@@ -2,7 +2,6 @@ name: dftracer-session-setup
 description: 'Pipeline stage 1. Clones an app into a dftracer session workspace, detects build system + features, and configures the original source. Returns the run_id and canonical paths. Invoke with: the git URL, ref, and any known build flags.'
 model_level: level_1
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

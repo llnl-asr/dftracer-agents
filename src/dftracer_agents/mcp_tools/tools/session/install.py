@@ -4,7 +4,8 @@ dftracer install helpers — pip installer, cmake builder, and dftracer-utils in
 This module handles the external installation concerns of the dftracer pipeline:
 
 1. **dftracer via pip** (:func:`_install_dftracer_pip_direct`) — installs
-   dftracer directly via ``pip install git+https://github.com/llnl/dftracer.git@<ref>``
+   dftracer directly via ``pip install git+<dftracer_repo>@<ref>`` (default
+   remote: LC GitLab over SSH; see ``_DFTRACER_DEFAULT_REPO``)
    with all setup.py feature env vars (MPI, HDF5, HIP, hwloc, build type, jobs)
    derived from the detected application source and system.  This is the
    standard installation method for all project types.
@@ -38,6 +39,25 @@ from typing import Any, Dict, List, Optional
 
 from .workspace import _run, _write_artifact_log
 
+
+# LLNL's GitHub copy of dftracer is PRIVATE: anonymous HTTPS gets "Repository
+# not found" from every LC machine, which blocked STEP 1/2/5 of the IOR run on
+# 2026-09-10. The canonical readable remote is LC's GitLab over SSH, which the
+# account's key already reaches. Verified on corona: `git ls-remote` succeeds
+# on this URL and fails on both GitHub HTTPS and GitLab HTTPS.
+_DFTRACER_DEFAULT_REPO = "ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git"
+
+# `develop` is the branch the project actually tracks. GitLab carries the old
+# v2.0.3 tag too, so this is a deliberate move forward, not a compatibility fix.
+_DFTRACER_DEFAULT_REF = "develop"
+
+# dftracer-utils is private on GitHub for the same reason; same GitLab group.
+_DFTRACER_UTILS_REPO = "ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer-utils.git"
+
+# brahma's GitHub remote is public and does resolve, but the whole stack is
+# sourced from one place so a single network/auth story covers it. GitLab
+# carries the pinned v1.0.7 tag (verified 2026-09-10).
+_BRAHMA_REPO = "ssh://git@czgitlab.llnl.gov:7999/dftracer/brahma.git"
 
 _CORE_LIB_NAMES = ("libdftracer_core.so", "libdftracer_core.so.4",
                     "libdftracer_core.dylib")
@@ -407,7 +427,7 @@ def _install_dftracer_utils(
     """
     r = _run(
         [str(pip), "install", "-v", "--no-cache-dir", "--upgrade",
-         "git+https://github.com/llnl/dftracer-utils.git@develop"],
+         f"git+{_DFTRACER_UTILS_REPO}@develop"],
         timeout=600,
     )
     if ws is not None:
@@ -419,7 +439,7 @@ def _install_dftracer_utils(
 def _install_dftracer_cmake(
     ws: Path,
     install_prefix: Path,
-    dftracer_ref: str = "v2.0.3",
+    dftracer_ref: str = _DFTRACER_DEFAULT_REF,
     jobs: int = 4,
     features: Optional[Dict[str, Any]] = None,
     extra_cmake_flags: Optional[List[str]] = None,
@@ -447,7 +467,7 @@ def _install_dftracer_cmake(
     Args:
         ws: Workspace root directory.
         install_prefix: cmake install prefix (``-DCMAKE_INSTALL_PREFIX``).
-        dftracer_ref: Git tag or branch to clone.  Defaults to ``"v2.0.3"``.
+        dftracer_ref: Git tag or branch to clone.  Defaults to ``"develop"``.
         jobs: Parallel build jobs.  Defaults to ``4``.
         features: Detected project feature dict from ``_detect_info``.
             Relevant keys: ``"mpi"`` (bool), ``"hdf5"`` (bool),
@@ -469,7 +489,7 @@ def _install_dftracer_cmake(
     if not src.exists():
         r = _run(
             ["git", "clone", "--depth=1", "--branch", dftracer_ref,
-             "https://github.com/llnl/dftracer.git", str(src)],
+             _DFTRACER_DEFAULT_REPO, str(src)],
             timeout=600,
         )
         steps["clone"] = r
@@ -815,7 +835,6 @@ def _run_pip_via_module_script(
     return _run(["bash", "-lc", script_body], timeout=timeout)
 
 
-_DFTRACER_DEFAULT_REPO = "https://github.com/llnl/dftracer.git"
 
 
 def _patch_dftracer_source(src_dir: Path) -> List[Dict[str, Any]]:
@@ -877,7 +896,7 @@ def _patch_dftracer_source(src_dir: Path) -> List[Dict[str, Any]]:
 
 
 def _install_dftracer_pip_direct(
-    dftracer_ref: str = "v2.0.3",
+    dftracer_ref: str = _DFTRACER_DEFAULT_REF,
     features: Optional[Dict[str, Any]] = None,
     python_exe: Optional[str] = None,
     jobs: int = 4,
@@ -890,7 +909,7 @@ def _install_dftracer_pip_direct(
 
     Runs::
 
-        pip install -v --no-cache-dir --upgrade git+https://github.com/llnl/dftracer.git@<ref>
+        pip install -v --no-cache-dir --upgrade git+<dftracer_repo>@<ref>
 
     Environment variables are built from ``features["dftracer_pip_env"]`` (the
     complete dict produced by ``_detect_info``) and supplemented with fallback
@@ -914,7 +933,7 @@ def _install_dftracer_pip_direct(
       ``DFTRACER_DISABLE_HWLOC=OFF``      — hwloc dev libs found on system
 
     Args:
-        dftracer_ref: Git tag or branch to install.  Defaults to ``"v2.0.3"``.
+        dftracer_ref: Git tag or branch to install.  Defaults to ``"develop"``.
         features: Detected project feature dict from ``_detect_info``.  Uses
             ``features["dftracer_pip_env"]`` when present; falls back to
             building the env from individual feature flags.
@@ -1050,6 +1069,24 @@ def _install_dftracer_pip_direct(
     for _k, _v in (features.get("dftracer_pip_env") or {}).items():
         pip_env.setdefault(_k, _v)
 
+    # Scrub stale -DDFTRACER_ENABLE_{MPI,HDF5,HIP_TRACING}=... tokens baked
+    # into the merged DFTRACER_CMAKE_ARGS string above. That string was
+    # precomputed by session_detect BEFORE any caller override (mpi=/hdf5=/
+    # hip= args on session_install_dftracer, or the mpi-incompatibility
+    # auto-disable) was applied to `features` -- and a `-D` cmake arg wins
+    # over an env-var default, so setting pip_env["DFTRACER_ENABLE_MPI"]
+    # alone (see below) was silently overridden by this stale substring.
+    # Confirmed on corona: mpi=False was honored in the env var but the
+    # build still compiled brahma's MPI wrapper against incompatible
+    # mvapich2 2.3.7 because -DDFTRACER_ENABLE_MPI=ON survived here
+    # (run ior/20260911_043848). Re-added explicitly, correctly, below.
+    if pip_env.get("DFTRACER_CMAKE_ARGS"):
+        import re as _re_scrub
+        pip_env["DFTRACER_CMAKE_ARGS"] = _re_scrub.sub(
+            r"-DDFTRACER_ENABLE_(MPI|HDF5|HIP_TRACING)=\S+\s*", "",
+            pip_env["DFTRACER_CMAKE_ARGS"],
+        ).strip()
+
     # System-specific env (e.g. Tuolumne's CCE lib dirs + /usr/lib64 for libdl)
     # is NOT necessarily present in the MCP server process's own environment,
     # so it must be re-applied here or linking dftracer_core against libdl
@@ -1068,9 +1105,28 @@ def _install_dftracer_pip_direct(
     pip_env.setdefault("DFTRACER_ENABLE_DLIO_BENCHMARK_TESTS", "OFF")
     pip_env.setdefault("DFTRACER_ENABLE_PAPER_TESTS", "OFF")
 
-    # Feature fallbacks (in case caller passed features without dftracer_pip_env)
-    if features.get("mpi"):
-        pip_env.setdefault("DFTRACER_ENABLE_MPI", "ON")
+    # Disable git interactive credential prompts on headless systems.
+    # GIT_TERMINAL_PROMPT=0 tells git not to prompt at all.
+    pip_env.setdefault("GIT_TERMINAL_PROMPT", "0")
+    pip_env.setdefault("GIT_ASKPASS", "/bin/echo")
+
+    # Feature fallbacks (in case caller passed features without dftracer_pip_env).
+    # Force (not setdefault) here: `dftracer_pip_env` merged above at line ~1070
+    # is the STALE dict computed by session_detect before any caller override
+    # (e.g. session_install_dftracer's mpi=False auto-disable for an
+    # incompatible MPI) was applied to `features`. setdefault cannot unset an
+    # already-"ON" value from that stale merge, so an auto-disabled MPI still
+    # built with DFTRACER_ENABLE_MPI=ON and failed on brahma's incompatible
+    # wrapper (observed on corona, mvapich2 2.3.7, run ior/20260911_043848,
+    # even though features["mpi"] was correctly False).
+    pip_env["DFTRACER_ENABLE_MPI"] = "ON" if features.get("mpi") else "OFF"
+    # Also pass it as an explicit -D flag (not just the env var above) so it
+    # wins regardless of how dftracer's CMakeLists resolves the option --
+    # a -D flag is authoritative where an env-var default is not.
+    pip_env["DFTRACER_CMAKE_ARGS"] = (
+        pip_env.get("DFTRACER_CMAKE_ARGS", "")
+        + f" -DDFTRACER_ENABLE_MPI={pip_env['DFTRACER_ENABLE_MPI']}"
+    ).strip()
     # Brahma's HDF5 async wrapper signature depends on the exact HDF5 version
     # compiled against (HDF5 >= 1.13 macro-expands H5*_async(...) calls to
     # prepend app_file/app_func/app_line, changing the real argument count).
@@ -1463,7 +1519,14 @@ def _install_dftracer_pip_direct(
     # resolution, not the link-time symbol check. See resources/systems.yaml
     # Tuolumne notes; root-caused again 2026-07-20 on a pecan_milan session
     # building dftracer_service specifically.
-    pip_env.setdefault("LDFLAGS", "-ldl")
+    # corona (Intel classic toolchain): linking dftracer_service against
+    # libdftracer_core.so fails with "undefined reference to
+    # std::filesystem::status(...)" / "path::_M_split_cmpts()" -- the
+    # icpc-wrapped GCC toolchain on this system predates GCC 9's folding of
+    # <filesystem> into libstdc++ proper, so std::filesystem symbols live in
+    # a separate libstdc++fs.a that must be linked explicitly. Confirmed
+    # 2026-09-11 on corona, run ior/20260911_043848.
+    pip_env.setdefault("LDFLAGS", "-ldl -lstdc++fs")
 
     # Build parallelism
     pip_env["JOBS"] = str(jobs)
@@ -1697,7 +1760,7 @@ bool MPIDFTracer::stop_trace = false;
             brahma_src_dir = _Path(_tempfile.mkdtemp(prefix="brahma_src_"))
             r_brahma = _run(
                 ["git", "clone", "--depth=1", "--branch", "v1.0.7",
-                 "https://github.com/hariharan-devarajan/brahma.git",
+                 _BRAHMA_REPO,
                  str(brahma_src_dir)],
                 timeout=300,
             )
@@ -2021,16 +2084,49 @@ bool MPIDFTracer::stop_trace = false;
                  repo_url, str(_clone_dir2)],
                 timeout=600,
             )
+            _effective_pip_spec = pip_spec
+            if not _r_clone2["success"]:
+                # llnl/dftracer (and sibling LLNL repos) are not always
+                # publicly readable — an anonymous HTTPS clone then fails
+                # with an auth-shaped error ("could not read Username",
+                # "Authentication failed", "Repository not found") rather
+                # than a plain network error, even though the account may
+                # already have SSH-key access. Detected on corona
+                # (2026-09-10): the same repo clones fine over
+                # git@github.com:llnl/dftracer.git with the session's own
+                # SSH key. Retry once over SSH before giving up, but only
+                # for github.com HTTPS URLs and only on that specific
+                # failure signature — a genuine network outage should not
+                # be masked by silently trying a second transport.
+                _clone_err = (_r_clone2.get("stderr", "") + _r_clone2.get("stdout", ""))
+                _auth_signature = re.search(
+                    r"could not read Username|Authentication failed|Repository not found|"
+                    r"terminal prompts disabled|Permission denied \(publickey",
+                    _clone_err,
+                )
+                _gh_https = re.match(r"https://github\.com/([^/]+)/(.+?)(?:\.git)?/?$", repo_url)
+                if _auth_signature and _gh_https:
+                    _ssh_url = f"git@github.com:{_gh_https.group(1)}/{_gh_https.group(2)}.git"
+                    _r_clone2b = _run(
+                        ["git", "clone", "--depth=1", "--branch", dftracer_ref,
+                         _ssh_url, str(_clone_dir2)],
+                        timeout=600,
+                        env={"GIT_SSH_COMMAND": "ssh -o BatchMode=yes -o ConnectTimeout=15"},
+                    )
+                    if _r_clone2b["success"]:
+                        _r_clone2 = _r_clone2b
+                        _effective_pip_spec = f"git+{_ssh_url}@{dftracer_ref}"
             if _r_clone2["success"]:
                 _source_patches = _patch_dftracer_source(_clone_dir2)
                 r = _pip_install_dftracer_from(str(_clone_dir2))
             else:
                 _source_patches = [{
                     "patch": "(none)", "applied": False,
-                    "reason": f"clone of {repo_url}@{dftracer_ref} failed; "
-                              f"installing directly with no source patches",
+                    "reason": f"clone of {repo_url}@{dftracer_ref} failed (HTTPS and, "
+                              f"if attempted, SSH fallback); installing directly with "
+                              f"no source patches",
                 }]
-                r = _pip_install_dftracer_from(pip_spec)
+                r = _pip_install_dftracer_from(_effective_pip_spec)
             _shutil3.rmtree(str(_clone_dir2), ignore_errors=True)
     if ws is not None:
         _write_artifact_log(ws, 6, "session_install_dftracer", {

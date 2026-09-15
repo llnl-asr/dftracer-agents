@@ -2,7 +2,6 @@ name: dftracer-build-system-meson
 description: Builds the original application in the session when its build system is Meson (meson.build/meson.options, or pyproject.toml with build-backend "mesonpy"). Specialized sibling of dftracer-build-system-cmake/dftracer-build-system-autotools/dftracer-build-system-pip — dispatch to the ONE matching this session's detected build_tool, never combine.
 model_level: level_1
 effort: low
-isolation: worktree
 tools:
 - Read
 - Bash

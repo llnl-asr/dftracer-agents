@@ -110,6 +110,25 @@ a["multiplex"]          # 0 = exact hardware count, 1 = scaled estimate
 dftracer records each counter twice per sample: the raw `PAPI_X` cumulative value and a
 `PAPI_X_delta` since the previous sample.
 
+## Rule 5 — probe on a COMPUTE node; a login-node probe reports the wrong verdict
+
+`multiplex` is a property of the machine the counters are programmed on, not of
+the request. The identical 4-name set
+`PAPI_TOT_CYC,PAPI_TOT_INS,PAPI_FP_OPS,PAPI_FP_INS` measured, same binary, same
+env, same day:
+
+| where | `args.multiplex` |
+| --- | --- |
+| login node | **1** (MULTIPLEXED — scaled estimates) |
+| compute node (MI300A, inside an allocation) | **0** (EXACT) |
+
+All four names landed in both cases, so the counter list looks identical and
+only the `multiplex` field distinguishes a measurement from an estimate. A
+cheap login-node probe will therefore condemn a set that is actually exact on
+the hardware you care about — and, in the other direction, could bless one that
+is not. Read `multiplex` back out of a trace produced by the real run on the
+real node, never from a convenience probe elsewhere.
+
 ## Counter layout: per-counter vs family-grouped
 
 dftracer changed from emitting **one event per counter per sample** to **one event per
@@ -150,3 +169,64 @@ Use the PAPI version [[system-tuolumne]] pins (`papi/7.2.0.2`). The newest modul
 (`7.3.0.1`) ships a `rocp_sdk` component that is ABI-incompatible with the installed ROCm
 and SIGSEGVs inside `PAPI_library_init` — which kills both dftracer's build-time counter
 probe (silently falling back to two counters) and the traced application.
+
+---
+
+## Worked example: deriving an EXACT partition on an Intel Sapphire Rapids node
+
+A concrete instance of this skill's central rule — *never size a counter set by
+counting names, always read `args.multiplex` back out of the trace*.
+
+**The node** (`matrix`-class, 2 × Xeon Platinum 8480+, system PAPI 5.6.0.0):
+19 hardware counters, **17 presets available**, and the build-time probe
+reported **only 10 of them fit at once** (`DFTRACER_PAPI_FITTING_COUNTERS 10`).
+This is a different ceiling from the ~30 presets an MI300A/Cray node reports —
+**a counter plan is not portable between systems and must be re-derived.**
+
+The 17, as the build probe grouped them:
+
+| group | presets |
+|---|---|
+| BRANCH (7) | `PAPI_BR_UCN, BR_CN, BR_TKN, BR_NTK, BR_MSP, BR_PRC, BR_INS` |
+| INSTRUCTION (1) | `PAPI_TOT_INS` |
+| CYCLE (2) | `PAPI_TOT_CYC, PAPI_REF_CYC` |
+| FLOP (7) | `PAPI_FP_INS, VEC_INS, FP_OPS, SP_OPS, DP_OPS, VEC_SP, VEC_DP` |
+
+### Asking for all 17 does not error — it multiplexes AND silently drops two
+
+```
+MULTIPLEXED  samples=17 mux=[1] want=17 got=15 missing=['PAPI_BR_UCN','PAPI_BR_PRC']
+```
+
+Two counters vanish from the trace entirely, and the other 15 become scaled
+estimates. Nothing in the exit status or stderr says so. This is the exact
+failure the "do not over-ask" rule exists to prevent.
+
+### The measured exact partition — 2 runs, `multiplex=0`, nothing missing
+
+```
+set1_branch_cycle : PAPI_BR_UCN,PAPI_BR_CN,PAPI_BR_TKN,PAPI_BR_NTK,PAPI_BR_MSP,
+                    PAPI_BR_PRC,PAPI_BR_INS,PAPI_TOT_INS,PAPI_TOT_CYC,PAPI_REF_CYC   (10)
+set2_flop         : PAPI_FP_INS,PAPI_VEC_INS,PAPI_FP_OPS,PAPI_SP_OPS,
+                    PAPI_DP_OPS,PAPI_VEC_SP,PAPI_VEC_DP                              (7)
+```
+
+Note the counter-intuitive result that made probing essential: a **4-name** set
+(`TOT_INS,TOT_CYC,FP_OPS,DP_OPS`) came back **MULTIPLEXED**, while the **10-name**
+set1 and the **7-name** set2 both came back **EXACT**. Derived presets expand to
+several native events, and mixing across groups overflows in ways name-counting
+cannot predict. Group-aligned sets fit; arbitrary small mixtures may not.
+
+### The probe harness
+
+Run the real application briefly under each candidate set and classify from the
+trace, not from the exit code:
+
+```python
+ks = [k for k in args if k.startswith('PAPI_') and not k.endswith('_delta')]
+# EXACT  <=> multiplex == 0 AND every requested preset appears in the trace
+```
+
+A run reporting `mux=[0]` and `missing=[]` is the only evidence that a set is
+exact. Budget one such probe per candidate set before committing to a sweep —
+it is minutes of work against hours of unusable counter data.

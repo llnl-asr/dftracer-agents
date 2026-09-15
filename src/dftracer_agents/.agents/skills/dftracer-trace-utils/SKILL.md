@@ -111,6 +111,39 @@ Returns NDJSON — one JSON object per line:
 The summary line (`View: custom | Files: 1 | Chunks: scanned=1 skipped=0 | Events: matched=3 scanned=1190`)
 goes to stderr and is not returned.
 
+### FIRST check that summary line: `skipped=N scanned=0` means the index is empty, not that the data is absent
+
+On some traces `dftracer_index` completes "successfully" but reports
+**`Events processed: 0`** and never populates per-chunk statistics. Every
+downstream consumer of that index then fails, and each fails *differently* and
+*without an error*:
+
+* `stats --report categories|summary` → `No chunk statistics in index for <file>`
+* `view --query ...` → `Chunks: scanned=0 skipped=10 | Events: matched=0` —
+  **every chunk pruned by an empty bloom filter, exit status 0, empty output.**
+  This looks exactly like "the category is not in the trace". It is not.
+  `--force`, `--dimensions cat,name` and a full reindex do **not** fix it.
+
+So never conclude a category is ABSENT from a `view` that returned nothing —
+check `scanned=` in the summary first. If it is 0 while `skipped=` is nonzero,
+the query never looked at any data.
+
+**The escape hatch is `dftracer_reader` / `mcp__dftracer__reader`**, which reads
+the file directly and is unaffected. Two gotchas:
+
+* line numbers are **1-based** — `start=0` errors with
+  `Line numbers must be 1-based`;
+* if `end` exceeds the file's true line count the reader returns **0 lines**
+  rather than the available ones, so a "just ask for 100000000" dump yields an
+  empty file. Bisect the real count first (grow `end` x4 until it returns 0,
+  then binary-search down), then read `1..N`.
+
+Validate the dump by checking its line count equals
+`mcp__dftracer__event_count` for the same directory — those two agreeing
+exactly is what proves the inventory is complete. Aggregating the reader's own
+NDJSON output afterwards is fine; the rule this skill enforces is that nothing
+but a dftracer util may open the `.pfw`/`.pfw.gz` itself.
+
 ---
 
 ## Full tool mapping
@@ -336,3 +369,30 @@ Worked example: a miniFE sweep whose app SIGABRTed at teardown on every run stil
 16/16 non-empty traces per run, and all 96 were `end`-terminated — proving the abort was
 strictly post-flush and the data was safe to use. The reverse case (missing `end`) means
 the tail is lost even though the file looks healthy.
+
+### `gzip -t` is the cheapest incompleteness signal — and it is NOT copy corruption
+
+Before the `end`-event check above, `gzip -t` gives a near-free first-pass verdict on any
+`*.pfw.gz`:
+
+```bash
+gzip -t trace.pfw.gz   # rc!=0 + "unexpected end of file" => stream never closed
+```
+
+`unexpected end of file` means the gzip stream was never finalized — the writer died or was
+killed before flushing the trailer. Such a file is **incomplete but not worthless**: everything
+before the truncation point decompresses fine and is valid dftracer JSON. In one observed case
+a truncated compacted chunk still yielded 414k parseable events, with the final line cut
+mid-record. Treat it as "tail lost", exactly like a missing `end` event — not as a damaged file
+to discard.
+
+**Do not mistake this for copy/transfer corruption.** When traces are relocated between
+filesystems (see [[software-mpifileutils]]), pre-existing truncation from killed runs shows up
+for the first time at the destination and reads like the copy broke them. It didn't. Establish
+which it is by comparing per-file sizes against the source **before deleting the source** — a
+transfer-induced truncation makes the destination file *smaller* than its source, while a
+pre-existing one has identical size on both sides. Ordering matters: once the source is gone,
+the two causes are no longer distinguishable after the fact.
+
+Order the completeness gates cheapest-first: `gzip -t` → zero-byte/file-count → trailing `end`
+event.
