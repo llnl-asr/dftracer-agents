@@ -29,7 +29,7 @@ def _ensure_sample_data(repo_root: Path) -> Path:
                 "1",
                 "--filter=blob:none",
                 "--sparse",
-                "https://github.com/llnl/dftracer.git",
+                "https://github.com/llnl-asr/dftracer.git",
                 str(clone_dir),
             ],
             check=True,

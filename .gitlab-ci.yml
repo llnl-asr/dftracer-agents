@@ -35,7 +35,6 @@ allocate:
     - echo "Created Flux allocation $JOBID (shared by all CI jobs)"
     - flux proxy "$JOBID" flux resource list
 
-# NOTE(gitlab-migration): the pytest job is DISABLED for this project (its
 # suite is stale w.r.t. the current tree and never ran on GitHub). Only the
 # docs build runs; see .gitlab/ci/docs.sh for how to re-enable the tests.
 docs:

@@ -11,8 +11,8 @@ Never install dftracer from a prebuilt/prerelease distribution (e.g. the Tuolumn
 
 **How to apply:** before choosing a dftracer install path, ask whether the workload needs dftracer's own MPI-IO interception, HDF5 tracing, or HIP tracing (not just app-level FUNCTION-mode annotation around MPI/HDF5/HIP calls, which works with any build). If yes, build from source — LLNL's internal GitLab is the canonical source for these projects, same org, one repo per package:
 ```
-ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git
-ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer-utils.git
-ssh://git@czgitlab.llnl.gov:7999/dftracer/pydftracer.git
+https://github.com/llnl-asr/dftracer.git
+https://github.com/llnl-asr/dftracer-utils.git
+https://github.com/llnl-asr/pydftracer.git
 ```
 (dfanalyzer, dfdiagnoser under the same org.) **`czgitlab.llnl.gov` is only reachable from inside the LC (Livermore Computing) network** — confirmed working via SSH from Tuolumne (an LC system) without extra key setup, but this source will NOT be reachable from outside LC (a non-LC or external/sandboxed environment) — fall back to PyPI or the public GitHub mirror (`github.com/LLNL/dftracer`) there. Install order: dftracer BEFORE dftracer-utils (stale header collision otherwise, see [[tools-dftracer]] RULE 3). Only use the prebuilt distribution when the workload genuinely needs nothing beyond plain FUNCTION-mode tracing with zero dftracer-side feature flags — and even then, ALWAYS verify with `ldd` rather than assuming a feature is present, since a green install/import does not confirm what was actually compiled in. See [[tools-dftracer]] and [[workload-ygm]] for the full install-source comparison and the YGM session this was learned on.

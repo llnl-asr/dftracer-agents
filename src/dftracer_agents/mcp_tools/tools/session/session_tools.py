@@ -2804,7 +2804,7 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         """Install dftracer via pip for all project types, then locate dirs in site-packages.
 
         Installs ``pip install git+<dftracer_repo>@<ref>`` (defaulting to
-        ``ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git``, ref
+        ``https://github.com/llnl-asr/dftracer.git``, ref
         ``develop``) regardless of whether the
         project is C/C++ or Python.  Feature flags detected from the application
         source are forwarded as environment variables so the dftracer wheel's C
@@ -2857,7 +2857,7 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 system HDF5 to build against).
             dftracer_repo: Git URL to install dftracer FROM. Defaults to empty,
                 which means LC's GitLab over SSH
-                (``ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git``).
+                (``https://github.com/llnl-asr/dftracer.git``).
                 That is the canonical readable remote: the GitHub copy is
                 PRIVATE and anonymous HTTPS fails from every LC machine. GitLab
                 is reachable only from inside the LC network. ``dftracer_ref`` is
@@ -3098,7 +3098,7 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                         f"{ver} is not in a dftracer-compatible range "
                         f"({compat_range}). "
                         f"Upgrade or downgrade your MPI installation to enable MPI-IO event capture. "
-                        f"Report unsupported versions at https://github.com/llnl/dftracer/issues"
+                        f"Report unsupported versions at https://github.com/llnl-asr/dftracer/issues"
                     )
             else:
                 compat_warnings.append(
