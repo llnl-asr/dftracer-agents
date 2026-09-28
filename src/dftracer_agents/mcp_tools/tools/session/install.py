@@ -1932,7 +1932,7 @@ bool MPIDFTracer::stop_trace = false;
                     )
                 # NOTE: unlike MPI, HDF5 does NOT need a manually-injected
                 # BRAHMA_HDF5_VERSION flag -- dftracer's own dependency/CMakeLists.txt
-                # (github.com/llnl/dftracer, develop, dependency/CMakeLists.txt)
+                # (github.com/llnl-asr/dftracer, develop, dependency/CMakeLists.txt)
                 # already computes `_dftracer_dep_hdf5_version` internally via
                 # find_package(HDF5) using the identical major*100000+minor*100+patch
                 # formula (confirmed: 1.14.5 -> 101405) and forwards HDF5_ROOT /

@@ -49,7 +49,7 @@ internal `clang_add_braces` pass, which then self-disables with a warning while
 annotation proceeds. Harmless in C++ RAII mode (no `END` macros are emitted at
 all), but a real hazard in C mode.
 
-**Install note (cost two installs):** `github.com/llnl/dftracer@develop` builds
+**Install note (cost two installs):** `github.com/llnl-asr/dftracer@develop` builds
 green and reports success while CMake silently discards
 `DFTRACER_ENABLE_PAPI_TRACING` and `DFTRACER_ENABLE_VARIORUM` as "unused" — those
 options only exist on the czgitlab remote. Verify the installed

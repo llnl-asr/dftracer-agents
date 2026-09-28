@@ -15,7 +15,7 @@ against real artifacts.** Full detail is in the new [[workload-amg]] skill — l
 that, not this entry, to actually do the work.
 
 **The single most important finding, and it is NOT AMG-specific:**
-`github.com/llnl/dftracer` `develop` (v2.0.3, `70bf822`) has **no PAPI and no
+`github.com/llnl-asr/dftracer` `develop` (v2.0.3, `70bf822`) has **no PAPI and no
 Variorum support at all**. `session_install_dftracer(papi=True, variorum=True)`
 completes with `exit: 0` and looks entirely healthy; cmake merely lists
 `DFTRACER_ENABLE_PAPI_TRACING` and `DFTRACER_ENABLE_VARIORUM` under
