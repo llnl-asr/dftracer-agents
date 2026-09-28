@@ -33,7 +33,7 @@ export MPICXX="/opt/cray/pe/mpich/9.1.0/ofi/crayclang/20.0/bin/mpicxx"
 export DFTRACER_ENABLE_HDF5=ON
 export HDF5_ROOT=/usr
 export DFTRACER_ENABLE_HIP_TRACING=ON
-pip install "git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git@develop"
+pip install "git+https://github.com/llnl-asr/dftracer.git@develop"
 
 # Then install mpi4py with Cray linkage fix (see [[software-mpi]])
 export MPI4PY_MPIABI=mpich

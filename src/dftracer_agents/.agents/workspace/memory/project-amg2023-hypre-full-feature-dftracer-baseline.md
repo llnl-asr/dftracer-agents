@@ -19,7 +19,7 @@ zero-byte, rc=0, 70.8 s at 2 nodes x 8 ranks (`-n 240^3`/rank).
    success, but both flags land in CMake's "Manually-specified variables were
    not used" warning and the installed `dftracer_config.hpp` has neither
    symbol. Reinstall from LC czgitlab
-   (`ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git@develop`) and grep
+   (`https://github.com/llnl-asr/dftracer.git@develop`) and grep
    the header for `DFTRACER_PAPI_TRACING_ENABLE 1` / `DFTRACER_VARIORUM_ENABLE 1`.
    See [[feedback-never-prebuilt-when-config-knobs-needed]].
 2. **`session_patch_build` injects `-ldftracer`, which does not exist.** The

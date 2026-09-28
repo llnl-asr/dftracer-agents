@@ -11,9 +11,9 @@ license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "fastmcp>=0.1.0",
-    "dftracer-utils @ git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer-utils.git@develop",
-    "dftracer-analyzer @ git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dfanalyzer.git@develop",
-    "dfdiagnoser @ git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dfdiagnoser.git@main",
+    "dftracer-utils @ git+https://github.com/llnl-asr/dftracer-utils.git@develop",
+    "dftracer-analyzer @ git+https://github.com/llnl-asr/dfanalyzer.git@develop",
+    "dfdiagnoser @ git+https://github.com/llnl-asr/dfdiagnoser.git@main",
     "libclang>=18.1.0",
     "matplotlib",
     "requests",

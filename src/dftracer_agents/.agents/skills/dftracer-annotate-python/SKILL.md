@@ -297,7 +297,7 @@ trace but event names/counts/timing are otherwise correct.
 **`start_time`/`duration` unit for manual `log_event` calls depends on
 `DFTRACER_TIME_METRIC` (final correction, 2026-07-17) — check which dftracer
 branch/version is installed before assuming a unit.** The `feature/time_scale`
-branch (`git+https://github.com/LLNL/dftracer.git@feature/time_scale`, not yet
+branch (`git+https://github.com/llnl-asr/dftracer.git@feature/time_scale`, not yet
 merged to `develop` as of this writing) adds `DFTRACER_TIME_METRIC` — an env
 var with values `NS`/`US`/`MS`/`SEC` (default `US`) that tells dftracer how to
 interpret raw `start_time`/`duration` integers — defined in

@@ -875,7 +875,7 @@ when building via session_install_dftracer after STEP 1 has resolved a newer CCE
    export HDF5_ROOT=/usr
    export DFTRACER_ENABLE_HIP_TRACING=ON
    pip install setuptools_scm pybind11
-   pip install "git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git@develop"
+   pip install "git+https://github.com/llnl-asr/dftracer.git@develop"
    ```
 
 **Important:** For Python/AI/ML apps, **dftracer MUST install into the same venv as the app** (not a separate `install/` directory). The session_install_dftracer MCP tool may create a separate environment; if so, manually install via pip into the shared venv instead.
