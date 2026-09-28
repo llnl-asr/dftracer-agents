@@ -24,7 +24,7 @@ reported by the install tool, but the installed `dftracer_config.hpp` had
 **neither** `DFTRACER_PAPI_TRACING_ENABLE` **nor** `DFTRACER_VARIORUM_ENABLE`, and
 `rocprofiler_configure` was **not** exported (so GPU tracing would have lost the
 registration race). Re-installing from
-`ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git@develop` gave all three.
+`https://github.com/llnl-asr/dftracer.git@develop` gave all three.
 **The install tool's `features_enabled` list reflects what was REQUESTED, not what
 was COMPILED — always grep `dftracer_config.hpp` and `nm -D | grep -w
 rocprofiler_configure`.** See [[feedback-never-prebuilt-when-config-knobs-needed]].

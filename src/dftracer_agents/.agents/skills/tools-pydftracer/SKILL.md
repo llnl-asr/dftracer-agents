@@ -55,7 +55,7 @@ that, either:
 
 ## typing_extensions is a hidden runtime dependency
 
-Observed 2026-07-16 (flux-fiction session): `pip install "git+https://github.com/LLNL/dftracer.git@develop"`
+Observed 2026-07-16 (flux-fiction session): `pip install "git+https://github.com/llnl-asr/dftracer.git@develop"`
 succeeds and installs `pydftracer`, but `from dftracer.python import dftracer, dft_fn`
 still fails until `typing_extensions` is ALSO installed — it is not currently
 declared as a dependency of either package. Install it alongside:

@@ -228,7 +228,7 @@ export DFTRACER_ENABLE_HIP_TRACING=OFF DFTRACER_DISABLE_HWLOC=ON
 export MPI_C_COMPILER=$(which mpicc) MPI_CXX_COMPILER=$(which mpicxx)
 export HDF5_ROOT=$P HDF5_DIR=$P
 pip install --no-cache-dir --force-reinstall --no-deps -v \
-  "git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git@develop"
+  "git+https://github.com/llnl-asr/dftracer.git@develop"
 
 # 3. Verify ALL three are ==1:
 grep -E "DFTRACER_(MPI|HDF5|FTRACING)_ENABLE" \

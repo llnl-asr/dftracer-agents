@@ -1455,7 +1455,7 @@ root_cause: |
   Every prior session installed dftracer either via session_install_dftracer's
   from-source pip build (compiling the C/C++ extension against the session's
   own MPI/HDF5/compiler) or a manual `pip install dftracer`/`pip install
-  git+https://github.com/LLNL/dftracer.git@develop`, both of which compile.
+  git+https://github.com/llnl-asr/dftracer.git@develop`, both of which compile.
   Tuolumne also hosts a prebuilt wheel distribution via a modulefile that
   session_install_dftracer does NOT know about — using it skips compilation
   entirely (no CC/CXX/LD_LIBRARY_PATH dance, no chid_t/dlopen/link-order

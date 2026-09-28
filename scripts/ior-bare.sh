@@ -65,7 +65,7 @@ Do all of this:
 1. Clone $APP_URL at ref $REF into a 'source' directory here.
 2. Install DFTracer from the LLNL GitLab, develop branch, into a virtualenv
    here, so IOR can be linked against it:
-     pip install \"git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git@develop\"
+     pip install \"git+https://github.com/llnl-asr/dftracer.git@develop\"
    Use that URL and that branch. Do not substitute a GitHub mirror: the
    GitHub HTTPS clone does not work from this account.
 3. Annotate IOR's C sources so a trace is meaningful: include the DFTracer

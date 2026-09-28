@@ -40,7 +40,7 @@ and it already knows the CMake two-pass dependency-bootstrap quirk, see
 1. **PyPI release**: `pip install dftracer==<version>` (e.g. `2.0.3`). Gets a
    tagged, stable version.
 2. **GitHub develop branch via pip's git URL support**:
-   `pip install "git+https://github.com/LLNL/dftracer.git@develop"`. Use this
+   `pip install "git+https://github.com/llnl-asr/dftracer.git@develop"`. Use this
    when you need a fix that hasn't shipped to PyPI yet. This is still a pip
    install, NOT a manual `git clone` + `cmake configure/build/install` — pip
    drives the same build backend, it just resolves the source from the git ref
@@ -148,7 +148,7 @@ environment isn't set BEFORE invoking pip:
 export CC=$(which mpicc)      # or the plain C compiler if the app has no MPI
 export CXX=$(which mpic++)    # or mpicxx / the plain C++ compiler
 export LD_LIBRARY_PATH="<compiler-runtime-lib-dirs>:$LD_LIBRARY_PATH"
-pip install dftracer   # or pip install "git+https://github.com/LLNL/dftracer.git@develop"
+pip install dftracer   # or pip install "git+https://github.com/llnl-asr/dftracer.git@develop"
 ```
 
 Also export dftracer's own CMake feature-flag env vars BEFORE pip install —
