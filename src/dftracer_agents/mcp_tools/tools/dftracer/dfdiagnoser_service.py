@@ -38,7 +38,7 @@ Typical pipeline order
 
 References
 ----------
-* https://github.com/llnl/DFDiagnoser
+* https://github.com/llnl-asr/dfdiagnoser
 * https://dfanalyzer.readthedocs.io/
 """
 
@@ -139,7 +139,7 @@ def _diagnose_via_api(
     metric_boundaries: Dict[str, float],
 ) -> Optional[Dict[str, Any]]:
     """Run offline diagnosis via ``Diagnoser.diagnose_checkpoint`` (DFDiagnoser
-    >= the release that added it, see https://github.com/llnl/dfdiagnoser).
+    >= the release that added it, see https://github.com/llnl-asr/dfdiagnoser).
 
     Returns None to signal the direct-pandas fallback should be used instead
     (package not installed, or the installed release predates
@@ -408,7 +408,7 @@ def _load_raw_stats(checkpoint_dir: str) -> Optional[Dict[str, Any]]:
 class DFDiagnoserService(MCPService):
     """MCP service that diagnoses I/O bottlenecks from DFAnalyzer checkpoints.
 
-    Wraps the DFDiagnoser library (https://github.com/llnl/DFDiagnoser) and
+    Wraps the DFDiagnoser library (https://github.com/llnl-asr/dfdiagnoser) and
     exposes a single ``diagnose`` tool.  The tool tries the Python API first and
     falls back to the ``dfdiagnoser`` CLI binary when the package is not
     installed in the current Python environment.

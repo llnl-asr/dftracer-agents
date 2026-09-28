@@ -67,14 +67,14 @@ and it already knows the CMake two-pass dependency-bootstrap quirk, see
 4. **LLNL internal GitLab source (czgitlab, SSH), the canonical org for
    feature-configurable source builds**: same org, one repo per package —
    ```
-   ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git
-   ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer-utils.git
-   ssh://git@czgitlab.llnl.gov:7999/dftracer/pydftracer.git
+   https://github.com/llnl-asr/dftracer.git
+   https://github.com/llnl-asr/dftracer-utils.git
+   https://github.com/llnl-asr/pydftracer.git
    ```
    (dfanalyzer and dfdiagnoser live under the same org too.) Install order:
    `dftracer` BEFORE `dftracer-utils` (RULE 3 in `dftracer-install` — a stale
    `zconf.h` header collision otherwise). `pip install
-   "git+ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git"` with the
+   "git+https://github.com/llnl-asr/dftracer.git"` with the
    `DFTRACER_ENABLE_MPI`/`DFTRACER_ENABLE_HDF5`/`MPICC`/`MPICXX`/`HDF5_ROOT`
    env vars set BEFORE the pip call (RULE 1). SSH access confirmed working
    from Tuolumne compute/login nodes without extra setup (2026-08-04).
@@ -102,7 +102,7 @@ and it already knows the CMake two-pass dependency-bootstrap quirk, see
    run produces zero `papi` and zero power events with no error.
 
    So for any PAPI or Variorum session you MUST pass
-   `dftracer_repo="ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git"`
+   `dftracer_repo="https://github.com/llnl-asr/dftracer.git"`
    and then verify **in the installed header**, never in the tool's response:
 
    ```bash

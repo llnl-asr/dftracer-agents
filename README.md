@@ -1,6 +1,6 @@
 # dftracer-agents
 
-MCP (Model Context Protocol) server that exposes the [dftracer](https://github.com/llnl/dftracer) I/O tracing toolkit as tools for LLM agents.
+MCP (Model Context Protocol) server that exposes the [dftracer](https://github.com/llnl-asr/dftracer) I/O tracing toolkit as tools for LLM agents.
 
 Includes three services:
 
@@ -1062,7 +1062,7 @@ When working with a new trace, follow this sequence — the agent will do this a
    → full dfanalyzer pipeline (requires native C++ and dfanalyzer install)
 ```
 
-**AI/ML auto-detection** (`detect_preset`): inspects the `cat` field of every event against the AI/ML category signatures from [dftracer's ai_common.py](https://github.com/llnl/pydftracer/blob/develop/python/dftracer/python/ai_common.py). If any of `COMPUTE`, `DATA`, `DATALOADER`, `COMM`, `DEVICE`, `CHECKPOINT`, or `PIPELINE` categories are present — or AI/ML function names like `forward`, `backward`, `epoch`, `fetch` — the `dlio` preset is recommended; otherwise `posix`.
+**AI/ML auto-detection** (`detect_preset`): inspects the `cat` field of every event against the AI/ML category signatures from [dftracer's ai_common.py](https://github.com/llnl-asr/pydftracer/blob/develop/python/dftracer/python/ai_common.py). If any of `COMPUTE`, `DATA`, `DATALOADER`, `COMM`, `DEVICE`, `CHECKPOINT`, or `PIPELINE` categories are present — or AI/ML function names like `forward`, `backward`, `epoch`, `fetch` — the `dlio` preset is recommended; otherwise `posix`.
 
 ### Available tools in Goose
 

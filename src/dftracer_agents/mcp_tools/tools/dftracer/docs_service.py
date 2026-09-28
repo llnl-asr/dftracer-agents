@@ -126,7 +126,7 @@ _SOURCE_ALIASES: Dict[str, str] = {
 
 # HTTP ``User-Agent`` header sent with every outbound request to ReadTheDocs.
 # Identifies this client to RTD rate-limiters and log analysis.
-_USER_AGENT = "dftracer-agents/1.0 (MCP docs tool; +https://github.com/llnl/dftracer)"
+_USER_AGENT = "dftracer-agents/1.0 (MCP docs tool; +https://github.com/llnl-asr/dftracer)"
 
 # Socket timeout in seconds applied to every ``urllib`` HTTP call.
 # Prevents the MCP server from stalling indefinitely when RTD is unreachable.

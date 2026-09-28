@@ -3,7 +3,6 @@
 #   flux proxy <jobid> flux run -N 1 bash .gitlab/ci/docs.sh)
 # and builds the Sphinx docs inside a podman python container.
 #
-# NOTE(gitlab-migration): the pytest job is DISABLED for this project — see
 # .gitlab-ci.yml. The suite is stale w.r.t. the current tree (it never ran on
 # GitHub, the project had no CI). To re-enable it:
 #   * install into a repo-root venv: `python -m venv venv &&

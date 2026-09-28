@@ -45,19 +45,19 @@ from .workspace import _run, _write_artifact_log
 # 2026-09-10. The canonical readable remote is LC's GitLab over SSH, which the
 # account's key already reaches. Verified on corona: `git ls-remote` succeeds
 # on this URL and fails on both GitHub HTTPS and GitLab HTTPS.
-_DFTRACER_DEFAULT_REPO = "ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git"
+_DFTRACER_DEFAULT_REPO = "https://github.com/llnl-asr/dftracer.git"
 
 # `develop` is the branch the project actually tracks. GitLab carries the old
 # v2.0.3 tag too, so this is a deliberate move forward, not a compatibility fix.
 _DFTRACER_DEFAULT_REF = "develop"
 
 # dftracer-utils is private on GitHub for the same reason; same GitLab group.
-_DFTRACER_UTILS_REPO = "ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer-utils.git"
+_DFTRACER_UTILS_REPO = "https://github.com/llnl-asr/dftracer-utils.git"
 
 # brahma's GitHub remote is public and does resolve, but the whole stack is
 # sourced from one place so a single network/auth story covers it. GitLab
 # carries the pinned v1.0.7 tag (verified 2026-09-10).
-_BRAHMA_REPO = "ssh://git@czgitlab.llnl.gov:7999/dftracer/brahma.git"
+_BRAHMA_REPO = "https://github.com/llnl-asr/brahma.git"
 
 _CORE_LIB_NAMES = ("libdftracer_core.so", "libdftracer_core.so.4",
                     "libdftracer_core.dylib")
@@ -2093,7 +2093,7 @@ bool MPIDFTracer::stop_trace = false;
                 # than a plain network error, even though the account may
                 # already have SSH-key access. Detected on corona
                 # (2026-09-10): the same repo clones fine over
-                # git@github.com:llnl/dftracer.git with the session's own
+                # https://github.com/llnl-asr/dftracer.git with the session's own
                 # SSH key. Retry once over SSH before giving up, but only
                 # for github.com HTTPS URLs and only on that specific
                 # failure signature — a genuine network outage should not

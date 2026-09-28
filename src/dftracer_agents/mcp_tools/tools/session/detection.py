@@ -320,7 +320,7 @@ _MPI_COMPATIBLE_DISPLAY: Dict[str, str] = {
 }
 
 #: GitHub issue URL for requesting new MPI version support.
-_DFTRACER_ISSUES_URL = "https://github.com/llnl/dftracer/issues"
+_DFTRACER_ISSUES_URL = "https://github.com/llnl-asr/dftracer/issues"
 
 
 def _mpi_to_brahma_int(major: int, minor: int, patch: int) -> int:

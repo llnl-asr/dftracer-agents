@@ -1824,7 +1824,7 @@ context: First dftracer pipeline run on corona (Intel classic + MVAPICH2 + Flux 
 error: |
   session_configure (autotools): "[Errno 2] No such file or directory: '.../source/configure'"
   Underlying autoreconf error: "configure.ac:4: error: Autoconf version 2.71 or higher is required"
-  session_install_dftracer: pip clone of https://github.com/llnl/dftracer.git failed with
+  session_install_dftracer: pip clone of https://github.com/llnl-asr/dftracer.git failed with
   "fatal: could not read Username for 'https://github.com': No such device or address" /
   GitHub API confirms 404 for anonymous access to llnl/dftracer.
 root_cause: |
@@ -1835,8 +1835,8 @@ root_cause: |
   handling of it.
   (2) llnl/dftracer is a PRIVATE GitHub repo. Anonymous HTTPS clone always 404s regardless
   of system; it only works when the invoking account has an SSH key with repo access
-  (confirmed: `git clone git@github.com:llnl/dftracer.git` succeeds with this account's key,
-  `git clone https://github.com/llnl/dftracer.git` never does, on any system). Tools that
+  (confirmed: `git clone https://github.com/llnl-asr/dftracer.git` succeeds with this account's key,
+  `git clone https://github.com/llnl-asr/dftracer.git` never does, on any system). Tools that
   hardcode the HTTPS URL will fail identically anywhere the environment lacks a configured
   HTTPS git credential helper for github.com, not just on corona.
 fix: |

@@ -25,7 +25,7 @@ project` and moves on. The installed `dftracer_config.hpp` then contains neither
 only on the LC-internal remote:
 
 ```
-dftracer_repo="ssh://git@czgitlab.llnl.gov:7999/dftracer/dftracer.git"
+dftracer_repo="https://github.com/llnl-asr/dftracer.git"
 dftracer_ref="develop"          # 81894ce
 ```
 
