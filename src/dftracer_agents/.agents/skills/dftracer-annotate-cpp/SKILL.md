@@ -80,3 +80,13 @@ void my_write(const char *path, size_t size) {
 - [ ] REGION_END at every exit point in main (including early returns and exit() calls)
 - [ ] No REGION macros in non-main functions
 - [ ] No C macros (`DFTRACER_C_*`) in C++ files
+
+## Non-standard C++ extensions (`.C`, `.cpp.in`, ...)
+
+`clang_annotate_project` matches extensions CASE-SENSITIVELY and picks the
+language per file: `.cpp/.cxx/.cc/.c++` and uppercase `.C/.CC/.CPP/.CXX` are
+always C++; `.c` follows `language`. For any other C++ extension pass it
+explicitly, e.g. `clang_annotate_project(run_id, language="cpp",
+cpp_extensions=[".C", ".cpp.in"])`. Symptom of getting this wrong (Enzo, SW4):
+only the handful of `.cpp` files get annotated and `main` in `enzo.C`/`main.C`
+never gets INIT/FINI.

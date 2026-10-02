@@ -587,7 +587,11 @@ def _install_dftracer_cmake(
     }
 
 
-_MODULE_LOAD_RE = re.compile(r"^\s*module\s+load\s+(.+?)\s*(?:#.*)?$", re.MULTILINE)
+# `module load X` and the Lmod shorthand `ml X` (OpenFold's setup-env.sh uses `ml`).
+_MODULE_LOAD_RE = re.compile(r"^\s*(?:module\s+load|ml)\s+(.+?)\s*(?:#.*)?$", re.MULTILINE)
+# `ml <subcommand>` is not a load
+_ML_SUBCOMMANDS = {"purge", "av", "avail", "list", "unload", "swap", "show", "spider",
+                   "save", "restore", "reset", "use", "unuse", "load", "help", "whatis"}
 
 
 def _discover_app_module_loads(source_dir: Optional[Path]) -> List[str]:
@@ -608,7 +612,13 @@ def _discover_app_module_loads(source_dir: Optional[Path]) -> List[str]:
         return []
     seen: Dict[str, None] = {}
     try:
-        for script in sorted(Path(source_dir).glob("**/*.sh")):
+        def _rank(p: Path):
+            # The app's canonical env script wins version conflicts: shallow
+            # first, then setup/install/env-named scripts, then the rest.
+            rel = p.relative_to(source_dir)
+            named = re.search(r"(setup|install|env)", p.name, re.I) is None
+            return (len(rel.parts), named, str(rel))
+        for script in sorted(Path(source_dir).glob("**/*.sh"), key=_rank):
             try:
                 depth = len(script.relative_to(source_dir).parts)
             except ValueError:
@@ -622,8 +632,15 @@ def _discover_app_module_loads(source_dir: Optional[Path]) -> List[str]:
             for m in _MODULE_LOAD_RE.finditer(text):
                 for tok in m.group(1).split():
                     tok = tok.strip()
-                    if tok and not tok.startswith("$") and not tok.startswith("-"):
-                        seen.setdefault(tok, None)
+                    if (not tok or tok.startswith(("$", "-", '"', "'")) or tok in _ML_SUBCOMMANDS):
+                        continue
+                    # one version per module: scripts often branch on versions
+                    # (`if rocm7; ml rocm/7.2.1; else ml rocm/6.4.3`) and loading
+                    # both lets the LAST win silently. Keep the first seen.
+                    base = tok.split("/")[0]
+                    if any(k.split("/")[0] == base for k in seen):
+                        continue
+                    seen.setdefault(tok, None)
     except Exception:
         return []
     return list(seen.keys())
@@ -816,6 +833,9 @@ def _run_pip_via_module_script(
     lines.append("module list 2>&1 1>&2 || true")
     for k, v in pip_env.items():
         lines.append(f"export {k}={shlex.quote(str(v))}")
+    # uv-created venvs ship without pip; bootstrap it rather than failing with
+    # "No module named pip" (hit on an OpenFold venv built by setup-env.sh / uv).
+    lines.append(f"{shlex.quote(py)} -m pip --version >/dev/null 2>&1 || {shlex.quote(py)} -m ensurepip --upgrade 1>&2")
     lines.append(f"exec {shlex.quote(py)} -m pip {' '.join(shlex.quote(a) for a in pip_args)}")
     script_body = "\n".join(lines) + "\n"
 
@@ -895,6 +915,76 @@ def _patch_dftracer_source(src_dir: Path) -> List[Dict[str, Any]]:
     return applied
 
 
+def _pip_index_env(index_url: str) -> Dict[str, str]:
+    """Pin pip to one explicit index for the dftracer build.
+
+    User/site pip configs can add extra indexes (e.g. an NVIDIA NGC index)
+    that do not resolve from compute nodes; pip then retries each build
+    dependency 5x against the dead host and the install appears to hang at
+    "Installing build dependencies". Env vars override pip config files, so
+    set the index explicitly and clear any extra index.
+    """
+    if not index_url:
+        return {}
+    # PIP_EXTRA_INDEX_URL="" does NOT clear an extra-index-url coming from a
+    # config file (verified); PIP_CONFIG_FILE=os.devnull disables config files.
+    return {"PIP_CONFIG_FILE": os.devnull, "PIP_INDEX_URL": index_url,
+            "PIP_DEFAULT_TIMEOUT": "60"}
+
+
+def _download_dftracer_sdist(py: str, prerelease: bool, ws: Optional[Path],
+                             index_url: str, ref: str = "") -> Path:
+    """Download + extract the dftracer sdist from PyPI; return the source dir.
+
+    Only dftracer itself is fetched as source (``--no-binary dftracer``,
+    ``--no-deps``, ``--no-build-isolation``) -- ``--no-binary :all:`` would
+    also build every build dependency from source and stall.
+    """
+    import tarfile
+    import tempfile
+    base = Path(ws) / "tmp" if ws else Path(tempfile.mkdtemp())
+    dest = base / "dftracer_sdist"
+    dest.mkdir(parents=True, exist_ok=True)
+    spec = "dftracer"
+    if ref and ref[0].isdigit():
+        spec = f"dftracer=={ref}"
+    cmd = [py, "-m", "pip", "download", "--no-deps", "--no-build-isolation",
+           "--no-binary", "dftracer", "-d", str(dest), spec]
+    if prerelease:
+        cmd.insert(4, "--pre")
+    env = dict(os.environ)
+    env.update(_pip_index_env(index_url))
+    r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=900)
+    if ws:
+        (Path(ws) / "artifacts").mkdir(exist_ok=True)
+        (Path(ws) / "artifacts" / "06_dftracer_sdist_download.log").write_text(
+            " ".join(cmd) + "\n" + r.stdout + r.stderr)
+    tars = sorted(dest.glob("dftracer-*.tar.gz"), key=lambda p: p.stat().st_mtime)
+    if r.returncode != 0 or not tars:
+        raise RuntimeError(f"dftracer sdist download failed: {r.stderr[-2000:]}")
+    with tarfile.open(tars[-1]) as t:
+        top = t.getnames()[0].split("/")[0]
+        t.extractall(dest)
+    return (dest / top).resolve()
+
+
+def _filesystem_links_without_stdcxxfs(env: Dict[str, str]) -> bool:
+    """True when a std::filesystem program links with $CXX and only -ldl."""
+    import tempfile
+    cxx = env.get("CXX") or os.environ.get("CXX") or "c++"
+    with tempfile.TemporaryDirectory() as d:
+        src = Path(d) / "t.cpp"
+        src.write_text('#include <filesystem>\nint main(){return '
+                       'std::filesystem::exists("/")?0:1;}\n')
+        try:
+            r = subprocess.run([cxx, "-std=c++17", str(src), "-ldl", "-o",
+                                str(Path(d) / "t")], capture_output=True,
+                               timeout=120, env={**os.environ, **env})
+        except Exception:
+            return False
+        return r.returncode == 0
+
+
 def _install_dftracer_pip_direct(
     dftracer_ref: str = _DFTRACER_DEFAULT_REF,
     features: Optional[Dict[str, Any]] = None,
@@ -904,6 +994,7 @@ def _install_dftracer_pip_direct(
     ws: Optional[Path] = None,
     run_id: str = "",
     dftracer_repo: str = "",
+    pip_index_url: str = "https://pypi.org/simple",
 ) -> Dict[str, Any]:
     """Install dftracer via pip with all setup.py env vars derived from detected features.
 
@@ -977,6 +1068,16 @@ def _install_dftracer_pip_direct(
     # the build still fails" so confusing. Mirrors the existing local-brahma-fix
     # workflow further down this function. `dftracer_ref` is ignored here: the
     # tree's current checkout is the ref, by definition.
+    # dftracer_repo="pypi-pre" (or "pypi") installs from the PyPI SOURCE
+    # distribution -- the prerelease one for "pypi-pre" -- instead of cloning
+    # a git remote. The sdist is downloaded and extracted into the session
+    # tmp/, then treated exactly like a local directory below, so the same
+    # env vars (MPI etc.) and source patches apply before `pip install`.
+    _pypi_src = (dftracer_repo or "").strip().lower()
+    if _pypi_src in ("pypi-pre", "pypi"):
+        repo_url = str(_download_dftracer_sdist(
+            py, prerelease=(_pypi_src == "pypi-pre"), ws=ws,
+            index_url=pip_index_url, ref=dftracer_ref))
     repo_is_local_dir = Path(repo_url).expanduser().is_dir()
     if repo_is_local_dir:
         repo_url = str(Path(repo_url).expanduser().resolve())
@@ -1028,6 +1129,7 @@ def _install_dftracer_pip_direct(
     pip_env: Dict[str, str] = {}
     pip_env["VIRTUAL_ENV"] = _venv_root
     pip_env["PATH"] = str(Path(py).absolute().parent) + os.pathsep + os.environ.get("PATH", "")
+    pip_env.update(_pip_index_env(pip_index_url))
 
     # Use the session's ONE canonical env.sh (module load list) so this
     # install step loads the exact same modules every other step in the
@@ -1526,7 +1628,16 @@ def _install_dftracer_pip_direct(
     # <filesystem> into libstdc++ proper, so std::filesystem symbols live in
     # a separate libstdc++fs.a that must be linked explicitly. Confirmed
     # 2026-09-11 on corona, run ior/20260911_043848.
-    pip_env.setdefault("LDFLAGS", "-ldl -lstdc++fs")
+    # BUT: -lstdc++fs must NOT be added unconditionally. On tuolumne (Cray
+    # clang 20) the linker finds gcc-toolset-13's static libstdc++fs.a, whose
+    # objects reference std::__glibcxx_assert_fail -- a symbol the libstdc++.so
+    # clang actually links does not export -- so dftracer_service fails with
+    # "undefined symbol: std::__glibcxx_assert_fail". Probe instead: only add
+    # -lstdc++fs when std::filesystem does not link without it.
+    pip_env.setdefault(
+        "LDFLAGS",
+        "-ldl" if _filesystem_links_without_stdcxxfs(pip_env) else "-ldl -lstdc++fs",
+    )
 
     # Build parallelism
     pip_env["JOBS"] = str(jobs)
@@ -2067,6 +2178,31 @@ bool MPIDFTracer::stop_trace = false;
                         }
                 else:
                     _patch_file.unlink(missing_ok=True)
+                # `git diff HEAD` omits NEW files the user has not `git add`ed
+                # (e.g. a new header the modified sources include), so the
+                # build would fail on a missing file. Copy untracked,
+                # non-ignored files across instead of touching the user's index.
+                _untracked = subprocess.run(
+                    ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+                    cwd=str(Path(repo_url)), capture_output=True, timeout=120,
+                )
+                _copied = []
+                if _untracked.returncode == 0:
+                    for _rel in filter(None, _untracked.stdout.decode().split("\0")):
+                        _src_f = Path(repo_url) / _rel
+                        if _src_f.is_file():
+                            _dst_f = _clone_dir2 / _rel
+                            _dst_f.parent.mkdir(parents=True, exist_ok=True)
+                            _shutil3.copy2(_src_f, _dst_f)
+                            _copied.append(_rel)
+                if _copied:
+                    _source_patches.append({
+                        "patch": "local-tree untracked files",
+                        "applied": True,
+                        "reason": f"copied {len(_copied)} untracked file(s) from "
+                                  f"{repo_url}: {', '.join(_copied[:10])}"
+                                  + (" ..." if len(_copied) > 10 else ""),
+                    })
                 _source_patches.extend(_patch_dftracer_source(_clone_dir2))
                 r = _pip_install_dftracer_from(str(_clone_dir2))
             else:

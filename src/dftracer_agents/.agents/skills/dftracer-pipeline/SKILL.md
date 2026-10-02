@@ -235,8 +235,15 @@ STEP 2 — SESSION SETUP  (MCP tools)
     session_configure(run_id=RUN_ID, extra_cmake_flags=EXTRA_FLAGS)
     session_build_install(run_id=RUN_ID)
 
-2c. Install dftracer into the session (cmake mode, with MPI + HDF5
-    auto-detected from the project source):
+2d. Install dftracer into the session — ONLY AFTER 2c succeeded. ORDER IS
+    MANDATORY: build the original app first, then build dftracer against the
+    exact dependencies that app build resolved (same compiler/CC/CXX, same MPI,
+    same venv; HDF5/ROCm only if the user wants those tracing layers, and then
+    the same version the app linked). Never install dftracer first on guessed
+    deps. ``session_install_dftracer`` refuses to run until the app build is
+    recorded (pass ``app_built_override=True`` only for hand-built apps).
+    Enable only the tracing layers the user asked for (e.g. mpi=True,
+    papi/hip/variorum/hdf5=False):
 
     session_install_dftracer(run_id=RUN_ID)
 
@@ -1139,3 +1146,11 @@ compilers, or a venv, read the app's own scripts and reuse them VERBATIM:
   and that a NON-EMPTY `.pfw` was produced.
 
 See the `dftracer-install` skill, RULE 0-5.
+
+## Provenance mode
+
+When the goal is provenance/lineage rather than performance, follow
+[[dftracer-provenance]]: plain run → `dftracer-provenance-discover` → user agrees
+on artifact + entities (spec) → `dftracer-provenance-annotate` → build + traced run
+(`DFTRACER_INC_METADATA=1`, no PAPI/power/GPU/node counters) →
+`dftracer-provenance-graph` health gate → report + privacy guard.

@@ -683,3 +683,41 @@ Substring anchors need care: an anchor of `exchange_externals(MatrixType& A,`
 also matches `begin_exchange_externals(MatrixType& A,`. Make the script
 idempotent (skip if the next line already has the macro) and print one line per
 insertion so the result can be reviewed.
+
+## Global constructors that run before `main` silently disable all interception (2026-09-30, Enzo)
+
+**Symptom:** function events are present but there are ZERO MPI/POSIX/STDIO
+events, and the trace's `"name":"end"` record shows `"bind":0` in `cfg`.
+**Root cause:** an annotated constructor of a global/static object (e.g. a
+registration object, a global solver instance) runs before `main`. Its
+`DFTRACER_CPP_FUNCTION` lazily initializes dftracer with bind=false; the later
+`DFTRACER_CPP_INIT` in `main` is then a no-op, so gotcha interceptors are never
+installed. **Find them:** sort the trace's CPP_APP events by `ts` and list the
+names before the first function `main` calls (e.g. the MPI init wrapper).
+**Fix:** re-annotate those files with `exclude_functions=[<ctor names>]`.
+
+## App headers that `#define` builtin types break dftracer.h (2026-09-30, Enzo)
+
+`#define int long_int` / `#define float double` in an app header mangle
+dftracer's own headers when `#include <dftracer/dftracer.h>` comes after it
+("redefinition of 'long_int' as different kind of symbol", "typedef
+redefinition with different types"). dftracer.h is self-contained, so it must
+be the FIRST include. `clang_annotate_file` now inserts it before the first
+top-level `#include` (previously after the last one).
+
+## main reached through a macro, and exits that never return (2026-09-30, Enzo)
+
+- `Eint32 MAIN_NAME(...)` + `#define MAIN_NAME main`: entry detection now
+  follows `#define X main`. Check the INIT landed in the right function.
+- If the app always leaves through a `my_exit()`-style function that calls
+  `MPI_Finalize` then `exit()`, the FINI the annotator puts at the end of
+  `main` never runs. Insert `DFTRACER_*_FINI()` inside that function right
+  before the MPI finalize call.
+
+## Speed: annotate projects in parallel (2026-09-30)
+
+clang's JSON AST dump of one Enzo `.C` file is ~370 MB (it includes every
+header declaration), so serial annotation of ~1000 files takes hours.
+`clang_annotate_project` now runs files in a process pool (`jobs`, default
+min(32, cpus)); Enzo's 1061 files took ~4 min. Pass real compile flags
+(defines + `-I`), or the parse fails and the file is skipped.

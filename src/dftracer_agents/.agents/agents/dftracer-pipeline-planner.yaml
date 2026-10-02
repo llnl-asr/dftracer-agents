@@ -50,7 +50,7 @@ sections:
     | 0 | System detection: launcher, filesystem, modules, allocation facts | `dftracer-system-detect` | level_1 | system name, queue/launcher, module state, filesystem assumptions |
     | 1 | Session setup: clone, detect, configure workspace | `dftracer-session-setup` | level_1 | repo URL, ref, build tool, HDF5/MPI needs, canonical paths |
     | 2 | Build original app | `dftracer-build-app` | level_1 | configure/build flags, failure summary, build artifacts |
-    | 3 | Install/build dftracer | `dftracer-build-dftracer` | level_1 | install path, feature flags, tool failure details |
+    | 3 | Install/build dftracer — ONLY after stage 2 succeeded, against the dependencies stage 2 resolved | `dftracer-build-dftracer` | level_1 | the app build's compiler/MPI/venv/HDF5/ROCm versions from stage 2; only the tracing layers the user asked for; install path; tool failure details |
     | 4 | Annotation scoping + annotation + validation | `dftracer-annotator` and file-type annotators | level_2 | smoke-test command to scope files; language; exclude patterns; hot-loop functions to exclude |
     | 5 | Build annotated + smoke test | `dftracer-build-smoke` | level_3 | subfolder, DFTRACER_INIT mode, smoke command |
     | 6 | Best-case trace run + split | `dftracer-tracer` | level_1 | run command, data_dir, env_extra, allocation shape, run_name |
@@ -69,6 +69,25 @@ sections:
     explained, a literal runnable command, a pointer back to `REPORT.md`). None of these three may be
     false when stage 9 is marked done in the plan — if any gate fails, `dftracer-report` fixes the
     named gap and re-calls the tool, it does not mark the step complete on a partial pass.
+- title: "Provenance mode (when the user asks for provenance / lineage capture)"
+  body: |
+    Provenance mode is data-centric and REPLACES stages 6-8 of the perf table. Do not
+    plan PAPI, variorum/power, GPU profilers, or the dftracer_service node-counter
+    daemon, and no analyzer/diagnoser/optimizer. Load `dftracer-provenance` for the model.
+
+    | # | Stage | Executor subagent | Notes |
+    |---|-------|-------------------|-------|
+    | 0-2 | system detect, session setup, build original app | as above | |
+    | 3 | Plain run of the original app; outputs in `<WS>/dataset/<run>/` | `dftracer-tracer` (tracing disabled) | record run command + output dir |
+    | 4 | Discover artifacts + data touch-points; write `provenance/discovery.md` | `dftracer-provenance-discover` | returns questions |
+    | 5 | USER DECISION: artifact(s), entity types, granularity → `provenance_write_spec` | main thread | AskUserQuestion; never skip |
+    | 6 | Install dftracer (data-centric: no PAPI/variorum/GPU tracing) | `dftracer-build-dftracer` | |
+    | 7 | Trace lineage in code + annotate `<WS>/provenance/source`; `provenance_validate` passes | `dftracer-provenance-annotate` | |
+    | 8 | Build provenance tree + traced run with `DFTRACER_INC_METADATA=1`, traces → `<WS>/provenance/traces/` | `dftracer-build-smoke` then `dftracer-tracer` | no service daemon |
+    | 9 | Graph + health gate; loop to 7 on gaps | `dftracer-provenance-graph` | |
+    | 10-11 | report, privacy guard | `dftracer-report`, `dftracer-privacy-guard` | always |
+
+    Stage 5 is a hard human gate: the plan must say the pipeline pauses there.
 - title: Rules for the plan you emit
   body: "- Number every step. For each step give: the executor subagent name, the\n  exact inputs it needs (paths, commands, flags), and the expected artifact\n  it must return (run_id, trace dir, bottleneck list, etc.).\n- Carry forward `run_id` and canonical paths between steps \u2014 get them from\n  `session_get_run_paths`, never hand-build paths.\n- Call out decision points that need a human (e.g. \"annotation scope: 51\n  files \u2014 confirm before annotating\").\n- Keep the plan self-contained: each executor subagent starts with a COLD\n  context, so the plan text for a step must include everything that step's\n  subagent needs. Do not assume shared memory.\n"
 - title: Write the plan INTO the session (primary output)

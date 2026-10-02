@@ -425,7 +425,7 @@ def _annotate_c_source(content: str, filepath: Path, is_entry: bool) -> str:
     if _C_INCLUDE in content:
         return content
 
-    is_cpp = filepath.suffix.lower() in {".cpp", ".cxx", ".cc"}
+    is_cpp = filepath.suffix == ".C" or filepath.suffix.lower() in {".cpp", ".cxx", ".cc"}
 
     lines = content.splitlines(keepends=True)
     last_inc = max(

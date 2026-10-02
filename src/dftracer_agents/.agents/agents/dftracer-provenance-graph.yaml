@@ -1,0 +1,46 @@
+name: dftracer-provenance-graph
+description: Provenance mode final technical stage. Builds the provenance graph from the provenance traces with provenance_extract_graph, applies the health gate (no dangling hashes, every artifact produced and rooted), and maps any gap back to a concrete annotation fix.
+model_level: level_2
+effort: low
+tools:
+- Read
+- Bash
+- mcp__dftracer__provenance_extract_graph
+- mcp__dftracer__provenance_validate
+- mcp__dftracer__event_count
+- mcp__dftracer__session_get_run_paths
+- mcp__dftracer__session_read_file
+- mcp__dftracer__session_write_file
+- mcp__dftracer__profile_step_begin
+- mcp__dftracer__profile_step_end
+- mcp__dftracer__profile_status
+skills:
+- dftracer-provenance
+- dftracer-trace-utils
+- dftracer-profiling
+sections:
+- include: load-your-plan-section-first-do-this-before-anything-else
+- title: Procedure
+  body: |
+    1. `provenance_extract_graph(run_id)` (trace_dir defaults to provenance/traces).
+    2. Gate = `healthy: true`. Diagnose failures:
+       - prov_events 0 → run lacked `DFTRACER_INC_METADATA=1` or activities never ran.
+       - dangling hashes → a process's trace is missing, or metadata disabled.
+       - artifact missing / without producer → annotation gap at the writer.
+       - roots that are not spec inputs → a producer upstream is unannotated.
+       - types_undescribed non-empty → the type registry was not installed or is stale;
+         re-run provenance_install_helpers (descriptions come from the spec).
+    3. Write `provenance/graph/SUMMARY.md`: counts by type, one full lineage chain
+       for an artifact (root → ... → artifact → consumers), gaps and fixes.
+    4. Return healthy/unhealthy + exact fix list for the annotate agent.
+    5. Viewing: extraction runs through dftracer-utils `dftracer_view` (pass `viewer_bin` =
+       `<venv>/bin/dftracer_view` if it is not on PATH). For interactive exploration, serve
+       the traces with `dftracer_server -d <traces> --index-dir <WS>/provenance/server_index
+       -p <port>` and use its Provenance tab (`/api/prov/graph`); for a shareable page render
+       `render_prov_graph.py` after redacting `$LUSTRE_ROOT/$USER` paths in `uri`.
+    6. Also verify the instrumented run did not change the science: diff artifact members
+       and one metrics file against the plain run.
+- include: self-learning-confirmation-gate
+- include: logs-go-to-artifacts
+- include: pipeline-profiling
+- include: redact-before-you-persist

@@ -442,14 +442,17 @@ def _validate_impl(run_id: str, language: str, subdir: str,
         return _err(f"annotated tree not found: {root}")
 
     lang = language.lower()
-    exts = {"python": (".py",), "c": (".c",), "cpp": (".cpp", ".cxx", ".cc")}.get(lang)
+    exts = {"python": (".py",), "c": (".c",),
+            "cpp": (".cpp", ".cxx", ".cc", ".C", ".CC", ".CPP", ".CXX")}.get(lang)
     if not exts:
         return _err(f"unsupported language '{language}' (c|cpp|python)")
 
     reports, total_findings = [], 0
     any_init = any_fini = any_meta = False
     for f in sorted(root.rglob("*")):
-        if not f.is_file() or f.suffix.lower() not in exts:
+        # case-sensitive: ".C" is C++, ".c" is C
+        if not f.is_file() or (f.suffix not in exts and f.suffix.lower() not in exts
+                               or (f.suffix == ".C" and lang == "c")):
             continue
         if any(p in ("__pycache__", ".git", "test", "tests") for p in f.parts):
             continue

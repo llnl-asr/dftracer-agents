@@ -152,7 +152,7 @@ def _try_clang(
     compile_flags: Optional[list[str]] = None,
     diagnostics: Optional[dict] = None,
 ) -> Optional[list[dict]]:
-    lang = "c" if path.suffix.lower() == ".c" else "c++"
+    lang = "c" if path.suffix == ".c" else "c++"  # case-sensitive: ".C" is C++
     # `-x<lang>` must stay LAST before the file: any `-x` in caller-supplied
     # flags (MFEM's config.mk passes `-x hip`) would otherwise decide how this
     # file is parsed.
@@ -468,7 +468,7 @@ def add_braces_c(path: Path, extra_include_dirs: Optional[List[str]] = None) -> 
             * ``skipped_reason`` (str, only when ``modified`` is ``False``
               because of an unresolvable-headers parse) — see below.
     """
-    lang = "c" if path.suffix.lower() == ".c" else "c++"
+    lang = "c" if path.suffix == ".c" else "c++"  # case-sensitive: ".C" is C++
     return _add_braces_via_clang(path, lang, extra_include_dirs=extra_include_dirs)
 
 
