@@ -46,6 +46,8 @@ session-local `dftracer` (which pulls this in transitively) instead.
 
 ## KNOWN BUG (2026-08-02): `stats --report categories/summary` always fails on compacted (split) traces
 
+> Update 2026-09-30: on RAW per-rank traces (`dftracer_stats -d <raw_dir> --index-dir <idx> --report categories|top-names`) it works and is the fastest way to get per-category and per-name counts (358 M events indexed+counted in ~70 s with 32 threads). Re-check this bug on compacted traces before relying on it.
+
 `dftracer_index --rebuild-summaries` (and the `mcp__dftracer__index` wrapper)
 reports `"Events processed: 0"` even against multi-hundred-thousand-event
 `.pfw.gz` chunks — it builds the bloom-filter existence index (file

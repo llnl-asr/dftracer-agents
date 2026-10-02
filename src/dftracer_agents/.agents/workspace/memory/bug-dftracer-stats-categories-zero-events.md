@@ -1,19 +1,13 @@
 ---
 name: bug-dftracer-stats-categories-zero-events
-description: "dftracer_index --rebuild-summaries reports \"Events processed:0\" and never populates per-chunk stats, so dftracer_stats --report categories/summary always fails with \"No chunk statistics in index\" on compacted traces"
-metadata: 
-  node_type: memory
+description: dftracer_stats --report categories returned 0 events on compacted traces (2026-08); on raw per-rank traces it works (verified 2026-09-30) — re-check before relying on it for compacted dirs
+metadata:
   type: project
-  
-  modified: 2026-08-02T08:49:21.628Z
 ---
 
-`dftracer_index --rebuild-summaries` (and the `mcp__dftracer__index` MCP wrapper) only builds a bloom-filter existence index — file-level resolution/caching works fine (`dftracer_stats` reports `N total, N cached, 0 failed`) — but it reports `"Events processed: 0"` and never actually scans decompressed event content to populate per-chunk statistics. Every subsequent `dftracer_stats --report categories` (or `summary`/`detailed`/etc.) call then fails per-file with `"No chunk statistics in index for <file>"`.
+Original bug (2026-08-02): `dftracer_index --rebuild-summaries` never scanned event content ("Events processed: 0") so `dftracer_stats --report categories/summary` failed on compacted (split) traces; workaround was a direct gzip+json parse.
 
-**Confirmed NOT a checkpoint-size mismatch**: reproduced identically with default `--checkpoint-size` and with an explicitly small value (1MB) matched to the ~4MB split chunk size. `event_count` is unaffected and reports correct totals via a different code path.
+Update 2026-09-30: on RAW per-rank traces, `dftracer_stats -d <raw_dir> --index-dir <idx> --report categories` and `--report top-names --top-n N` work correctly and fast (358 M events indexed + counted in ~70 s, 585 M in ~100 s, 32-48 threads). Not re-tested on compacted traces.
 
-**Why:** this is an upstream bug in the `dftracer-utils` PyPI package's C++ `dftracer_index`/`dftracer_stats` binaries. No local source checkout exists in this project (pip-installed prebuilt only), so it can't be patched here — needs an upstream fix to `--rebuild-summaries` so it actually walks event content.
-
-**How to apply:** don't trust `mcp__dftracer__stats` (report=categories/summary/detailed) on a compacted trace directory — it will silently return all-failed results per file. For a category or per-category-count breakdown, decompress and parse directly (gzip + json line-by-line, `.strip().rstrip(",")`, skip `[`/`]` bracket lines) across ALL chunks in the compact dir, not a sample — category distribution can be very uneven (e.g. a torch-profiler-bridge `PP` category was <0.04% of total events in one run and would've been missed sampling only 3 of 56 chunks). `event_count` remains reliable for a total count. Full writeup + code snippet in the `tools-dftracer-utils` skill.
-
-See [[software-ray-molformer]] for the session where this was hit while verifying full event-category coverage after a training run.
+**Why:** per-category event counts are a routine user question.
+**How to apply:** use dftracer_stats on raw trace dirs first; if a compacted dir reports 0 events, fall back to raw dir or direct parse. See [[tools-dftracer-utils]].

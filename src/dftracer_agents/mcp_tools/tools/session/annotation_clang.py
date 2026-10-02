@@ -53,9 +53,10 @@ only for individual, ad-hoc corrections.
 """
 from __future__ import annotations
 
+import os
 import re
 import shlex
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastmcp import FastMCP
 
@@ -243,6 +244,36 @@ def _cache_is_stale(abs_path: "Path", cache_key: tuple) -> bool:
         _FILE_CACHE.pop(cache_key, None)
         return True
     return False
+
+
+class _ToolCollector:
+    """Stand-in for FastMCP that just records the decorated tool functions."""
+
+    def __init__(self):
+        self.fns: Dict[str, object] = {}
+
+    def tool(self, *args, **kwargs):
+        def deco(fn):
+            self.fns[fn.__name__] = fn
+            return fn
+        return deco
+
+
+_WORKER_TOOLS: Optional[Dict[str, object]] = None
+
+
+def _annotate_file_worker(kwargs: dict) -> str:
+    """Process-pool entry point: run clang_annotate_file in a worker process.
+
+    The tool functions are closures inside register_clang_tools, so each worker
+    registers them once against a collector instead of pickling closures.
+    """
+    global _WORKER_TOOLS
+    if _WORKER_TOOLS is None:
+        col = _ToolCollector()
+        register_clang_tools(col)
+        _WORKER_TOOLS = col.fns
+    return _WORKER_TOOLS["clang_annotate_file"](**kwargs)
 
 
 def register_clang_tools(mcp: FastMCP) -> None:
@@ -531,7 +562,7 @@ def register_clang_tools(mcp: FastMCP) -> None:
         2. Calls ``clang_extract_functions`` internally to get an authoritative
            function map with exact line numbers.
         3. Computes all insertion points:
-           * ``#include <dftracer/dftracer.h>`` after the last existing ``#include``.
+           * ``#include <dftracer/dftracer.h>`` before the first top-level ``#include``.
            * ``DFTRACER_C_FUNCTION_START()`` (or ``DFTRACER_CPP_FUNCTION()``) at
              the first line of every function body (``body_first_line``).
            * ``DFTRACER_C_FUNCTION_END()`` before every ``exit_line`` in the
@@ -733,6 +764,7 @@ def register_clang_tools(mcp: FastMCP) -> None:
         # section (which would make the include unavailable in the main code path).
         include_line = "#include <dftracer/dftracer.h>"
         last_inc_idx = -1
+        first_inc_idx = -1
         pp_depth = 0
         for i, ln in enumerate(lines):
             s = ln.strip()
@@ -741,8 +773,16 @@ def register_clang_tools(mcp: FastMCP) -> None:
             elif re.match(r'#\s*endif', s):
                 pp_depth = max(0, pp_depth - 1)
             elif pp_depth == 0 and re.match(r'#\s*include', s):
+                if first_inc_idx < 0:
+                    first_inc_idx = i
                 last_inc_idx = i
-        include_insert_at = last_inc_idx + 1  # 0-based index
+        # Insert BEFORE the first top-level #include, not after the last one:
+        # app headers may #define builtin type names (Enzo's
+        # macros_and_parameters.h: `#define int long_int`, `#define float
+        # double`), which then mangle dftracer's own headers ("redefinition of
+        # 'long_int'", "typedef redefinition with different types").
+        # dftracer.h is self-contained, so including it first is always safe.
+        include_insert_at = first_inc_idx if first_inc_idx >= 0 else last_inc_idx + 1
 
         # ── Step 2: extract function map ──────────────────────────────────────
         # Write current in-memory state to a temp file so extract_functions can
@@ -1066,6 +1106,8 @@ def register_clang_tools(mcp: FastMCP) -> None:
         init_args: str = "NULL, NULL, NULL",
         exclude_patterns: List[str] = None,
         compile_flags: str = "",
+        cpp_extensions: List[str] = None,
+        jobs: int = 0,
     ) -> str:
         """Annotate every C/C++ source file in the ``annotated/`` workspace in one call.
 
@@ -1097,6 +1139,20 @@ def register_clang_tools(mcp: FastMCP) -> None:
             language:         ``"c"`` or ``"cpp"``.  Applied to all files.
             init_args:        Argument string for ``DFTRACER_C_INIT(…)``.
             exclude_patterns: Extra path substrings to skip.
+            jobs:             Parallel worker processes for the non-entry files
+                              (each file is independent: own clang parse, own
+                              write). ``0`` = min(32, CPU count); ``1`` = serial.
+                              Entry-point files (``main``) are always annotated
+                              last, after every worker has finished.
+            cpp_extensions:   Extra, CASE-SENSITIVE file extensions that are C++
+                              (e.g. ``[".C", ".cu.cc", ".cpp.in"]``). Files with
+                              these extensions are discovered and annotated as
+                              ``cpp`` regardless of ``language``. Uppercase
+                              ``.C`` (Enzo, SW4, ...) is always C++ — it used to
+                              be lowercased to ``.c`` and annotated as C.
+                              Per-file language: standard C++ extensions and
+                              ``cpp_extensions`` -> cpp; ``.c`` -> ``language``
+                              (``"auto"`` means c).
 
         Returns:
             JSON string with keys:
@@ -1134,10 +1190,25 @@ def register_clang_tools(mcp: FastMCP) -> None:
             return False
 
         # Discover source files
-        C_EXTS = {".c", ".cpp", ".cxx", ".cc"}
+        # Extension matching is CASE-SENSITIVE: ".C" is C++, ".c" is C.
+        CPP_EXTS = {".cpp", ".cxx", ".cc", ".c++", ".C", ".CPP", ".CXX", ".CC"}
+        for e in (cpp_extensions or []):
+            e = e if e.startswith(".") else "." + e
+            CPP_EXTS.add(e)
+
+        def _file_lang(p: Path) -> Optional[str]:
+            name = p.name
+            # longest match first so multi-dot extensions (".cu.cc") win
+            for e in sorted(CPP_EXTS, key=len, reverse=True):
+                if name.endswith(e) and len(name) > len(e):
+                    return "cpp"
+            if p.suffix == ".c":
+                return "cpp" if language == "cpp" else "c"
+            return None
+
         all_files = sorted(
             p for p in ann_dir.rglob("*")
-            if p.suffix.lower() in C_EXTS and not _is_excluded(p)
+            if p.is_file() and _file_lang(p) and not _is_excluded(p)
         )
 
         if not all_files:
@@ -1150,7 +1221,16 @@ def register_clang_tools(mcp: FastMCP) -> None:
         def _is_entry(p: Path) -> bool:
             try:
                 text = p.read_text(errors="replace")
-                return bool(re.search(r'\bint\s+main\s*\(', text))
+                # Any return type (`int`, `Eint32`, ...) before `main(`.
+                if re.search(r'^\s*(?:\w+\s+)+main\s*\(', text, re.M):
+                    return True
+                # main defined through a macro: `#define MAIN_NAME main` +
+                # `Eint32 MAIN_NAME(int argc, ...)` (Enzo).
+                for m in re.finditer(r'#\s*define\s+(\w+)\s+main\b', text):
+                    if re.search(r'^\s*(?:\w+\s+)+' + re.escape(m.group(1)) + r'\s*\(',
+                                 text, re.M):
+                        return True
+                return False
             except OSError:
                 return False
 
@@ -1165,18 +1245,52 @@ def register_clang_tools(mcp: FastMCP) -> None:
         skipped_count = 0
         errors = []
 
+        def _kwargs(p: Path) -> dict:
+            return dict(
+                run_id=run_id,
+                filepath=str(p.relative_to(ann_dir)),
+                language=_file_lang(p),
+                is_entry=p in entry_files,
+                init_args=init_args,
+                compile_flags=compile_flags,
+            )
+
+        n_jobs = jobs if jobs and jobs > 0 else min(32, os.cpu_count() or 1)
+        raw_results: Dict[Path, object] = {}
+        if n_jobs > 1 and len(regular_files) > 1:
+            import concurrent.futures as _cf
+            import multiprocessing as _mp
+            # spawn, not fork: the server process runs threads (event loop,
+            # HTTP), and forking a threaded process can deadlock the child.
+            with _cf.ProcessPoolExecutor(
+                max_workers=n_jobs, mp_context=_mp.get_context("spawn")
+            ) as pool:
+                futs = {pool.submit(_annotate_file_worker, _kwargs(p)): p
+                        for p in regular_files}
+                for f in _cf.as_completed(futs):
+                    try:
+                        raw_results[futs[f]] = f.result()
+                    except Exception as exc:  # worker crash -> per-file error
+                        raw_results[futs[f]] = exc
+        else:
+            for p in regular_files:
+                try:
+                    raw_results[p] = clang_annotate_file(**_kwargs(p))
+                except Exception as exc:
+                    raw_results[p] = exc
+        # entry points last, serially, after all library files are written
+        for p in entry_files:
+            try:
+                raw_results[p] = clang_annotate_file(**_kwargs(p))
+            except Exception as exc:
+                raw_results[p] = exc
+
         for p in regular_files + entry_files:
             rel = str(p.relative_to(ann_dir))
-            is_entry_file = p in entry_files
             try:
-                raw = clang_annotate_file(
-                    run_id=run_id,
-                    filepath=rel,
-                    language=language,
-                    is_entry=is_entry_file,
-                    init_args=init_args,
-                    compile_flags=compile_flags,
-                )
+                raw = raw_results[p]
+                if isinstance(raw, Exception):
+                    raise raw
                 result = _json.loads(raw)
                 already = result.get("already_annotated", False)
                 if result.get("status") == "ok":
@@ -1425,10 +1539,10 @@ def register_clang_tools(mcp: FastMCP) -> None:
 
         # ── Detect language ───────────────────────────────────────────────────
         if language == "auto":
-            suffix = abs_path.suffix.lower()
+            suffix = abs_path.suffix
             if suffix == ".c":
                 lang = "c"
-            elif suffix in (".cpp", ".cxx", ".cc"):
+            elif suffix in (".C", ".CC", ".CPP", ".CXX") or suffix.lower() in (".cpp", ".cxx", ".cc", ".c++"):
                 lang = "cpp"
             elif suffix == ".py":
                 lang = "python"

@@ -234,19 +234,29 @@ sharing between partitions. Full workflow: [[slurm-alloc]].
 
 ## STEP 4 — Choose the dftracer source (vendor-dependent)
 
+**The canonical source is `llnl-asr` on GitHub, and `develop` already contains
+CUPTI** — `feature/cupti` was merged, so there is no separate GPU branch to pick
+any more:
+
 | Target | Source |
 | --- | --- |
-| **NVIDIA GPU system** | the CUPTI branch **`feature/cupti`** — from czgitlab, or from a local checkout if the system skill names one |
-| **Everything else** | latest **`develop`** from czgitlab |
+| **Any system, GPU or CPU** | latest **`develop`** from `github.com/llnl-asr/dftracer` |
 
 ```bash
-G=ssh://git@czgitlab.llnl.gov:7999/dftracer
+G=https://github.com/llnl-asr/dftracer       # canonical; czgitlab is the old mirror
 pip install --no-cache-dir --no-deps "git+$G/dftracer.git@develop"      # or @feature/cupti
 pip install --no-cache-dir --no-deps "git+$G/pydftracer.git@develop"
 pip install --no-cache-dir --no-deps "git+$G/dftracer-utils.git@v0.0.12"
 ```
 
-* `czgitlab.llnl.gov` is reachable only inside LC, over **SSH port 7999**; HTTPS times out.
+* **`develop` carries a CUDA timestamp fix (`324522f`, "fixed cuda time
+  calculation") without which many CUDA events land with `ts == 0`.** Any NVIDIA
+  sweep must build from a commit at or after it; a corpus captured before it has
+  unusable GPU timestamps. A CPU-only app is unaffected (no CUDA events exist to
+  carry a bad timestamp) — verify rather than assume, by sampling `ts` from a
+  finished trace.
+* `czgitlab.llnl.gov` is the older internal mirror, reachable only inside LC over
+  **SSH port 7999** (HTTPS times out). Prefer the `llnl-asr` GitHub org.
 * Compute/login nodes often have **no external DNS**, so pip cannot reach PyPI. Use
   `--no-deps` and install all three packages explicitly from gitlab.
 * `dftracer-utils` `develop` HEAD currently fails to compile (`ConfigTree::Node` used as

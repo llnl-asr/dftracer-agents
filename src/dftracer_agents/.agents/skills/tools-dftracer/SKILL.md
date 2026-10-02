@@ -64,8 +64,11 @@ and it already knows the CMake two-pass dependency-bootstrap quirk, see
    FUNCTION-mode app-level annotation. See `dftracer-annotation-lessons`
    LESSONS_LOG.md (2026-08-04, YGM session) for the full trace.
 
-4. **LLNL internal GitLab source (czgitlab, SSH), the canonical org for
-   feature-configurable source builds**: same org, one repo per package —
+4. **`llnl-asr` on GitHub — the canonical org for feature-configurable source
+   builds.** (The heading here used to say "czgitlab, SSH" while listing GitHub
+   URLs; czgitlab is the older internal mirror, not the canonical source.)
+   `develop` already contains CUPTI — `feature/cupti` was merged — so there is no
+   separate GPU branch to select. One repo per package:
    ```
    https://github.com/llnl-asr/dftracer.git
    https://github.com/llnl-asr/dftracer-utils.git
@@ -419,3 +422,28 @@ current builds). Two sharp edges:
 dftracer_merge -d "$leaf/raw/papi_set1" -o "$leaf/compacted/papi_set1.pfw" \
                --compress --force
 ```
+
+## Installing from the PyPI prerelease sdist with MPI (2026-09-30)
+
+`session_install_dftracer(dftracer_repo="pypi-pre", mpi=True, papi=False,
+hip=False, variorum=False, hdf5=False)` downloads ONLY the dftracer sdist
+(`--no-binary dftracer --no-deps`; `--no-binary :all:` builds every build dep
+from source and stalls), extracts it to `<WS>/tmp/dftracer_sdist`, and pip
+installs it with the feature env vars. Verify: `dftracer_config.hpp` has
+`DFTRACER_MPI_ENABLE 1`; `libdftracer_core.so` links `libmpi_cray`.
+
+- `-lstdc++fs` must not be added blindly on Tuolumne: Cray clang finds
+  gcc-toolset-13's static `libstdc++fs.a`, which needs
+  `std::__glibcxx_assert_fail` from a newer libstdc++ than the one linked
+  → `dftracer_service` link fails. The tool now adds it only if a
+  `std::filesystem` test link fails without it.
+- Cray-clang-built dftracer libs carry an RPATH with `/usr/lib64` (old
+  libstdc++) first → `CXXABI_1.3.13` / `GLIBCXX_3.4.29` not found at load.
+  Patchelf the RPATH of the libs in `dftracer/lib64` to put
+  `/opt/cray/pe/gcc-libs` first, then `ldd` must be clean.
+- Build order: build the APP first, then dftracer against the app's resolved
+  compiler/MPI/venv. `session_install_dftracer` refuses until the app build is
+  recorded (`app_built_override=True` for hand-built apps).
+- Trace `end` record `cfg.bind` tells you whether interceptors were installed;
+  `bind:0` with `build.mpi:1` means initialization happened before INIT (see
+  dftracer-annotation-lessons, pre-main constructors).

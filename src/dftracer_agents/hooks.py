@@ -207,36 +207,29 @@ def render_claude_hook() -> Dict[str, Any]:
 
 
 def sync_claude_hooks(base: Optional[Path] = None) -> str:
-    """Merge the UserPromptSubmit hook into settings.json, preserving others.
+    """Remove the UserPromptSubmit inject_context hook from settings.json.
 
-    Additive on purpose: this file already carries a hand-written ``PreToolUse``
-    rm/drm guard, and replacing ``hooks`` wholesale would delete it.
+    The hook used a relative command path, so it failed (and blocked every
+    prompt) whenever Claude ran from a directory without the script. It is no
+    longer registered; any previously written entry is stripped, other hooks
+    are preserved.
     """
     root = base or bundled_workspace_dir()
-    # The script and the settings entry are two separate artifacts; a change to
-    # either counts as "updated" or a script-only edit would be reported as
-    # already-current and look like a no-op.
-    script_status = _write_if_changed(
-        root / ".claude" / "hooks" / HOOK_SCRIPT_NAME, _HOOK_SCRIPT, executable=True)
-
-    # Never advertise a hook whose script is not on disk: Claude Code runs the
-    # command on EVERY prompt, so a dangling path fails every turn.
-    if not hook_script_installed(root, "claude"):
-        return "skipped_missing_script"
-
     path = root / ".claude" / "settings.json"
-    data: Dict[str, Any] = json.loads(path.read_text()) if path.exists() else {}
-    hooks = data.setdefault("hooks", {})
-    if not isinstance(hooks, dict):
-        return "skipped_unexpected_shape"
-
-    entry = render_claude_hook()
-    existing = hooks.get("UserPromptSubmit")
-    ours = [e for e in (existing or []) if _is_ours(e)]
-    others = [e for e in (existing or []) if not _is_ours(e)]
-    if ours == [entry] and existing == others + ours:
-        return script_status
-    hooks["UserPromptSubmit"] = others + [entry]
+    if not path.exists():
+        return "already_current"
+    data: Dict[str, Any] = json.loads(path.read_text())
+    hooks = data.get("hooks")
+    if not isinstance(hooks, dict) or "UserPromptSubmit" not in hooks:
+        return "already_current"
+    existing = hooks["UserPromptSubmit"] or []
+    others = [e for e in existing if not _is_ours(e)]
+    if others == existing:
+        return "already_current"
+    if others:
+        hooks["UserPromptSubmit"] = others
+    else:
+        del hooks["UserPromptSubmit"]
     path.write_text(json.dumps(data, indent=2) + "\n")
     return "updated"
 
@@ -256,32 +249,13 @@ def _is_ours(entry: Any) -> bool:
 # ---------------------------------------------------------------------------
 
 def sync_codex_hooks(base: Optional[Path] = None) -> str:
-    """Write .codex/hooks.json with the same UserPromptSubmit hook.
-
-    Codex reads hooks from a dedicated file rather than its config.toml. The
-    engine is opt-in per user (``[features].codex_hooks = true`` in
-    ``~/.codex/config.toml``) and a repo must not write there — see
-    ``advisories()``.
-    """
+    """Remove .codex/hooks.json; the inject_context hook is no longer registered."""
     root = base or bundled_workspace_dir()
-    _write_if_changed(root / ".codex" / "hooks" / HOOK_SCRIPT_NAME,
-                      _HOOK_SCRIPT, executable=True)
-
-    payload = {
-        "hooks": {
-            "UserPromptSubmit": [{
-                "matcher": "",
-                "hooks": [{
-                    "type": "command",
-                    "command": f"python3 .codex/hooks/{HOOK_SCRIPT_NAME}",
-                    "statusMessage": "Loading relevant project memory...",
-                    "timeout": 15,
-                }],
-            }],
-        },
-    }
-    return _write_if_changed(root / ".codex" / "hooks.json",
-                             json.dumps(payload, indent=2) + "\n")
+    path = root / ".codex" / "hooks.json"
+    if not path.exists():
+        return "already_current"
+    path.unlink()
+    return "updated"
 
 
 # ---------------------------------------------------------------------------

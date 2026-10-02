@@ -1379,3 +1379,19 @@ back short.
 **Generalises:** any time `ldd` shows the same library name at two different SONAME
 versions, treat it as a live heap-corruption risk, not cosmetic. `nm -D --defined-only`
 on both and comparing exported symbols tells you in seconds whether they can collide.
+
+## pip stalls on an unreachable extra index (2026-09-30)
+
+A user pip config can add `extra-index-url = https://pypi.ngc.nvidia.com`, which
+does not resolve from Tuolumne. Every build dependency then retries 5x and a
+`pip install` of dftracer looks hung at "Installing build dependencies" or exits
+2. `PIP_EXTRA_INDEX_URL=""` does NOT override a config-file value;
+`PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple` does.
+`session_install_dftracer` now sets this by default (`pip_index_url`).
+
+## Do not run long dftracer-utils jobs inside a short allocation (2026-09-30)
+
+`split` on ~3 GB of traces ran >10 min, past the 5-minute MCP tool-call idle
+timeout, and the MCP tool launched it inside the active allocation, so it
+died when the allocation ended and left a partial compact dir. Run large
+splits/indexing on the login node or in an allocation with ample time left.

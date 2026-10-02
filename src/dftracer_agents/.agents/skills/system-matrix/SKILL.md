@@ -406,3 +406,54 @@ The symptoms name nothing useful:
 times** (0 = never terminate stragglers). Nothing else works: the daemon is not
 slow, so a longer flush wait does not help, and making its `stop` synchronous does
 not help either — the step is being killed from outside.
+
+## dftracer source for this machine: `llnl-asr/develop`, plus MVAPICH patches
+
+Build from **`https://github.com/llnl-asr/dftracer` `develop`** — the canonical
+org. `feature/cupti` is already merged into `develop`, so there is no separate
+GPU branch to choose. The older `czgitlab` mirror still exists but should not be
+the default.
+
+Two things about this machine make the source choice load-bearing:
+
+### 1. The CUDA timestamp fix is mandatory for any GPU sweep here
+
+`develop` commit **`324522f` ("fixed cuda time calculation")** repairs CUDA
+events landing with **`ts == 0`**. matrix is the NVIDIA machine, so any sweep
+that traces GPU activity must build at or after that commit — a corpus captured
+before it has unusable GPU timestamps and no post-processing can recover them.
+
+A **CPU-only** application is unaffected: CUPTI compiles in and observes nothing,
+so there are no CUDA events to carry a bad timestamp. Confirm it rather than
+assume — sample `ts` from a finished trace:
+
+```python
+# expect zero hits; a non-trivial count means the corpus is compromised
+sum(1 for e in events if e.get("ts") == 0)
+```
+
+Measured on a CPU-only AMG corpus here: ~780,000 timestamps sampled across
+N=1..8 and ppn=1..64, **0 with `ts == 0`**.
+
+### 2. MPI tracing needs patches that are NOT upstream
+
+Stock brahma/dftracer guard every MPI interceptor on
+`CRAYMPICH | MPICH | OPENMPI`; **MVAPICH matches none**, so they compile out
+silently and `libdftracer_core.so` carries **0** `MPIDFTracer::MPI_*` symbols
+with nothing warning. matrix has only MVAPICH2 and an OpenMPI too old for
+brahma's guard, so a plain `develop` build here loses the entire
+`p2p`/`collective`/`comm` layer.
+
+Whenever you take a newer `develop`, the MVAPICH interceptor fix and the
+`handle_mpi()` self-call recursion fix must be carried forward onto it, and
+verified by symbol count — not by the build succeeding:
+
+```bash
+nm -DC libdftracer_core.so | grep -c "MPIDFTracer::MPI_"     # expect ~298, never 0
+nm -DC libdftracer_core.so | grep -c "MPIIODFTracer::MPI_"   # expect ~59
+```
+
+**Do not swap dftracer versions mid-sweep** unless the fix affects the data being
+collected: it splits the corpus's provenance across two tracer builds, which then
+has to be recorded per leaf. For a CPU-only app a CUDA-only fix is not a reason
+to swap.

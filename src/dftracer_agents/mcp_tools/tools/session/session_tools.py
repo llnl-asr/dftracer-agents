@@ -1308,6 +1308,25 @@ def _session_collect_system_info_impl(run_id: str) -> str:
     )
 
 
+def _trim_steps(steps, keep: int = 3000):
+    """Tail each step's stdout/stderr for the MCP response.
+
+    A dftracer source build emits ~100 KB of pip/cmake output, which overflows
+    the caller's context; the full text is already written to artifacts/ by
+    ``_write_artifact_log``.
+    """
+    out = {}
+    for name, r in (steps or {}).items():
+        if isinstance(r, dict):
+            r = dict(r)
+            for k in ("stdout", "stderr"):
+                v = r.get(k)
+                if isinstance(v, str) and len(v) > keep:
+                    r[k] = f"...[{len(v) - keep} chars trimmed; full log in artifacts/]...\n" + v[-keep:]
+        out[name] = r
+    return out
+
+
 def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but intentional)
     """Register all ``session_*`` MCP tools onto *mcp*.
 
@@ -2335,7 +2354,7 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             _write_artifact_log(_ws(run_id), 4, "session_build_install", {"build": r, "install": r2}, run_id)
             if not r2["success"]:
                 return _err("make install failed", **r2)
-            _save_state(run_id, {"step": "installed"})
+            _save_state(run_id, {"step": "installed", "app_built": True})
             return _ok("Build and install succeeded", make=r, install=r2)
 
         if bt == "meson":
@@ -2347,16 +2366,16 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             _write_artifact_log(_ws(run_id), 4, "session_build_install", {"build": r, "install": r2}, run_id)
             if not r2["success"]:
                 return _err("meson install failed", **r2)
-            _save_state(run_id, {"step": "installed"})
+            _save_state(run_id, {"step": "installed", "app_built": True})
             return _ok("Build and install succeeded", build=r, install=r2)
 
         if bt == "python":
-            _save_state(run_id, {"step": "installed"})
+            _save_state(run_id, {"step": "installed", "app_built": True})
             _write_artifact_log(_ws(run_id), 4, "session_build_install", {"status": "python project installed via pip"}, run_id)
             return _ok("Python project installed via session_configure (pip install -e)")
 
         if bt in {"python-pip", "anaconda"}:
-            _save_state(run_id, {"step": "installed"})
+            _save_state(run_id, {"step": "installed", "app_built": True})
             _write_artifact_log(_ws(run_id), 4, "session_build_install", {"status": f"{bt} session venv prepared"}, run_id)
             return _ok(f"{bt} session venv prepared via session_configure")
 
@@ -2800,6 +2819,8 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         variorum: Optional[bool] = None,
         variorum_build: str = "",
         mpi: Optional[bool] = None,
+        pip_index_url: str = "https://pypi.org/simple",
+        app_built_override: bool = False,
     ) -> str:
         """Install dftracer via pip for all project types, then locate dirs in site-packages.
 
@@ -2862,7 +2883,20 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 PRIVATE and anonymous HTTPS fails from every LC machine. GitLab
                 is reachable only from inside the LC network. ``dftracer_ref`` is
                 resolved against THIS repo, so a ref that exists only on the
-                GitLab remote requires setting both.
+                GitLab remote requires setting both. Pass ``"pypi-pre"`` to
+                build from the PyPI PRERELEASE source distribution (or
+                ``"pypi"`` for the latest release sdist) instead of any git
+                remote; the sdist is extracted to ``<WS>/tmp/dftracer_sdist``
+                and the same feature env vars (MPI etc.) are applied before
+                ``pip install``.
+            app_built_override: Skip the app-built-first gate. Only for apps
+                built outside ``session_build_install`` (hand-written build
+                configs); the app must still already be built.
+            pip_index_url: The single pip index used for the dftracer build and
+                its build dependencies (``PIP_INDEX_URL``; extra indexes from
+                user pip config are cleared, since an unresolvable extra index
+                makes every build dep retry 5x and the install hangs). Pass
+                ``""`` to keep the user's pip config unchanged.
             papi: Explicit override for PAPI hardware-counter tracing
                 (``DFTRACER_ENABLE_PAPI_TRACING``). Defaults to ``None``
                 (leave off). Pass ``True`` to compile PAPI counter sampling in;
@@ -2943,6 +2977,20 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         """
         ws = _ws(run_id)
         state = _load_state(run_id)
+        # ORDER GATE: the ORIGINAL app must be built first. dftracer has to be
+        # compiled against the dependency stack the app build actually resolved
+        # (compiler, MPI, HDF5/ROCm versions, venv); installing it first bakes
+        # in guessed dependencies that the app build later contradicts.
+        if not (state.get("app_built") or app_built_override):
+            return json.dumps({
+                "status": "error",
+                "message": (
+                    "Build the original app first (session_build_install), then "
+                    "install dftracer against the dependencies that build used. "
+                    "If the app was built outside session_build_install (e.g. a "
+                    "hand-written Make.mach), pass app_built_override=True."
+                ),
+            }, indent=2)
         # ALWAYS re-run detection fresh before installing, rather than trusting
         # a possibly-stale stored `detection` block. HDF5/MPI may have been
         # rebuilt (new version, moved prefix) since the last session_detect
@@ -3268,6 +3316,7 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         result = _install_dftracer_pip_direct(
             dftracer_ref=dftracer_ref,
             dftracer_repo=dftracer_repo,
+            pip_index_url=pip_index_url,
             features={**features, "dftracer_pip_env": _pip_env_in},
             python_exe=venv_python_str,
             jobs=jobs,
@@ -3279,8 +3328,9 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 "dftracer pip install failed",
                 features_enabled=features_enabled,
                 ref=dftracer_ref,
-                venv=str(ws / "venv"),
-                steps=result["steps"],
+                venv=str(Path(venv_python_str).parent.parent),
+                steps=_trim_steps(result["steps"]),
+                full_log="artifacts/ (session_install_dftracer step log)",
             )
 
         # Locate include/lib dirs inside the venv's site-packages
@@ -3303,11 +3353,12 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             features_enabled=features_enabled,
             compat_warnings=compat_warnings,
             ref=dftracer_ref,
-            venv=str(ws / "venv"),
+            venv=str(Path(venv_python_str).parent.parent),
             include_dir=dirs.get("include_dir", "(not found)"),
             lib_dir=dirs.get("lib_dir", "(not found)"),
             lib_name=dirs.get("lib_name", "libdftracer_core.so"),
-            steps=result["steps"],
+            steps=_trim_steps(result["steps"]),
+            full_log="artifacts/ (session_install_dftracer step log)",
         )
 
     @mcp.tool()
