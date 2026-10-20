@@ -537,6 +537,18 @@ The server prints:
 
 ---
 
+## Self-refreshing, zero-downtime MCP server
+
+`dftracer-mcp-server start --ha` runs a supervisor + streaming gateway on the public port and stateless workers
+behind it. Edit tool code and the supervisor fingerprints the source, starts a new generation, switches traffic
+when it answers an MCP `initialize`, drains the old one, and keeps the old one serving if the new one fails; crashed
+workers are replaced. Skills/agents are read at call time (new ones are re-linked automatically). Claude sessions can
+inspect and trigger this with the `server_status`, `server_reload` and `server_refresh_content` tools (skill
+`dftracer-mcp-server-ops`); CLI: `dftracer-mcp-server status|reload|stop`. Design and guarantees:
+[src/dftracer_agents/ha.py](src/dftracer_agents/ha.py); the generic generation store shared with rabbit-agent:
+[src/dftracer_agents/selfrefresh.py](src/dftracer_agents/selfrefresh.py). Evidence: `test/test_ha_gateway.py`
+(no failed request across a rolling restart, a broken new generation, and a killed worker).
+
 ## Installing agent skills
 
 The package bundles a set of agent skills (Claude Code / Goose SKILL.md files) that teach the AI agent how to use dftracer effectively. After `pip install`, copy them into your project so the agent harness can find them:
