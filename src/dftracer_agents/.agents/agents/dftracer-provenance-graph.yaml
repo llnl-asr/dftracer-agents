@@ -11,6 +11,7 @@ tools:
 - mcp__dftracer__session_get_run_paths
 - mcp__dftracer__session_read_file
 - mcp__dftracer__session_write_file
+- mcp__dftracer__session_verify_isolation
 - mcp__dftracer__profile_step_begin
 - mcp__dftracer__profile_step_end
 - mcp__dftracer__profile_status
@@ -40,6 +41,13 @@ sections:
        `render_prov_graph.py` after redacting `$LUSTRE_ROOT/$USER` paths in `uri`.
     6. Also verify the instrumented run did not change the science: diff artifact members
        and one metrics file against the plain run.
+    7. Reproduction package `<WS>/final_provenance/` (config.ini + scripts/lib_load_config.sh +
+       numbered steps + run_all.sh + a STANDALONE checker with no dftracer-agents import +
+       the source patch + spec). Then verify it runs in isolation:
+       `session_verify_isolation(mode="static")` until clean → `mode="launch"` with
+       `isolation_root` on the PFS (outside <WS>) → poll `mode="status"`. Done only when the
+       isolated run exits 0 AND its checker reproduces the session's entity/activity counts
+       with 0 dangling. Report any fix the isolated run forced into the package.
 - include: self-learning-confirmation-gate
 - include: logs-go-to-artifacts
 - include: pipeline-profiling

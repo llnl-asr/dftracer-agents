@@ -7,8 +7,12 @@ the split would still succeed and look healthy while silently dropping every
 node-level counter. This makes that failure mode loud."""
 import gzip, json, glob, os, sys, collections
 
-APP     = {'CPP_APP', 'KERNEL_DISPATCH', 'MEMORY_COPY', 'papi'}
-SERVICE = {'sys', 'io', 'net', 'gpu'}
+# Required sets follow the per-run validator's env (keep them in sync -- an
+# over-strict checker here failed 188/188 healthy leaves once).
+_rc = os.environ.get('GENESIS_COMPACT_REQ_CATS', os.environ.get('GENESIS_REQ_CATS'))
+APP     = set((_rc or 'CPP_APP,KERNEL_DISPATCH,papi').split(',')) - {''}
+POWER   = os.environ.get('GENESIS_POWER', 'variorum')
+SERVICE = {'sys', 'io', 'net'} | ({'gpu'} if POWER == 'variorum' else set())
 
 def _read_with_retry(path, fn, attempts=4):
     """Chunks are written on a compute node and read straight back over NFS, which
@@ -55,7 +59,7 @@ def main():
         if cats.get(need, 0) == 0: errs.append(f"compacted missing APP category {need}")
     for need in sorted(SERVICE):
         if cats.get(need, 0) == 0: errs.append(f"compacted missing SERVICE category {need}")
-    if power == 0: errs.append("compacted has no variorum power samples")
+    if POWER == 'variorum' and power == 0: errs.append("compacted has no variorum power samples")
     # A leaf aggregates the 8 PAPI-set runs, and the bin-packing scheduler is free
     # to place each of those runs on a DIFFERENT disjoint host slice. So the leaf
     # legitimately spans anywhere from `nodes` hosts (all 8 runs got the same slice)

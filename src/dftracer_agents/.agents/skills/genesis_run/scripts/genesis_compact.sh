@@ -15,7 +15,7 @@ WS=${GENESIS_WS:?set GENESIS_WS to the session workspace}
 GENESIS_G="${GENESIS_G:?set GENESIS_G to this genesis system folder}"
 source "$GENESIS_G/env.sh"              > /dev/null 2>&1
 source "$GENESIS_G/scripts/genesis_config.sh"
-DL=$WS/venv/lib/python3.13/site-packages/dftracer
+DL=$DFT_PKG                               # THIS system's dftracer (genesis_config.sh)
 export LD_LIBRARY_PATH="$DL/lib64:$DL/lib:${LD_LIBRARY_PATH:-}"
 SPLIT="$DL/bin/dftracer_split"
 # LOGDIR/CSTATE come from genesis_config.sh: per-system, never shared.
@@ -26,8 +26,8 @@ nleaf=0; nok=0; nfail=0
 for nx in "${INPUTS[@]}"; do
  for N in "${NODE_SCALES[@]}"; do
   for P in "${PPNS[@]}"; do
-    leaf=$(leaf_dir "$(case_slug "$nx")" "$N" "$P")
-    ckey="nx${nx}_N${N}_ppn${P}"
+    leaf=$(leaf_dir "$nx" "$N" "$P")
+    ckey=$(leaf_key "$nx" "$N" "$P")
     [ -d "$leaf/raw" ] || continue
     nleaf=$((nleaf+1))
     grep -q "^$ckey ok" "$CSTATE" 2>/dev/null && { nok=$((nok+1)); continue; }
@@ -43,7 +43,9 @@ for nx in "${INPUTS[@]}"; do
     # App trace names already carry the set name and are unique; the per-node
     # service traces are all called service_<host>.pfw.gz and WOULD collide
     # across the 8 sets, so they get the set name spliced in.
-    stage="$WS/tmp/_compact_stage_$ckey"
+    # Stage INSIDE the leaf: hardlinks must share raw/'s filesystem, and after
+    # genesis_publish.sh the leaf lives in the archive, not the workspace.
+    stage="$leaf/.compact_stage"
     rm -rf "$stage"; mkdir -p "$stage"
     for sdir in "$leaf"/raw/papi_*; do
       [ -d "$sdir" ] || continue
@@ -69,16 +71,20 @@ for nx in "${INPUTS[@]}"; do
     rc=$?
     rm -rf "$stage"
     nout=$(find "$leaf/compacted" -name "*.pfw.gz" | wc -l)
-    vok=$(grep -c "Verification: PASSED" "$LOGDIR/compact_${ckey}.log" 2>/dev/null)
+    vok=$(grep -ac "Verification: PASSED" "$LOGDIR/compact_${ckey}.log" 2>/dev/null)
     # Assert the compacted set carries the SERVICE traces too, not only the app.
-    "$WS/venv/bin/python" "$WS/scripts/genesis_check_compacted.py" \
+    "$PY" "$SCRIPTS/genesis_check_compacted.py" \
         "$leaf/compacted" "$N" > "$leaf/compacted_check.json" 2>>"$LOGDIR/compact_${ckey}.log"
     cok=$?
     if [ "$rc" -eq 0 ] && [ "$nout" -gt 0 ] && [ "$vok" -ge 1 ] && [ "$cok" -eq 0 ]; then
       nev=$(grep -oE "[0-9]+ events" "$LOGDIR/compact_${ckey}.log" | tail -1)
       echo "$ckey ok raw=$nraw chunks=$nout $nev" >> "$CSTATE"
       nok=$((nok+1)); echo "OK   $ckey  raw=$nraw -> $nout chunks"
+      rm -f "$leaf/COMPACTION_NOT_RUN.md"
     else
+      # Leave the leaf self-describing: raw/ is intact and authoritative.
+      printf '# Compaction did not complete\n\nleaf: %s\ndate: %s\nrc=%s raw=%s chunks=%s verified=%s content_ok=%s\n\n`raw/` is complete and authoritative; `compacted/` is absent or unusable.\nRe-run genesis_compact.sh with GENESIS_ROOT pointing at this corpus.\n' \
+        "$ckey" "$(date -Is)" "$rc" "$nraw" "$nout" "$vok" "$cok" > "$leaf/COMPACTION_NOT_RUN.md"
       echo "$ckey FAIL rc=$rc raw=$nraw chunks=$nout verified=$vok content_ok=$cok :: $(cat "$leaf/compacted_check.json" 2>/dev/null | head -c 300)" >> "$LOGDIR/compact_failures"
       nfail=$((nfail+1)); echo "FAIL $ckey rc=$rc (see compact_${ckey}.log)"
     fi

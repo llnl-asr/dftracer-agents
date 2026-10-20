@@ -12,6 +12,7 @@ pipeline around it:
 * ``provenance_write_spec``        -- validate + persist the user-approved entity spec
 * ``provenance_install_helpers``   -- drop dftracer_prov.h / dftracer_prov.py into the tree
 * ``provenance_insert``            -- idempotent, indentation-aware line insertion
+* ``provenance_ensure_lifecycle``  -- C/C++: make sure dftracer is initialized/finalized around main()
 * ``provenance_validate``          -- static check: annotations cover the spec
 * ``provenance_extract_graph``     -- traces -> provenance graph (JSON + DOT) + lineage checks
 
@@ -298,6 +299,8 @@ def static_check(root: Path, spec: Dict[str, Any]) -> Dict[str, Any]:
     seen_acts: Counter = Counter()
     issues: List[str] = []
     files_with_calls: List[str] = []
+    c_cpp_use = False
+    has_init = False
     for p in _iter_sources(root):
         if p.name in HELPER_FILES:  # the generated helper's docstring examples are not app calls
             continue
@@ -305,6 +308,8 @@ def static_check(root: Path, spec: Dict[str, Any]) -> Dict[str, Any]:
             txt = p.read_text(errors="replace")
         except OSError:
             continue
+        if _INIT_RE.search(txt):
+            has_init = True
         if "dft_prov" not in txt and "dftprov" not in txt and "prov." not in txt:
             continue
         types = _PROV_CALL.findall(txt)
@@ -316,12 +321,19 @@ def static_check(root: Path, spec: Dict[str, Any]) -> Dict[str, Any]:
         seen_types.update(types)
         seen_acts.update(acts)
         lang = _lang_of(p)
+        if lang in ("c", "cpp"):
+            c_cpp_use = True
         if lang in ("c", "cpp") and "dftracer_prov.h" not in txt:
             issues.append(f"{rel}: uses dft_prov but does not #include \"dftracer_prov.h\"")
         if lang == "python" and not re.search(r"import\s+dftracer_prov|from\s+\S*dftracer_prov", txt):
             issues.append(f"{rel}: uses prov.* but does not import dftracer_prov")
         if lang == "c" and re.search(r"dft_prov_begin\s*\(", txt) and "dft_prov_end" not in txt:
             issues.append(f"{rel}: dft_prov_begin without dft_prov_end (use DFT_PROV_ACTIVITY for auto-end)")
+    if c_cpp_use and not has_init:
+        issues.append("C/C++ provenance calls present but dftracer is never initialized "
+                      "(no DFTRACER_C_INIT / DFTRACER_CPP_INIT in the tree): every PROV event "
+                      "would be dropped and the trace stays empty -- run "
+                      "provenance_ensure_lifecycle on the file that defines main()")
     spec_types = {t["name"] for t in spec.get("entity_types") or [] if isinstance(t, dict)}
     regs = list(root.rglob("dftracer_prov_types.py")) + list(root.rglob("dftracer_prov_types.h"))
     if not regs:
@@ -380,6 +392,53 @@ def insert_lines(path: Path, line: int, code: str, position: str = "after",
     return {"inserted": len(new), "already_present": False, "at_line": idx + 1}
 
 
+#: dftracer is initialized by these (C/C++ macros) or, for Python, by initialize_log.
+_INIT_RE = re.compile(r"DFTRACER_(?:C|CPP)_INIT\b|\binitialize_log\s*\(")
+
+
+def ensure_lifecycle(path: Path, compile_flags: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Make a C/C++ file's ``main()`` initialize and finalize dftracer. Idempotent.
+
+    Without ``DFTRACER_C_INIT`` / ``DFTRACER_CPP_INIT`` dftracer never starts: every
+    ``PROV`` event is dropped and the trace comes out empty (0 bytes), with no
+    error. FINI is registered through ``atexit`` so it runs on every ``return``
+    and ``exit()`` path of ``main`` without rewriting any of them.
+    """
+    from .source_parser import extract_functions
+
+    lang = _lang_of(path)
+    if lang not in ("c", "cpp"):
+        raise ValueError(f"{path.name}: lifecycle insertion is for C/C++ (got {lang})")
+    if _INIT_RE.search(path.read_text(errors="replace")):
+        return {"inserted": 0, "already_present": True}
+    diag: Dict[str, Any] = {}
+    funcs = extract_functions(path, compile_flags or [], diag)
+    mains = [f for f in funcs if f.get("is_entry_point")]
+    if not mains:
+        why = "; ".join(diag.get("fatal_messages") or []) or "no main() found in this file"
+        raise ValueError(f"cannot locate main() in {path.name}: {why} "
+                         "(pass compile_flags with absolute -I paths, and use the file that defines main)")
+    m = mains[0]
+    pre = "C" if lang == "c" else "CPP"
+    nul = "NULL" if lang == "c" else "nullptr"
+    handler = "dft_prov_fini_atexit"
+    lines = path.read_text().splitlines()
+    includes = [i for i, l in enumerate(lines, 1) if re.match(r"^\s*#\s*include\b", l)
+                and i < m["start_line"]]
+    # bottom-up so earlier line numbers stay valid
+    insert_lines(path, m["open_brace_line"],
+                 f"DFTRACER_{pre}_INIT({nul}, {nul}, {nul});\natexit({handler});", "after", lang)
+    insert_lines(path, m["start_line"],
+                 f"static void {handler}(void) {{ DFTRACER_{pre}_FINI(); }}", "before", lang)
+    inc = "#include <stdlib.h>\n#include <dftracer/dftracer.h>"
+    if includes:
+        insert_lines(path, includes[-1], inc, "after", lang)
+    else:
+        insert_lines(path, 1, inc, "before", lang)
+    return {"inserted": 5, "already_present": False, "main_line": m["start_line"],
+            "init_macro": f"DFTRACER_{pre}_INIT", "fini": "atexit"}
+
+
 def _open_trace(p: Path):
     return gzip.open(p, "rt", errors="replace") if p.suffix == ".gz" else open(p, errors="replace")
 
@@ -430,6 +489,11 @@ def _iter_events(trace_dir: Path) -> Iterable[Dict[str, Any]]:
 
 
 PROV_QUERY = 'cat == "PROV" or cat == "PROV_CONT"'
+#: Entity declarations (EH/ET/ER) and the FH/SH/HH hash tables carry cat "dftracer"
+#: and are NOT ph=M, so newer viewers do not pass them through a PROV-only query:
+#: the graph then has activities and edges but zero entities (every hash dangles).
+#: ``--phase any`` makes the viewer return every record class.
+PROV_QUERY_WITH_ENTITIES = PROV_QUERY + ' or cat == "dftracer"'
 
 
 def view_prov_events(trace_dir: Path, out_jsonl: Path, viewer: str, index_dir: Path,
@@ -444,12 +508,18 @@ def view_prov_events(trace_dir: Path, out_jsonl: Path, viewer: str, index_dir: P
     import subprocess
     index_dir.mkdir(parents=True, exist_ok=True)
     out_jsonl.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [viewer, "-d", str(trace_dir), "--index-dir", str(index_dir), "--query", PROV_QUERY,
-           "--log-level", "error"]
+    base = [viewer, "-d", str(trace_dir), "--index-dir", str(index_dir), "--log-level", "error"]
     if threads:
-        cmd += ["--executor-threads", str(threads), "--io-threads", str(threads)]
-    with open(out_jsonl, "w") as fo:
-        p = subprocess.run(cmd, stdout=fo, stderr=subprocess.PIPE, text=True, timeout=timeout)
+        base += ["--executor-threads", str(threads), "--io-threads", str(threads)]
+    # Newer viewers need --phase any + cat=="dftracer" to emit entity records;
+    # older ones pass metadata through and reject --phase, so fall back to PROV only.
+    attempts = [base + ["--query", PROV_QUERY_WITH_ENTITIES, "--phase", "any"],
+                base + ["--query", PROV_QUERY]]
+    for cmd in attempts:
+        with open(out_jsonl, "w") as fo:
+            p = subprocess.run(cmd, stdout=fo, stderr=subprocess.PIPE, text=True, timeout=timeout)
+        if p.returncode == 0:
+            break
     return {"cmd": " ".join(cmd), "returncode": p.returncode, "stderr": p.stderr[-2000:],
             "lines": sum(1 for _ in open(out_jsonl))}
 
@@ -919,6 +989,44 @@ def register_provenance_tools(mcp: FastMCP) -> None:
         except ValueError as e:
             return _err(str(e))
         return _ok("inserted" if res["inserted"] else "already present", file=filepath, **res)
+
+    @mcp.tool()
+    def provenance_ensure_lifecycle(run_id: str, filepath: str, compile_flags: str = "",
+                                    source_subfolder: str = DEFAULT_SOURCE) -> str:
+        """C/C++: make ``main()`` initialize and finalize dftracer (idempotent).
+
+        REQUIRED for any C/C++ provenance build. ``dft_prov_*`` calls only record
+        events once dftracer is initialized; without ``DFTRACER_C_INIT`` /
+        ``DFTRACER_CPP_INIT`` the run exits 0 but the trace is 0 bytes and the
+        provenance graph is empty. ``provenance_validate`` fails until this is done.
+
+        Adds ``#include <dftracer/dftracer.h>``, the INIT macro as the first
+        statement of ``main`` and an ``atexit`` handler that calls FINI (covers
+        every ``return`` and ``exit()`` path). Python needs no equivalent here:
+        initialize it with ``initialize_log`` in the entry script.
+
+        Args:
+            filepath: the source file that DEFINES ``main`` (relative to the tree).
+            compile_flags: clang flags as one string with ABSOLUTE ``-I`` paths
+                (relative ones resolve against the server's cwd, not the
+                workspace). Needed when the file includes headers that clang
+                cannot otherwise find (e.g. ``mpi.h``).
+        """
+        import shlex
+
+        ws = _ws(run_id)
+        try:
+            p = _safe_session_path(ws, f"{source_subfolder}/{filepath}")
+        except ValueError as e:
+            return _err(str(e))
+        if not p.exists():
+            return _err(f"{p} does not exist")
+        try:
+            res = ensure_lifecycle(p, shlex.split(compile_flags) if compile_flags else None)
+        except (ValueError, RuntimeError) as e:
+            return _err(str(e))
+        return _ok("lifecycle already present" if res["already_present"]
+                   else "dftracer init/finalize added to main()", file=filepath, **res)
 
     @mcp.tool()
     def provenance_validate(run_id: str, source_subfolder: str = DEFAULT_SOURCE) -> str:

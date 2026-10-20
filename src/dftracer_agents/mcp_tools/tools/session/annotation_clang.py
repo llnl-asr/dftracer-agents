@@ -715,9 +715,11 @@ def register_clang_tools(mcp: FastMCP) -> None:
             del _FILE_CACHE[cache_key]
 
         try:
+            import shlex as _shlex
             brace_result = add_braces_c(
                 abs_path,
                 extra_include_dirs=_discover_brace_include_dirs(ws, filepath, run_id),
+                extra_flags=_shlex.split(compile_flags) if compile_flags else None,
             )
         except ClangNotFoundError as exc:
             return _err(str(exc), filepath=filepath)
@@ -900,6 +902,10 @@ def register_clang_tools(mcp: FastMCP) -> None:
                 skipped_functions.append(fn_name)
                 continue
             if fn_name in _exclude_functions:
+                skipped_functions.append(fn_name)
+                continue
+            if fn.get("cuda_device"):
+                # GPU code (__global__/__device__): host macros cannot run there.
                 skipped_functions.append(fn_name)
                 continue
 

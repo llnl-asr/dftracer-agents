@@ -89,7 +89,7 @@ def extract_functions(
     suffix = path.suffix.lower()
     if suffix == ".py":
         return _extract_python(path)
-    if suffix in (".c", ".cpp", ".cxx", ".cc", ".h", ".hpp"):
+    if suffix in (".c", ".cpp", ".cxx", ".cc", ".h", ".hpp") + CUDA_SUFFIXES:
         return _extract_c_cpp(path, compile_flags, diagnostics)
     return []
 
@@ -147,16 +147,43 @@ def _resolve_line(loc: dict, line_offsets: list[int]) -> int:
     return 0
 
 
+CUDA_SUFFIXES = (".cu", ".cuh")
+
+
+def _clang_lang_and_flags(path: Path) -> tuple[str, list[str]]:
+    """clang ``-x`` language and implicit flags for *path*.
+
+    CUDA sources (``.cu``/``.cuh``) are parsed host-side only (``-xcuda
+    --cuda-host-only``) against a real toolkit, so ``__global__`` kernels and
+    host drivers both appear in the AST. Without this, ``.cu`` files were not
+    parsed at all and the annotator silently reported 0 functions. The toolkit
+    is taken from CUDA_HOME/CUDA_PATH, else from ``nvcc`` on PATH; a caller can
+    always override with its own ``--cuda-path=`` in compile_flags.
+    """
+    if path.suffix in CUDA_SUFFIXES:
+        import os, shutil
+        flags = ["--cuda-host-only"]
+        root = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH")
+        if not root:
+            nv = shutil.which("nvcc")
+            if nv:
+                root = str(Path(nv).resolve().parent.parent)
+        if root:
+            flags.append(f"--cuda-path={root}")
+        return "cuda", flags
+    return ("c" if path.suffix == ".c" else "c++"), []  # ".C" is C++
+
+
 def _try_clang(
     path: Path,
     compile_flags: Optional[list[str]] = None,
     diagnostics: Optional[dict] = None,
 ) -> Optional[list[dict]]:
-    lang = "c" if path.suffix == ".c" else "c++"  # case-sensitive: ".C" is C++
+    lang, _implicit = _clang_lang_and_flags(path)
     # `-x<lang>` must stay LAST before the file: any `-x` in caller-supplied
     # flags (MFEM's config.mk passes `-x hip`) would otherwise decide how this
     # file is parsed.
-    cmd = ["clang", "-Xclang", "-ast-dump=json", "-fsyntax-only", "-w"]
+    cmd = ["clang", "-Xclang", "-ast-dump=json", "-fsyntax-only", "-w"] + _implicit
     if compile_flags:
         cmd.extend(compile_flags)
     cmd.extend([f"-x{lang}", str(path)])
@@ -215,15 +242,55 @@ def _try_clang(
     return functions
 
 
+def _scan_files(obj, state: dict) -> None:
+    """Update ``state["file"]`` from every ``file`` key inside *obj*.
+
+    ``includedFrom.file`` names the INCLUDER, not the file the location is in,
+    so it is skipped.
+    """
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k == "includedFrom":
+                continue
+            if k == "file" and isinstance(v, str):
+                state["file"] = v
+            elif isinstance(v, (dict, list)):
+                _scan_files(v, state)
+    elif isinstance(obj, list):
+        for v in obj:
+            _scan_files(v, state)
+
+
+def _index_node_files(ast_root: dict) -> dict:
+    """Map ``id(node)`` -> the source file that node's ``loc`` is in.
+
+    clang's ``-ast-dump=json`` prints ``file`` only when it CHANGES from the
+    previously printed location anywhere in the dump -- including locations
+    nested inside earlier functions' bodies and ranges. A walker that watches
+    only each top-level node's own ``loc`` therefore goes stale on a header and
+    silently drops every later function of the real file (0 functions, no
+    error). So the file in effect is tracked over the WHOLE dump in document
+    order (``loc``, then ``range``, then ``inner``).
+    """
+    file_of: dict = {}
+    state = {"file": ""}
+    stack = [ast_root]
+    while stack:
+        node = stack.pop()
+        _scan_files(node.get("loc"), state)
+        file_of[id(node)] = state["file"]
+        _scan_files(node.get("range"), state)
+        stack.extend(reversed([c for c in node.get("inner", [])
+                               if isinstance(c, dict)]))
+    return file_of
+
+
 def _visit_tu(ast_root: dict, functions: list[dict],
               target: str, line_offsets: list[int]) -> None:
-    """Walk TranslationUnitDecl children tracking current file context."""
-    current_file: str = ""
+    """Walk TranslationUnitDecl children, tracking each node's source file."""
+    file_of = _index_node_files(ast_root)
     for node in ast_root.get("inner", []):
-        # Update file context from loc if present
-        loc = node.get("loc", {})
-        if "file" in loc:
-            current_file = loc["file"]
+        current_file = file_of.get(id(node), "")
 
         # Skip nodes from other files (system headers etc.)
         if current_file and target not in current_file:
@@ -236,17 +303,16 @@ def _visit_tu(ast_root: dict, functions: list[dict],
             if info:
                 functions.append(info)
         elif kind == "CXXRecordDecl":
-            _visit_class(node, functions, target, current_file, line_offsets)
+            _visit_class(node, functions, target, file_of, line_offsets)
         elif kind == "NamespaceDecl":
-            _visit_namespace(node, functions, target, current_file, line_offsets)
+            _visit_namespace(node, functions, target, file_of, line_offsets)
 
 
 def _visit_class(node: dict, functions: list[dict],
-                 target: str, current_file: str,
+                 target: str, file_of: dict,
                  line_offsets: list[int]) -> None:
     for child in node.get("inner", []):
-        loc = child.get("loc", {})
-        child_file = loc.get("file", current_file)
+        child_file = file_of.get(id(child), "")
         if child_file and target not in child_file:
             continue
         kind = child.get("kind", "")
@@ -256,16 +322,14 @@ def _visit_class(node: dict, functions: list[dict],
             if info:
                 functions.append(info)
         elif kind == "CXXRecordDecl":
-            _visit_class(child, functions, target,
-                         child_file or current_file, line_offsets)
+            _visit_class(child, functions, target, file_of, line_offsets)
 
 
 def _visit_namespace(node: dict, functions: list[dict],
-                     target: str, current_file: str,
+                     target: str, file_of: dict,
                      line_offsets: list[int]) -> None:
     for child in node.get("inner", []):
-        loc = child.get("loc", {})
-        child_file = loc.get("file", current_file)
+        child_file = file_of.get(id(child), "")
         if child_file and target not in child_file:
             continue
         kind = child.get("kind", "")
@@ -275,8 +339,7 @@ def _visit_namespace(node: dict, functions: list[dict],
             if info:
                 functions.append(info)
         elif kind in ("CXXRecordDecl", "NamespaceDecl"):
-            _visit_namespace(child, functions, target,
-                             child_file or current_file, line_offsets)
+            _visit_namespace(child, functions, target, file_of, line_offsets)
 
 
 def _extract_func_node(node: dict, line_offsets: list[int]) -> Optional[dict]:
@@ -305,8 +368,14 @@ def _extract_func_node(node: dict, line_offsets: list[int]) -> Optional[dict]:
     exits.sort(key=lambda x: x["line"])
 
     name = node.get("name", "")
+    # CUDA execution space: a __global__ / __device__ function runs on the GPU,
+    # where the host-side dftracer macros cannot be called at all. __host__
+    # __device__ functions are compiled for BOTH sides, so they are excluded too.
+    _attrs = {c.get("kind") for c in inner}
+    cuda_device = bool(_attrs & {"CUDAGlobalAttr", "CUDADeviceAttr"})
     return {
         "name":            name,
+        "cuda_device":     cuda_device,
         "start_line":      start_line,
         "open_brace_line": open_brace,
         "body_first_line": open_brace + 1,
@@ -447,7 +516,8 @@ def _callee_name(call_expr: dict) -> str:
 # Python extraction via ast module
 # ---------------------------------------------------------------------------
 
-def add_braces_c(path: Path, extra_include_dirs: Optional[List[str]] = None) -> dict:
+def add_braces_c(path: Path, extra_include_dirs: Optional[List[str]] = None,
+                 extra_flags: Optional[List[str]] = None) -> dict:
     """Add ``{`` / ``}`` around braceless ``if`` / ``for`` / ``while`` bodies.
 
     Uses clang ``-Xclang -ast-dump=json`` for precise AST-level detection.
@@ -468,12 +538,24 @@ def add_braces_c(path: Path, extra_include_dirs: Optional[List[str]] = None) -> 
             * ``skipped_reason`` (str, only when ``modified`` is ``False``
               because of an unresolvable-headers parse) — see below.
     """
-    lang = "c" if path.suffix == ".c" else "c++"  # case-sensitive: ".C" is C++
-    return _add_braces_via_clang(path, lang, extra_include_dirs=extra_include_dirs)
+    lang, _ = _clang_lang_and_flags(path)
+    if path.suffix in CUDA_SUFFIXES:
+        # Measured on XSBench's CUDA variant: the -xcuda AST resolved brace
+        # ranges onto the WRONG lines (a `{` inserted inside a /* */ comment,
+        # its `}` after the function's END), which broke the build. Extraction
+        # (function begin/end/exits) is accurate; only brace rewriting is not.
+        # Fail SAFE: skip, and let the caller check braceless returns.
+        return {"modified": False, "insertions": 0, "method": "clang",
+                "skipped_reason": "brace insertion disabled for CUDA sources "
+                "(-xcuda AST line ranges unreliable); check braceless "
+                "if/else bodies that return manually"}
+    return _add_braces_via_clang(path, lang, extra_include_dirs=extra_include_dirs,
+                                 extra_flags=extra_flags)
 
 
 def _add_braces_via_clang(
-    path: Path, lang: str, extra_include_dirs: Optional[List[str]] = None
+    path: Path, lang: str, extra_include_dirs: Optional[List[str]] = None,
+    extra_flags: Optional[List[str]] = None,
 ) -> dict:
     """Collect braceless control-flow bodies via clang AST then rewrite the file.
 
@@ -500,6 +582,9 @@ def _add_braces_via_clang(
     ``skipped_reason``) instead of silent corruption.
     """
     inc_flags = [f"-I{d}" for d in extra_include_dirs] if extra_include_dirs else []
+    # caller compile flags (-D/-I/--cuda-path) so the brace pass parses the file
+    # exactly as the extraction pass does; without them it skips (safe no-op).
+    inc_flags = _clang_lang_and_flags(path)[1] + list(extra_flags or []) + inc_flags
     try:
         proc = subprocess.run(
             ["clang", "-Xclang", "-ast-dump=json", "-fsyntax-only", "-w",
