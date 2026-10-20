@@ -148,6 +148,10 @@ def _write_pid(pid: int) -> None:
 
 
 def _build_child_argv(args: argparse.Namespace) -> list[str]:
+    if getattr(args, "ha", False):
+        # zero-downtime mode: the daemon process is the supervisor + gateway, which runs stateless workers
+        return [sys.executable, "-m", "dftracer_agents.ha", "--service", args.service, "--host", args.host,
+                "--port", str(args.port), "--path", args.path, "--workers", str(getattr(args, "workers", 2))]
     argv = [
         sys.executable,
         "-m",
@@ -290,6 +294,29 @@ def _daemon_stop() -> int:
     return 1
 
 
+def _daemon_reload(wait_s: float = 120.0) -> int:
+    """Rolling restart of the zero-downtime daemon (new generation up, traffic switched, old one drained)."""
+    from dftracer_agents.ha import read_state
+    pid = _read_pid()
+    if pid is None or not _pid_alive(pid) or read_state() is None:
+        print("[daemon] reload needs the zero-downtime daemon: dftracer-mcp-server start --ha", file=sys.stderr)
+        return 1
+    before = (read_state() or {}).get("generation")
+    os.kill(pid, signal.SIGHUP)
+    end = time.time() + wait_s
+    while time.time() < end:
+        st = read_state() or {}
+        if st.get("generation") != before:
+            print(f"[daemon] now serving generation {st['generation']} (previous drained)")
+            return 0
+        if st.get("last_error"):
+            print(f"[daemon] reload failed, previous generation keeps serving: {st['last_error']}", file=sys.stderr)
+            return 1
+        time.sleep(0.5)
+    print("[daemon] reload still in progress", file=sys.stderr)
+    return 1
+
+
 def _daemon_status() -> int:
     pid = _read_pid()
     pid_path = _pid_file()
@@ -299,6 +326,12 @@ def _daemon_status() -> int:
     if _pid_alive(pid):
         print(f"[daemon] running (pid={pid})")
         print(f"[daemon] PID file: {pid_path}")
+        from dftracer_agents.ha import read_state
+        st = read_state()
+        if st:
+            print(f"[daemon] zero-downtime mode: generation {st['generation']}, {len(st['workers'])} worker(s), "
+                  f"source {'current' if st['source_current'] else 'CHANGED (rolling restart pending)'}, "
+                  f"swaps {st['swaps']}, last error: {st['last_error'] or 'none'}")
         return 0
     print(f"[daemon] stale PID file (pid={pid})")
     try:
@@ -411,6 +444,17 @@ def _build_system_server() -> FastMCP:
 
     server = _new_server("DFTracerSystem")
     for tool in asyncio.run(service.system_subservice.list_tools()):
+        server.add_tool(tool)
+    return server
+
+
+def _build_admin_server() -> FastMCP:
+    from dftracer_agents.mcp_tools.tools.dftracer import admin_service
+
+    service = admin_service.AdminService()
+
+    server = _new_server("DFTracerAdmin")
+    for tool in asyncio.run(service.admin_subservice.list_tools()):
         server.add_tool(tool)
     return server
 
@@ -600,6 +644,9 @@ def build_server(service: str) -> FastMCP:
     if service == "agent_trace":
         return _with_context_injection(_build_agent_trace_server())
 
+    if service == "admin":
+        return _with_context_injection(_build_admin_server())
+
     # both — all services
     combined = _new_server("DFTracer")
     for srv in (
@@ -613,6 +660,7 @@ def build_server(service: str) -> FastMCP:
         _build_system_server(),
         _build_skills_server(),
         _build_agent_trace_server(),
+        _build_admin_server(),
     ):
         for tool in asyncio.run(srv.list_tools()):
             combined.add_tool(tool)
@@ -630,7 +678,7 @@ def main() -> None:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["start", "stop", "status", "run"],
+        choices=["start", "stop", "status", "run", "reload"],
         default="start",
         help=(
             "Daemon command (default: start). Use 'run' to run in the foreground "
@@ -639,7 +687,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--service",
-        choices=["utils", "analyzer", "session", "docs", "diagnoser", "papers", "system", "skills", "agent_trace", "both"],
+        choices=["utils", "analyzer", "session", "docs", "diagnoser", "papers", "system", "skills", "agent_trace", "admin", "both"],
         default="both",
         help="Which service(s) to expose (default: both)",
     )
@@ -711,6 +759,18 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--ha",
+        action="store_true",
+        help=(
+            "Zero-downtime mode (HTTP): a supervisor owns the public port through a streaming gateway and runs "
+            "stateless workers. Source changes trigger a rolling restart (new generation up, traffic switched, "
+            "old one drained; the old one keeps serving if the new one fails); crashed workers are replaced; "
+            "`dftracer-mcp-server reload` or the server_reload tool forces one. No client reconnect needed."
+        ),
+    )
+    parser.add_argument("--workers", type=int, default=2, help="Workers per generation in --ha mode (default 2)")
+    parser.add_argument("--stateless", action="store_true", default=False, help=argparse.SUPPRESS)
+    parser.add_argument(
         "--_child-run",
         action="store_true",
         default=False,
@@ -723,9 +783,14 @@ def main() -> None:
             raise SystemExit(_daemon_stop())
         if args.command == "status":
             raise SystemExit(_daemon_status())
+        if args.command == "reload":
+            raise SystemExit(_daemon_reload())
         if args.command == "start":
             raise SystemExit(_daemon_start(args))
         # command == "run": continue with foreground server below.
+        if args.ha:
+            from dftracer_agents.ha import Supervisor
+            raise SystemExit(Supervisor(args.service, args.host, args.port, args.path, args.workers).serve())
 
     # Under stdio the client owns stdout as the JSON-RPC channel, so anything
     # printed there corrupts the protocol and the client fails or times out
@@ -760,6 +825,7 @@ def main() -> None:
                 port=args.port,
                 path=args.path,
                 show_banner=True,
+                **({"stateless_http": True} if args.stateless else {}),
             )
         )
 
