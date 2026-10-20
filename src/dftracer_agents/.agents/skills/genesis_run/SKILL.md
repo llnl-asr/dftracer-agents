@@ -1729,3 +1729,26 @@ trace, and a leaf holds dozens. A pack sat **4 hours** inside it.
 
 Combined, these two made big cells appear to take hours of "compute" that was
 entirely bookkeeping.
+
+## The canonical scripts are scheduler- and app-aware -- configure, do not fork
+
+`scripts/` runs unchanged on Flux and Slurm and for any app; set these instead of
+editing code (the XSBench/matrix sweep was the first to use them):
+
+| variable | meaning |
+| --- | --- |
+| `GENESIS_SCHED` | `flux`/`slurm` (auto: Slurm if `SLURM_JOB_ID` or no live flux instance -- matrix ships a `flux` binary with no instance) |
+| `GENESIS_INPUTS_FILE` | `case<TAB>app args` per line (general form); `GENESIS_ARGS_TEMPLATE` with `{case}` for numeric apps |
+| `GENESIS_GPU` | `hip` (sets the runtime gate) / `cuda` (CUPTI is compiled in, no env) / `none` |
+| `GENESIS_POWER` | `variorum` / `nvml` (per-host `gpu_power_<host>.csv`, required by the validator) / `none` |
+| `GENESIS_REQ_CATS`, `GENESIS_REQ_USED`, `GENESIS_NOFOLD_CATS` | validator's required categories, `end.used` layers, aggregation-protected categories |
+| `GENESIS_APP_MARKER`, `GENESIS_OK_RCS` | completion marker; exit codes accepted only together with it (XSBench XL exits 1 on a healthy run) |
+| `GENESIS_COPY=cp`, `GENESIS_LEAF`, `GENESIS_CHGPERM`, `GENESIS_COMPACT_TMPDIR` | publish from a login node without dcp; one leaf only; archive perms; non-NFS split scratch |
+
+Slurm: `genesis_slurm_chain.sh <part> <nodes> <min> <depth> <name>` submits an
+`afterany` chain of sbatch workers (one chain + one `GENESIS_STATE` per node
+scale); the worker takes a `flock` on its state file. Publish (move raw ->
+archive -> compact in place -> `summary.json` -> leaf-contract check -> chgperm)
+runs from a login-node loop reading the UNION of the state files, so compaction
+never shares a node with a traced run. `run_<set>.json` now carries `multiplex`
+and `app_files` for the leaf contract.

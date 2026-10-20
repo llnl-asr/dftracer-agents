@@ -457,3 +457,38 @@ nm -DC libdftracer_core.so | grep -c "MPIIODFTracer::MPI_"   # expect ~59
 collected: it splits the corpus's provenance across two tracer builds, which then
 has to be recorded per leaf. For a CPU-only app a CUDA-only fix is not a reason
 to swap.
+
+## MVAPICH2's own malloc deadlocks dftracer's memory-syscall interceptors
+
+`libmpi.so` from mvapich2 exports its **own ptmalloc** (`malloc/free/calloc`), which
+calls `sysconf`, `mprotect`, `madvise`, `munmap` **while holding its arena lock**.
+dftracer develop (brahma >= the "POSIX and STDIO functions" commit) intercepts
+those calls everywhere via GOTCHA, including inside libmpi, so the interceptor
+logged -- allocated/freed -- under the arena lock:
+
+* 1 rank + PAPI: `std::system_error: Resource deadlock avoided` -> abort (the PAPI
+  sampler thread re-entered the logger through `malloc -> new_heap -> mprotect`);
+* 2-4 ranks: one rank spins forever in `free()` (`nanosleep` inside libmpi's malloc,
+  called from `sysconf` interceptor), its peer waits in `MPI_Barrier`: ~50 % hangs;
+* at finalize: `gotcha_wrap` callocs -> libmpi malloc -> `sysconf` interceptor ->
+  `gotcha_get_wrappee` on a table being rebuilt -> SIGSEGV.
+
+Fix (patch in the XSBench matrix genesis folder, `dftracer_reentry_guard.patch`):
+pass those four calls straight to the kernel / `__sysconf` **before**
+`BRAHMA_MAP_OR_FAIL` (opt back in with `DFTRACER_TRACE_ALLOC_SYSCALLS=1`), plus a
+per-thread tracer-depth guard. Verified 8/8 clean 4-rank runs after, 1/8 before.
+CPU-only AMG on an older dftracer never hit it (those interceptors did not exist).
+
+## One MPI process per srun step
+
+Launching a second MPI program from the SAME `srun` step (e.g. a debug loop
+`srun bash -c 'for m in a b; do ./app; done'`) fails the second `MPI_Init` with
+`SIGPIPE` (rc 141, EPIPE writing `cmd=init` to the step's PMI socket), with no
+output. That is a harness artifact, not an app/tracer bug: one `srun` per run.
+
+## dftracer_split on NFS TMPDIR aborts after writing its chunks
+
+`dftracer_split` builds its temp index under `$TMPDIR` and removes it at exit; on
+the NFS workspace still-open files become `.nfsXXXX` and the removal throws
+`filesystem_error ... Device or resource busy` -> rc 134 although the chunks were
+written. Point `TMPDIR` for compaction at Lustre (`GENESIS_COMPACT_TMPDIR`).
