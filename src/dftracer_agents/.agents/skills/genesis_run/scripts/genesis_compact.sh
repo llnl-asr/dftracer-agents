@@ -18,6 +18,11 @@ source "$GENESIS_G/scripts/genesis_config.sh"
 DL=$DFT_PKG                               # THIS system's dftracer (genesis_config.sh)
 export LD_LIBRARY_PATH="$DL/lib64:$DL/lib:${LD_LIBRARY_PATH:-}"
 SPLIT="$DL/bin/dftracer_split"
+# dftracer_split builds a temporary index under $TMPDIR and removes it at exit.
+# On NFS the still-open index files become .nfsXXXX and that removal aborts the
+# split (filesystem_error "Device or resource busy", rc=134) AFTER the chunks
+# are written. Point it at a non-NFS scratch (PFS or node-local).
+[ -n "${GENESIS_COMPACT_TMPDIR:-}" ] && { mkdir -p "$GENESIS_COMPACT_TMPDIR"; export TMPDIR="$GENESIS_COMPACT_TMPDIR"; }
 # LOGDIR/CSTATE come from genesis_config.sh: per-system, never shared.
 mkdir -p "$LOGDIR"
 CSTATE="$LOGDIR/compact_state"; touch "$CSTATE"
@@ -83,6 +88,9 @@ for nx in "${INPUTS[@]}"; do
       rm -f "$leaf/COMPACTION_NOT_RUN.md"
     else
       # Leave the leaf self-describing: raw/ is intact and authoritative.
+      # a failed split's partial output is not data: the leaf must have EITHER
+      # verified chunks OR the note (genesis_leaf_contract NOTE clause).
+      rm -rf "$leaf/compacted" "$leaf/compacted_check.json"
       printf '# Compaction did not complete\n\nleaf: %s\ndate: %s\nrc=%s raw=%s chunks=%s verified=%s content_ok=%s\n\n`raw/` is complete and authoritative; `compacted/` is absent or unusable.\nRe-run genesis_compact.sh with GENESIS_ROOT pointing at this corpus.\n' \
         "$ckey" "$(date -Is)" "$rc" "$nraw" "$nout" "$vok" "$cok" > "$leaf/COMPACTION_NOT_RUN.md"
       echo "$ckey FAIL rc=$rc raw=$nraw chunks=$nout verified=$vok content_ok=$cok :: $(cat "$leaf/compacted_check.json" 2>/dev/null | head -c 300)" >> "$LOGDIR/compact_failures"

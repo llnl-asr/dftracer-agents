@@ -210,3 +210,33 @@ around it; use it for compute/memory and PAPI work.
 * [[software-papi]] — counter budget and how to verify `multiplex: 0`.
 * [[dftracer-annotate-c]] — INIT/FINI placement rules.
 * [[tools-dftracer]] — install source selection.
+
+## CUDA variant (NVIDIA, e.g. a genesis sweep on an H100 machine)
+
+* **Upstream `cuda/Main.cu` has no MPI at all** (maps.sh: `app_mpi=0` for CUDA),
+  although `io.cu`/`XSutils.cu` already carry `#ifdef MPI` reduce/timer code. For
+  a multi-rank corpus add `MPI_Init/Comm_size/Comm_rank` after the declarations
+  and `MPI_Finalize` before `return`, both under `#ifdef MPI`; ranks are
+  independent replicas exactly as in openmp-threading.
+* `-DMPI` with an MPICH-family MPI (MVAPICH2) **fails in `mpicxx.h`**: *"You cannot
+  define MPI; that name is reserved for the MPI namespace"* (nvcc compiles as C++).
+  Add **`-DMPICH_SKIP_MPICXX`** (and `-DOMPI_SKIP_MPICXX` for OpenMPI).
+* Build: `make CC="nvcc -ccbin g++" CFLAGS="... -arch=sm_90 -DMPI -DMPICH_SKIP_MPICXX
+  -I<mpi>/include -I<dft>/include" LDFLAGS="-lm -L<mpi>/lib -lmpi -L<dft>/lib64
+  -ldftracer_core -Xlinker -rpath ..."`.
+* Annotate with `clang_annotate_file` on the `.cu` files (the tool parses them
+  host-side with `-xcuda --cuda-host-only`; pass `--cuda-path=<toolkit>` and the
+  `-D/-I` flags in `compile_flags`). `__global__`/`__device__` functions are
+  skipped automatically; brace insertion is disabled for CUDA, and every braceless
+  `return` in this app is inside device code or the excluded qsort comparators.
+  Exclude `center_print, border_print, fancy_int, logo, double_compare,
+  NGP_compare, rn_v, get_time`. Re-apply the `#ifdef MPI` INIT/FINI move and the
+  `print_CLI_error` FINI by hand, exactly as for the CPU variant.
+* **The CUDA variant only implements event mode** (`-m history` exits 1), and the
+  reference checksum exists only for `-s small`/`-s large` at the default lookups:
+  **XL always prints `INAVALID CHECKSUM` and exits 1** on a healthy run. Treat
+  rc 1 as success only together with the `Verification checksum` marker.
+* `-s XL -G unionized` does not fit an 80 GB H100 per rank (and is absent from the
+  ice4hpc matrix GPU rows); sweep XL with `hash`/`nuclide` only.
+* A full-feature 1-rank `-s small` run is ~5 s: per rank only ~12 `C_APP`,
+  3 `CUDA_KERNEL` (baseline kernel id 0), 7 `CUDA_MEMCPY`, 2 `collective`.
