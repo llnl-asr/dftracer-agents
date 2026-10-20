@@ -720,6 +720,32 @@ Every run is checkpointed independently and the driver resumes across allocation
 short allocation loses nothing when it expires. Pick a limit a few times the longest
 single run, never the queue ceiling.
 
+### Charge the sweep to the genesis BANK, not your default
+
+Fair-share priority is per **bank**, and a genesis sweep is thousands of jobs that
+will bury a shared bank's usage. On a Flux site with accounting, submit every
+sweep job (runs AND migration) against the project bank:
+
+```bash
+flux account list-banks | grep -i <project>     # confirm the bank exists and is active
+flux account view-user $USER                    # confirm you are a MEMBER of it
+flux batch -q <queue> --bank=<bank> ...         # every submit
+```
+
+For this project the bank is **`gwisdom`**. It matters more than it sounds:
+measured on tuolumne, `gwisdom` had `job_usage = 0.0` while the default bank's
+parent (`gbronze`) was at **32.4M** — so the default bank's fair-share priority was
+already deeply discounted by unrelated work, and queue waits reflected that.
+
+Two checks before queueing a large batch against a bank:
+
+* **Verify membership, do not assume it.** `flux account list-banks` shows banks
+  that exist; `flux account view-user $USER` shows the ones you may charge. A bank
+  you are not a member of is rejected at submit time.
+* **Probe with one job first.** A rejected `--bank` fails every submit in the loop,
+  so send a single 1-node/5-minute job and confirm it is accepted before firing
+  dozens.
+
 ### Split work across every queue the account may use
 
 Node-scale is not the only disjoint axis — **ppn is one too**. When two queues are usable
@@ -1079,13 +1105,101 @@ end of **each** wave rather than once at the end. That way anything published is
 immediately group-readable, and a sweep that is interrupted still leaves a usable corpus
 instead of a tree only you can read.
 
-## STEP 12 — Compact INSIDE the job, then drain the leaf
+## STEP 12 — Run JSON, move raw/ to the final place, THEN compact in place
 
-**Compaction is part of running a cell, not a phase that happens afterwards.** The
-worker compacts a leaf the moment that leaf's last run validates, in the SAME
-allocation, and then drains it: publish, verify, delete `raw/`. A leaf is either
-still filling, or it is finished and already sitting in the archive. There is no
-middle state and no end-of-sweep backlog.
+**Mandatory order (user-set policy, overrides any older text below):**
+
+```
+run finishes -> write run_<set>.json -> leaf seals -> MOVE raw/ to archive
+             -> verify bytes+count -> delete workspace raw/ -> compact IN PLACE
+             in the archive -> if compaction fails or never runs:
+             COMPACTION_NOT_RUN.md in that leaf -> chgperm
+```
+
+1. **After every run, pass or fail, write `raw/run_<set>.json`** (key, system,
+   case, nodes, ppn, ntasks, PAPI set + counters, hosts, binary, start, duration,
+   app/validate exit, status). `genesis_run.sh` does this right after validation.
+   It lives inside `raw/` so it moves with the traces.
+2. **Publish raw first.** `genesis_publish.sh` moves each sealed leaf's `raw/`
+   (traces + `run_*.json` + `validation_*.json`) to
+   `$GENESIS_ARCHIVE/<case>/nodes_<N>/ppn_<P>/raw`. It uses `dcp` under flux or slurm
+   when available, otherwise `cp -a`, and verifies regular-file bytes and count. It
+   then deletes the workspace `raw/` and leaves an `ARCHIVED` symlink there.
+   Compaction must never gate publication.
+3. **Compact in place in the archive** (`GENESIS_ROOT=$GENESIS_ARCHIVE
+   genesis_compact.sh`). Its staging is inside the leaf, so hardlinks stay on one
+   filesystem. The archived `raw/` is kept next to `compacted/`.
+4. **If compaction does not run or fails, leave a note.** Write
+   `COMPACTION_NOT_RUN.md` in the leaf with the reason, and say that `raw/` is
+   authoritative. Never block or roll back the publish because of it. The note is
+   removed when a later compaction succeeds.
+
+`genesis_finalize.sh` = `genesis_publish.sh` (steps 2-4) + README in the archive.
+Where the older text below says "compact -> publish -> delete raw", the order above
+replaces it. Compaction verification rules (`--verify`, `grep -a`, service
+categories, `hosts >= nodes`) still apply, but to the archived leaf.
+
+### The two metadata files a published leaf must carry
+
+> The full published-leaf contract and its deterministic checker live in
+> [[genesis_leaf_contract]] — run `genesis_validate_leaf.py <archive> --sets=N`
+> before declaring any corpus complete. Do not hand-review leaves; it has already
+> passed stale notes and 2-of-9 validation files through a human read.
+
+
+Match what is already in the archive before inventing anything: `laghos/*` leaves
+carry a **leaf-level `summary.json`** beside `raw/` and `compacted/`, and `minife/*`
+carries only `raw/`. So `summary.json` is the established convention and the new
+per-run record is an addition, not a replacement. A finished leaf has BOTH.
+
+**1. `summary.json` — one per leaf**, beside `raw/`/`compacted/`. Aggregate view,
+the shape `laghos` already publishes (keep these key names; consumers read them):
+
+```
+leaf, ok, app, system, input, nodes, ppn, ranks,
+sets[], n_sets, n_app_traces, n_service_traces, hosts[],
+app_categories{cat: count}, service_categories{cat: count},
+papi[], papi_multiplex[], gpu_power_csv, gpu_power_rows,
+compacted{chunk_filename: bytes}
+```
+
+**2. `raw/run_<set>.json` — one per RUN**, inside `raw/` so it travels with the
+traces it describes. This is the per-run provenance `summary.json` cannot express:
+one leaf is 9 runs (one per PAPI set), and when a set multiplexes or a rank goes
+missing you need to know WHICH run. Fields:
+
+```
+key                  <case>_N<n>_ppn<p>_<set> -- the checkpoint key, joins to state
+system, app, case, nodes, ppn, ntasks
+papi_set             the set name
+papi_requested[]     counters ASKED for (from papi_sets.txt)
+papi_landed[]        counters that ACTUALLY landed -- dftracer silently DROPS a
+                     preset it cannot fit, so requested != landed is the signal
+multiplex{v: n}      0 == exact; anything else means scaled estimates
+ranks, app_files     proves app_files == nodes*ppn and the rank set was complete
+service_files, power_samples
+hosts[]              the slice this run actually ran on
+service_pids         "<up>/<expected>" daemon count
+binary, start_epoch, duration_s
+app_exit             the app's own rc
+validate_ok          genesis_validate.py verdict
+status               ok | SKIPPED | <failure>
+flush_wait_s         how long the trace flush took (see the flush-wait section)
+run_log              the captured stdout log -- for AMG this is the ONLY place the
+                     science lives (no result file), so it is evidence, not noise
+backfilled           true if reconstructed after the fact rather than written live
+```
+
+**Write it for every run, pass or fail.** A failed run's record is how a later
+reader knows a gap is explained rather than missing. **Reconstruct, never invent:**
+a backfill derives every field from `state_*`, `artifacts/<key>.log` and
+`validation_<set>.json`, writes `null` for anything genuinely unavailable, and sets
+`backfilled: true` so no reader mistakes it for a live record.
+
+### Legacy rationale (keep compaction close to the sweep)
+
+Compaction should still happen continuously as leaves seal, not as an end-of-sweep
+backlog. It just happens AFTER the raw move, in the archive.
 
 Deferring compaction to the end is the single most expensive mistake in this
 pipeline. Measured, when it was left until last: **188 leaves, 6-10 days** of serial

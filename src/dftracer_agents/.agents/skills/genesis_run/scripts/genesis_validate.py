@@ -25,6 +25,30 @@ SERVICE traces (one per node):
 """
 import gzip, json, sys, glob, os, collections
 
+# Everything app/system specific is configurable, with the original
+# (AMD/ROCm + variorum + miniFE) behaviour as the default:
+#   GENESIS_EXPECT_ARGS  app argument string the SH metadata must carry
+#                        (unset -> legacy nx=;ny=;nz= check)
+#   GENESIS_REQ_CATS     comma list of app categories that must be present
+#   GENESIS_REQ_USED     comma list of end.used layers that must be engaged
+#   GENESIS_POWER        variorum | nvml | none
+#   GENESIS_NOFOLD_CATS  categories aggregation must NOT fold (dft_cnt > 1 fails)
+def _csv(name, default):
+    v = os.environ.get(name)
+    return [x for x in (default if v is None else v).split(',') if x]
+REQ_CATS = _csv('GENESIS_REQ_CATS', 'CPP_APP,KERNEL_DISPATCH,MEMORY_COPY,papi')
+REQ_USED = _csv('GENESIS_REQ_USED', 'CPP_APP,MPI,HIP')
+POWER = os.environ.get('GENESIS_POWER', 'variorum')
+NOFOLD = set(_csv('GENESIS_NOFOLD_CATS', ''))
+EXPECT_ARGS = os.environ.get('GENESIS_EXPECT_ARGS')
+
+def _args_match(sh, expect):
+    """SH metadata joins argv with ';' (or spaces); require the expected argv
+    tokens to appear as one contiguous run."""
+    toks = [t for t in sh.replace(';', ' ').split() if t]
+    want = expect.split()
+    return any(toks[i:i+len(want)] == want for i in range(len(toks) - len(want) + 1))
+
 def events(path):
     with gzip.open(path, 'rt', errors='replace') as fh:
         for line in fh:
@@ -38,7 +62,7 @@ def events(path):
 
 def main():
     run_dir, nx, nodes, ppn, papi_csv = sys.argv[1:6]
-    nx, nodes, ppn = int(nx), int(nodes), int(ppn)
+    nodes, ppn = int(nodes), int(ppn)
     nranks = nodes * ppn
     want_papi = {c for c in papi_csv.split(',') if c}
     errs, info = [], {}
@@ -51,7 +75,7 @@ def main():
 
     ranks, cats = set(), collections.Counter()
     papi_seen, mux, starts, ends = collections.Counter(), collections.Counter(), 0, 0
-    used = collections.Counter()
+    used = collections.Counter(); folded = collections.Counter()
     bad_args = []
     for f in app_files:
         saw_end = saw_start = False
@@ -64,7 +88,10 @@ def main():
                     continue
                 if c == 'dftracer' and n == 'SH':
                     nm = str(a.get('name', ''))
-                    if 'nx=' in nm:
+                    if EXPECT_ARGS is not None:
+                        if cmd_ok is not True:
+                            cmd_ok = _args_match(nm, EXPECT_ARGS)
+                    elif 'nx=' in nm:
                         cmd_ok = (f"nx={nx};ny={nx};nz={nx}" in nm)
                 if c == 'dftracer' and n == 'PR' and a.get('name') == 'rank':
                     try: ranks.add(int(a.get('value')))
@@ -75,6 +102,8 @@ def main():
                     saw_end = True
                     for k, v in (a.get('used') or {}).items():
                         if v: used[k] += 1
+                if c in NOFOLD and int(a.get('dft_cnt', 1) or 1) > 1:
+                    folded[c] += 1
                 if 'multiplex' in a:
                     mux[str(a['multiplex'])] += 1
                 for k in a:
@@ -89,20 +118,22 @@ def main():
         if cmd_ok is None:  errs.append(f"{os.path.basename(f)}: no SH cmd metadata to check args")
 
     if bad_args:
-        errs.append(f"{len(bad_args)} trace(s) have args != nx={nx};ny={nx};nz={nx}")
+        errs.append(f"{len(bad_args)} trace(s) have args != {EXPECT_ARGS or f'nx={nx};ny={nx};nz={nx}'}")
     if ranks != set(range(nranks)):
         missing = sorted(set(range(nranks)) - ranks); extra = sorted(ranks - set(range(nranks)))
         errs.append(f"rank set wrong: n={len(ranks)} expected {nranks} missing={missing[:8]} extra={extra[:8]}")
     info['ranks'] = len(ranks)
 
-    for need in ('CPP_APP', 'KERNEL_DISPATCH', 'MEMORY_COPY', 'papi'):
+    if folded:
+        errs.append(f"aggregation folded protected categories: {dict(folded)}")
+    for need in REQ_CATS:
         if cats.get(need, 0) == 0:
             errs.append(f"missing event category: {need}")
     if not any(cats.get(c, 0) for c in ('collective', 'comm', 'p2p')):
         errs.append("missing MPI categories (collective/comm/p2p)")
     if not any(cats.get(c, 0) for c in ('POSIX', 'STDIO')):
         errs.append("missing I/O categories (POSIX/STDIO)")
-    for need in ('CPP_APP', 'MPI', 'HIP'):
+    for need in REQ_USED:
         if used.get(need, 0) == 0:
             errs.append(f"end.used missing {need}")
 
@@ -133,8 +164,20 @@ def main():
     for need in ('sys', 'io', 'net'):
         if scat.get(need, 0) == 0:
             errs.append(f"service missing utilization category: {need}")
-    if power == 0:
+    nvml = 0
+    if POWER == 'nvml':
+        for h in hosts:
+            pf = os.path.join(run_dir, 'dftracer_service', f'gpu_power_{h}.csv')
+            try:
+                n = sum(1 for _ in open(pf))
+            except OSError:
+                n = 0
+            if n == 0:
+                errs.append(f"no NVML gpu power samples for host {h}")
+            nvml += n
+    elif POWER == 'variorum' and power == 0:
         errs.append("service has NO variorum gpu power samples")
+    info['nvml_power_rows'] = nvml
     info['power_samples'] = power
     info['app_categories'] = dict(cats)
     info['service_categories'] = dict(scat)

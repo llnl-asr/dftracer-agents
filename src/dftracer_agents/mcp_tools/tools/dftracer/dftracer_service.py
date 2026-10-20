@@ -48,6 +48,7 @@ from ..session.python_cost import register_python_cost_tools
 from ..session.code_graph import register_graph_tools
 from ..session.privacy_tools import register_privacy_tools
 from ..session.provenance import register_provenance_tools
+from ..session.isolation import register_isolation_tools
 from ..session.profiling import register_profiling_tools
 from ..session.ml_pipeline import register_ml_pipeline_tools
 from ..session.annotation_validate import register_validation_tools
@@ -716,6 +717,7 @@ class DFTracerSessionService(MCPService):
         register_profiling_tools(self.session_subservice)
         register_privacy_tools(self.session_subservice)
         register_provenance_tools(self.session_subservice)
+        register_isolation_tools(self.session_subservice)
         register_ml_pipeline_tools(self.clang_subservice)
         register_validation_tools(self.clang_subservice)
         register_ai_tools(self.clang_subservice)

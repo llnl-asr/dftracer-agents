@@ -23,6 +23,7 @@ description: >
 - [Cases](#cases) → `CASES.md` (grows every session)
 - [Lessons](#lessons)
 - [Viewing the graph](#viewing)
+- [Reproduction package + isolated-run verification](#isolation)
 
 <a id="scope"></a>
 ## Scope: data-centric only (MANDATORY)
@@ -94,7 +95,8 @@ Rules:
 | 8 | **trace lineage in code + annotate**: from the artifact writer backwards (producers) and forwards (consumers); insert activities; `provenance_validate` must pass | `dftracer-provenance-annotate` |
 | 9 | build provenance tree + traced run (`DFTRACER_INC_METADATA=1`) → `<WS>/provenance/traces/` | `dftracer-build-smoke` → `dftracer-tracer` |
 | 10 | build graph + health gate; loop to 8 on gaps | `dftracer-provenance-graph` |
-| 11-12 | report, privacy guard | same as perf mode |
+| 11 | reproduction package `final_provenance/` + **isolated-run verification** (`session_verify_isolation`) | `dftracer-provenance-graph` |
+| 12-13 | report, privacy guard | same as perf mode |
 
 Source tree for provenance is `<WS>/provenance/source/` (copy of the original,
 separate from the perf `annotated/` tree). Spec at `<WS>/provenance/spec.yaml`,
@@ -170,7 +172,8 @@ or the core macros `DFTRACER_C/CPP_FUNCTION_USES/GENERATES`, `DFTRACER_*_ENTITY_
 `provenance_inventory_outputs`, `provenance_scan_candidates` (access/store/
 communicate/compute touch-points), `provenance_write_spec`, `provenance_install_helpers`,
 `provenance_insert` (idempotent, `dft-prov` marker), `provenance_validate` (static
-gate vs spec), `provenance_extract_graph` (traces → `graph.json`/`graph.dot` + lineage).
+gate vs spec), `provenance_extract_graph` (traces → `graph.json`/`graph.dot` + lineage),
+`session_verify_isolation` (reproduction package runs from a fresh copy, clean shell, config.ini only).
 Tool broken → fix it in `mcp_tools/tools/session/provenance.py`, ask for MCP restart.
 
 <a id="run"></a>
@@ -213,6 +216,33 @@ schemes, traps). Read the matching case first; append a new one at session end
   `dftracer_server -d <WS>/provenance/traces/raw --index-dir <WS>/provenance/server_index -p <port>`.
 - **Standalone page**: `render_prov_graph.py graph.json out.html --spec spec.yaml`
   (Cytoscape + dagre). Redact `$LUSTRE_ROOT/$USER` paths in `uri` before sharing.
+
+<a id="isolation"></a>
+## Reproduction package + isolated-run verification (MANDATORY)
+
+`<WS>/final_provenance/`: `config.ini` (only place for site values; `${USER}`, never a
+literal name), `scripts/lib_load_config.sh` (sourced by every script; env overrides
+config), numbered steps `00_check_prereqs … 08_view`, `run_all.sh`, the instrumentation
+as `patches/<app>_provenance.patch` against the pinned app commit, `inputs/spec.yaml`,
+and a **standalone** checker (`prov_check.py`: reads EH/ET/ER + `args.relations`,
+stdlib+PyYAML only) that writes `run.json`/`README.md` and fails on dangling ids,
+undescribed types or ungenerated artifact types. Pin dftracer/pydftracer/utils by commit.
+
+Verify, don't assert: `session_verify_isolation` `static` → `launch` (copy to a new
+PFS dir, `env -i … bash -l`, fresh OUTPUT_ROOT) → `status`. Pass = exit 0 and the
+checker reproduces the session's counts with 0 dangling.
+
+Traps found by isolated runs:
+- Lmod's `init/bash` and `module` are not `set -u` clean (`FPATH: unbound variable`);
+  wrap them (`set +u; module …; set -u`) in the loader.
+- A non-login `env -i` shell has no MODULEPATH; verify from `bash -l`, which is what a
+  new user gets.
+- Pin repos by FULL 40-char SHA. Feature branches get merged and deleted; GitHub/GitLab
+  still serve the commit by full SHA, but refuse a short-SHA fetch, and `git checkout
+  --detach <unknown>` then fails as "does not take a path argument".
+- When publishing to a shared group dir, `chmod g+rX` every parent you create.
+- `pip uninstall dftracer` leaves the cmake/brahma tree; remove `<site-packages>/dftracer`
+  before reinstalling.
 
 <a id="lessons"></a>
 ## Lessons

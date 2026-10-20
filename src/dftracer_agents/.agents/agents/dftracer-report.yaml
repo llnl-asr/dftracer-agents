@@ -18,6 +18,7 @@ tools:
 - mcp__dftracer__event_count
 - mcp__dftracer__reader
 - mcp__dftracer__session_final_report
+- mcp__dftracer__session_verify_isolation
 - mcp__dftracer__session_capture_run_record
 - mcp__dftracer__graph_ensure
 - mcp__dftracer__graph_query
@@ -161,6 +162,10 @@ sections:
        `scripts/` by hand, sourcing `lib_load_config.sh` the same way, so
        `run_all.sh` reproduces the WHOLE session's evidence, not a subset.
     2. **Run the self-contained validation before calling the report done.**
+       Use the tool first: `session_verify_isolation(run_id, package_dir="final_report",
+       mode="static")` until clean, then `mode="launch"` (fresh copy, `env -i bash -l`,
+       OUTPUT_ROOT outside the workspace) and poll `mode="status"`. Manual steps below
+       are the fallback.
        Copy or point `OUTPUT_ROOT` (in `config.ini` or the environment) at a
        directory ISOLATED from the original session's own `dataset/`/`traces/`
        (e.g. `<WS>/final_folder_validate/`), fill in `WORKSPACE_ROOT`, and
