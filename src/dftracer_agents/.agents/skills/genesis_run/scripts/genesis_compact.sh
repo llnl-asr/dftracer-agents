@@ -78,9 +78,21 @@ for nx in "${INPUTS[@]}"; do
     nout=$(find "$leaf/compacted" -name "*.pfw.gz" | wc -l)
     vok=$(grep -ac "Verification: PASSED" "$LOGDIR/compact_${ckey}.log" 2>/dev/null)
     # Assert the compacted set carries the SERVICE traces too, not only the app.
-    "$PY" "$SCRIPTS/genesis_check_compacted.py" \
+    # Required APP categories can differ per case within one corpus (e.g. CPU
+    # and GPU variants published side by side): $GENESIS_G/req_cats.txt holds
+    # "<case-glob> <CAT,CAT,...>" lines, first match wins; else the env default.
+    reqc=${GENESIS_COMPACT_REQ_CATS:-${GENESIS_REQ_CATS:-}}
+    if [ -f "$GENESIS_G/req_cats.txt" ]; then
+      while read -r glob cats; do
+        case "$glob" in ''|\#*) continue ;; esac
+        # shellcheck disable=SC2254
+        case "$nx" in $glob) reqc=$cats; break ;; esac
+      done < "$GENESIS_G/req_cats.txt"
+    fi
+    GENESIS_COMPACT_REQ_CATS=$reqc "$PY" "$SCRIPTS/genesis_check_compacted.py" \
         "$leaf/compacted" "$N" > "$leaf/compacted_check.json" 2>>"$LOGDIR/compact_${ckey}.log"
     cok=$?
+    why=$(head -c 300 "$leaf/compacted_check.json" 2>/dev/null)   # before any cleanup
     if [ "$rc" -eq 0 ] && [ "$nout" -gt 0 ] && [ "$vok" -ge 1 ] && [ "$cok" -eq 0 ]; then
       nev=$(grep -oE "[0-9]+ events" "$LOGDIR/compact_${ckey}.log" | tail -1)
       echo "$ckey ok raw=$nraw chunks=$nout $nev" >> "$CSTATE"
@@ -91,9 +103,9 @@ for nx in "${INPUTS[@]}"; do
       # a failed split's partial output is not data: the leaf must have EITHER
       # verified chunks OR the note (genesis_leaf_contract NOTE clause).
       rm -rf "$leaf/compacted" "$leaf/compacted_check.json"
-      printf '# Compaction did not complete\n\nleaf: %s\ndate: %s\nrc=%s raw=%s chunks=%s verified=%s content_ok=%s\n\n`raw/` is complete and authoritative; `compacted/` is absent or unusable.\nRe-run genesis_compact.sh with GENESIS_ROOT pointing at this corpus.\n' \
-        "$ckey" "$(date -Is)" "$rc" "$nraw" "$nout" "$vok" "$cok" > "$leaf/COMPACTION_NOT_RUN.md"
-      echo "$ckey FAIL rc=$rc raw=$nraw chunks=$nout verified=$vok content_ok=$cok :: $(cat "$leaf/compacted_check.json" 2>/dev/null | head -c 300)" >> "$LOGDIR/compact_failures"
+      printf '# Compaction did not complete\n\nleaf: %s\ndate: %s\nrc=%s raw=%s chunks=%s verified=%s content_ok=%s\ncheck: %s\n\n`raw/` is complete and authoritative; `compacted/` is absent or unusable.\nRe-run genesis_compact.sh with GENESIS_ROOT pointing at this corpus.\n' \
+        "$ckey" "$(date -Is)" "$rc" "$nraw" "$nout" "$vok" "$cok" "$why" > "$leaf/COMPACTION_NOT_RUN.md"
+      echo "$ckey FAIL rc=$rc raw=$nraw chunks=$nout verified=$vok content_ok=$cok :: $why" >> "$LOGDIR/compact_failures"
       nfail=$((nfail+1)); echo "FAIL $ckey rc=$rc (see compact_${ckey}.log)"
     fi
   done
