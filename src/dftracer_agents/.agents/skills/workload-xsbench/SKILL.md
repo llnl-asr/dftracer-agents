@@ -240,3 +240,20 @@ around it; use it for compute/memory and PAPI work.
   ice4hpc matrix GPU rows); sweep XL with `hash`/`nuclide` only.
 * A full-feature 1-rank `-s small` run is ~5 s: per rank only ~12 `C_APP`,
   3 `CUDA_KERNEL` (baseline kernel id 0), 7 `CUDA_MEMCPY`, 2 `collective`.
+
+## Per-rank memory caps the CPU ppn ladder (ranks are full replicas)
+
+`Mem Usage per MPI Rank (MB)` measured with the openmp-threading build (it is
+printed before allocation, so a 2 s `timeout` run on a login node reads it):
+
+| size | unionized | hash | nuclide |
+|---|---|---|---|
+| small | 241 | ~0.2 GB | ~0.2 GB |
+| large | 5,649 | 198 | 184 |
+| XL | 119,354 | 3,895 | 3,882 |
+| XXL | 250,642 | 8,165 | 8,151 |
+
+On a 515 GB node: XXL-unionized fits ppn 1 only, XL-unionized ppn <= 2,
+XXL-hash/nuclide ppn <= 32. Mark the rest `SKIPPED` in the state file up front.
+On an H100 (80 GB) the GPU build fits XXL hash/nuclide (8.3 GB on the device) but
+not XL/XXL-unionized. XL and XXL both exit 1 (no reference checksum).

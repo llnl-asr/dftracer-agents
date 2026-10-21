@@ -415,6 +415,13 @@ cmd_start() {
     echo "[stack] mlflow not installed in $BIN — run: pip install -e '.[profile]'" >&2
     exit 1
   fi
+  # An mlflow upgrade leaves the SQLite schema behind and the server then refuses
+  # to start ("out-of-date database schema"). Migrate in place, keeping a backup.
+  if [[ -f "$MLFLOW_DB" ]] && ! is_healthy mlflow; then
+    cp -p "$MLFLOW_DB" "$MLFLOW_DB.bak"
+    "${BIN}/mlflow" db upgrade "sqlite:///$MLFLOW_DB" >>"$(log_file mlflow)" 2>&1 \
+      || echo "[stack]   mlflow db upgrade failed — see $LOG_DIR/mlflow.log" >&2
+  fi
   ensure_daemon mlflow "${BIN}/mlflow" server \
     --backend-store-uri "sqlite:///$MLFLOW_DB" \
     --default-artifact-root "$MLFLOW_ARTIFACTS" \
@@ -461,11 +468,15 @@ sys.exit(0 if has_setup_state() else 1)" 2>/dev/null; then
   #    content hash is unchanged — so this is free on a re-run. A cold first
   #    `graph_query` would otherwise pay the ~4 s build inside an agent turn.
   echo "[stack] warming knowledge graph…"
-  DFTRACER_WORKSPACES="$WORKSPACES" "$PY" - <<'EOF' >>"$(log_file graph)" 2>&1 ||
-    echo "[stack]   graph warm failed (non-fatal) — see $LOG_DIR/graph.log" >&2
+  # The `||` must not sit on the heredoc line: the body starts on the next line,
+  # so a continuation there becomes the first line of the Python script.
+  if ! DFTRACER_WORKSPACES="$WORKSPACES" "$PY" - >>"$(log_file graph)" 2>&1 <<'EOF'
 from dftracer_agents.mcp_tools.tools.session.code_graph import _ensure_knowledge_graph
 print(_ensure_knowledge_graph())
 EOF
+  then
+    echo "[stack]   graph warm failed (non-fatal) — see $LOG_DIR/graph.log" >&2
+  fi
 
   echo
   if (( failed )); then

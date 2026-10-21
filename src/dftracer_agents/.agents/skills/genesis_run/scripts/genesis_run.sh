@@ -196,9 +196,13 @@ EOW
     # --gpus-per-task gives each rank ONE GPU (renumbered 0); --mem=0 because
     # CR_CORE_MEMORY sites cap a few-core rank at a few GB otherwise.
     local gpuarg=""; [ "$GPUS_PER_RANK" -gt 0 ] && gpuarg="--gpus-per-task=$GPUS_PER_RANK"
+    # GENESIS_KILL_ON_BAD_EXIT=0 for apps whose ranks legitimately exit non-zero
+    # (an input with no reference checksum): with 1, Slurm SIGTERMs the ranks
+    # still flushing their traces and the run reports rc=143. APP_TIMEOUT still
+    # bounds a real hang.
     timeout "$APP_TIMEOUT" srun --jobid="$SLURM_JOB_ID" -N"$N" -n"$ntasks" \
         --ntasks-per-node="$P" --nodelist="$hostcsv" --overlap --quiet $gpuarg \
-        -c "$CORES_PER_RANK" --mem=0 --kill-on-bad-exit=1 "$wrap" >> "$log" 2>&1
+        -c "$CORES_PER_RANK" --mem=0 --kill-on-bad-exit="${GENESIS_KILL_ON_BAD_EXIT:-1}" "$wrap" >> "$log" 2>&1
   else
     timeout "$APP_TIMEOUT" flux run -N"$N" -n"$ntasks" -g "$GPUS_PER_RANK" -c "$CORES_PER_RANK" \
         $req --setattr=exclusive=false "$wrap" >> "$log" 2>&1
@@ -319,7 +323,7 @@ mapfile -t WORK < <(
         done
       done
     done
-  done | sort -k1,1nr -k2,2n
+  done | sort -s -k1,1nr   # stable: keep the inputs-file order (list inputs fastest-first)
 )
 TOTAL=$(( ${#INPUTS[@]} * ${#NODE_SCALES[@]} * ${#PPNS[@]} * ${#PAPI_SETS[@]} ))
 echo "=== ${#WORK[@]} runs pending of $TOTAL; pool = $NALLOC nodes ==="

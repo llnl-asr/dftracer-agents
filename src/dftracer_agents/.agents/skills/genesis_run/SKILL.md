@@ -1652,6 +1652,35 @@ Symptom to recognise: a failure record that carries `verified=1` and a healthy c
 count is an over-strict assertion, not a data defect. Re-check the existing output
 rather than recompacting terabytes.
 
+### Mixed variants in one corpus need per-case required categories
+
+The same over-strict failure, from a different cause: a CPU (OpenMP) batch was
+published beside a GPU (CUDA) batch in one `<app>/<system>` corpus. A single
+login-node publish loop sourced the GPU env for every leaf, so the compaction
+checker demanded `CUDA_KERNEL` from CPU leaves. Result: **200/200 CPU leaves**
+got `COMPACTION_NOT_RUN.md` with `verified=1 content_ok=1`. Fix: an optional
+`$GENESIS_G/req_cats.txt` (`<case-glob> <CAT,CAT>`, first match wins) that
+`genesis_compact.sh` consults per leaf, e.g. `cpu_* C_APP,papi` then
+`* C_APP,CUDA_KERNEL,papi`. Give each variant a distinct case prefix so a glob can
+tell them apart.
+
+Capture the checker's output **before** any cleanup. The failure path deleted
+`compacted_check.json` and then tried to quote it, so every note and failure record
+came out with an empty reason. `genesis_compact.sh` now saves it to `$why` first and
+writes it into the note.
+
+## Ranks that exit non-zero by design need `--kill-on-bad-exit=0`
+
+Some inputs exit 1 on every rank by design (XSBench XL/XXL have no reference
+checksum). With `srun --kill-on-bad-exit=1`, the first ranks to exit make Slurm
+SIGTERM the ones still flushing their traces, so the run reports `rc=143` even
+though the validator passed every rank. It only appears at high ranks-per-node
+(64), where rank 0 is still finishing when the others exit; at 32 it passed.
+Symptom: `app_exit=143`, then `STEP ... CANCELLED DUE TO TASK FAILURE` after
+`Simulation complete`, with a validation JSON of `"ok": true`. Fix: set
+`GENESIS_KILL_ON_BAD_EXIT=0` in that variant's env. The default stays 1, and
+`GENESIS_APP_TIMEOUT` still bounds a real hang.
+
 ## Kill orphaned drivers by scanning ALL processes, not recent ones
 
 A `genesis_driver.sh` orphaned **16 days earlier** was still chaining allocations,
