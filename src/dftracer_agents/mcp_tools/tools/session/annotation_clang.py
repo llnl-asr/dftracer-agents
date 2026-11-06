@@ -276,6 +276,89 @@ def _annotate_file_worker(kwargs: dict) -> str:
     return _WORKER_TOOLS["clang_annotate_file"](**kwargs)
 
 
+# Parallel per-file annotation -------------------------------------------------
+# Every file's annotation is independent (its own clang parse, its own write,
+# no session.json writes), so *_annotate_project fans files out to a process
+# pool. Processes, not threads: the per-file work is dominated by Python-side
+# parsing of clang's JSON AST / Python's ast (GIL-bound), and the module-level
+# file caches (_FILE_CACHE, _PY_FILE_CACHE) are plain dicts.
+ANNOTATE_JOBS_ENV = "DFTRACER_ANNOTATE_JOBS"
+ANNOTATE_JOBS_CAP = 16
+
+
+def annotate_jobs(jobs: int = 0, n_items: Optional[int] = None) -> int:
+    """Worker count for project-wide annotation.
+
+    ``jobs > 0`` wins; else ``$DFTRACER_ANNOTATE_JOBS``; else
+    ``min(os.cpu_count(), 16)``. Never more than ``n_items`` (when given),
+    never less than 1. ``1`` means serial.
+    """
+    n = jobs if jobs and jobs > 0 else 0
+    if not n:
+        try:
+            n = int(os.environ.get(ANNOTATE_JOBS_ENV, "0") or 0)
+        except ValueError:
+            n = 0
+    if n <= 0:
+        n = min(os.cpu_count() or 1, ANNOTATE_JOBS_CAP)
+    if n_items is not None:
+        n = min(n, max(n_items, 1))
+    return max(n, 1)
+
+
+def run_file_pool(worker, phases: list, n_jobs: int, serial_fn=None) -> list:
+    """Run ``worker(item)`` for every item of every phase; results IN INPUT ORDER.
+
+    ``phases`` is a list of item lists; phase *k+1* starts only after every
+    item of phase *k* has finished (entry-point files after library files),
+    all on one pool. Returns one result list per phase. A per-item exception
+    is returned in that item's slot (never raised, never dropped), exactly
+    like the serial loop it replaces. ``n_jobs <= 1`` or fewer than two items
+    in total runs serially in-process via ``serial_fn`` (default ``worker``).
+    If the process pool itself cannot run (no ``spawn`` support, a worker
+    died and broke the pool, ...), the items without a result are retried
+    serially in-process instead of being reported as failures.
+    """
+    serial_fn = serial_fn or worker
+    outs = [[None] * len(ph) for ph in phases]
+    done = [[False] * len(ph) for ph in phases]
+    total = sum(len(ph) for ph in phases)
+    if n_jobs > 1 and total > 1:
+        import concurrent.futures as _cf
+        import multiprocessing as _mp
+        from concurrent.futures.process import BrokenProcessPool
+        try:
+            # spawn, not fork: the server process runs threads (event loop,
+            # HTTP), and forking a threaded process can deadlock the child.
+            with _cf.ProcessPoolExecutor(
+                max_workers=min(n_jobs, total), mp_context=_mp.get_context("spawn")
+            ) as pool:
+                for k, items in enumerate(phases):
+                    futs = {pool.submit(worker, it): i for i, it in enumerate(items)}
+                    for f in _cf.as_completed(futs):
+                        i = futs[f]
+                        try:
+                            outs[k][i] = f.result()
+                            done[k][i] = True
+                        except BrokenProcessPool:
+                            pass                # retried serially below
+                        except Exception as exc:  # the file's own failure
+                            outs[k][i] = exc
+                            done[k][i] = True
+                    if not all(done[k]):
+                        break                   # pool broken: rest goes serial
+        except Exception:                       # pool could not start / broke
+            pass
+    for k, items in enumerate(phases):
+        for i, it in enumerate(items):
+            if not done[k][i]:
+                try:
+                    outs[k][i] = serial_fn(it)
+                except Exception as exc:
+                    outs[k][i] = exc
+    return outs
+
+
 def register_clang_tools(mcp: FastMCP) -> None:
     """Register all clang annotation tools on *mcp*."""
 
@@ -844,7 +927,20 @@ def register_clang_tools(mcp: FastMCP) -> None:
             n = len(ln) - len(ln.lstrip())
             return " " * n if n > 0 else default
 
-        insertions: list = [(include_insert_at, include_line)]
+        # Re-annotation idempotency: a file can reach this point while already
+        # carrying some dftracer code (only the #include from an earlier pass
+        # whose functions were all cost-filtered, a hand-added INIT, a partly
+        # annotated file). Never insert anything that is already there: the
+        # include once, INIT/FINI once, START/END once per function.
+        _has_include = bool(re.search(
+            r'^\s*#\s*include\s*[<"]dftracer/dftracer\.h[>"]', "\n".join(lines), re.M))
+        _has_init = bool(re.search(r"DFTRACER_(?:C|CPP)_INIT\s*\(", "\n".join(lines)))
+        _has_fini = bool(re.search(r"DFTRACER_(?:C|CPP)_FINI\s*\(", "\n".join(lines)))
+        _FN_MACRO_RE = re.compile(
+            r"DFTRACER_(?:C_FUNCTION_START|CPP_FUNCTION|CPP_REGION_START)\s*\(")
+        already_annotated_functions: list[str] = []
+
+        insertions: list = [] if _has_include else [(include_insert_at, include_line)]
         skipped_functions: list[str] = []
 
         # ── Pre-scan for MPI boundary lines (needed for entry-point handling) ──
@@ -912,6 +1008,13 @@ def register_clang_tools(mcp: FastMCP) -> None:
             body_idx = body_first - 1  # 0-based index of first body line
             ind = _indent(lines, body_idx)
 
+            if any(_FN_MACRO_RE.search(ln) for ln in lines[max(body_idx - 1, 0):close]):
+                # This function already carries its START macro (an earlier
+                # pass): annotating it again would duplicate START/END.
+                already_annotated_functions.append(fn_name)
+                skipped_functions.append(fn_name)
+                continue
+
             is_main_fn = fn_name == "main" and is_entry
 
             # A C++ main() must NOT use the RAII DFTRACER_CPP_FUNCTION() macro:
@@ -941,11 +1044,12 @@ def register_clang_tools(mcp: FastMCP) -> None:
                 init_idx = _mpi_init_line   # insert AFTER line _mpi_init_line (0-based = _mpi_init_line)
                 init_ind = _indent(lines, _mpi_init_line - 1, ind)
                 # A6: main() is always "cpu" regardless of MPI calls in its body
-                insertions.append((init_idx, init_ind + INIT))          # A3: prio 3 → on top
+                if not _has_init:
+                    insertions.append((init_idx, init_ind + INIT))      # A3: prio 3 → on top
                 insertions.append((init_idx, init_ind + fn_start))      # A3: prio 2 → below INIT
                 insertions.append((init_idx, "UPDATE:" + _make_update(fn, init_ind, comp_override=_comp_overrides.get(fn_name, "cpu"), region_name=_region_name)))
             else:
-                if is_main_fn:
+                if is_main_fn and not _has_init:
                     # Fallback when no MPI startup calls detected
                     insertions.append((body_idx, ind + INIT))
                 insertions.append((body_idx, ind + fn_start))
@@ -1001,7 +1105,8 @@ def register_clang_tools(mcp: FastMCP) -> None:
                     for _a in sorted(_anchors):
                         _a_idx = _a - 1
                         _a_ind = _indent(lines, _a_idx, ind)
-                        insertions.append((_a_idx, _a_ind + FINI))
+                        if not _has_fini:
+                            insertions.append((_a_idx, _a_ind + FINI))
                         insertions.append((_a_idx, _a_ind + fn_end))
                 else:
                     # Regular (non-entry-point) C functions only — C++ regular
@@ -1096,6 +1201,8 @@ def register_clang_tools(mcp: FastMCP) -> None:
             functions=annotated_count,
             skipped=len(skipped_functions),
             skipped_names=skipped_functions,
+            already_annotated_functions=already_annotated_functions,
+            include_already_present=_has_include,
             total_lines=len(lines),
             already_annotated=False,
             braces_added=braces_added,
@@ -1147,9 +1254,12 @@ def register_clang_tools(mcp: FastMCP) -> None:
             exclude_patterns: Extra path substrings to skip.
             jobs:             Parallel worker processes for the non-entry files
                               (each file is independent: own clang parse, own
-                              write). ``0`` = min(32, CPU count); ``1`` = serial.
-                              Entry-point files (``main``) are always annotated
-                              last, after every worker has finished.
+                              write). ``0`` = ``$DFTRACER_ANNOTATE_JOBS`` or
+                              min(16, CPU count); ``1`` = serial. Entry-point
+                              files (``main``) are annotated last (also in
+                              parallel), after every library file is written.
+                              Output (file order, counts, errors) is identical
+                              to the serial run.
             cpp_extensions:   Extra, CASE-SENSITIVE file extensions that are C++
                               (e.g. ``[".C", ".cu.cc", ".cpp.in"]``). Files with
                               these extensions are discovered and annotated as
@@ -1261,35 +1371,15 @@ def register_clang_tools(mcp: FastMCP) -> None:
                 compile_flags=compile_flags,
             )
 
-        n_jobs = jobs if jobs and jobs > 0 else min(32, os.cpu_count() or 1)
-        raw_results: Dict[Path, object] = {}
-        if n_jobs > 1 and len(regular_files) > 1:
-            import concurrent.futures as _cf
-            import multiprocessing as _mp
-            # spawn, not fork: the server process runs threads (event loop,
-            # HTTP), and forking a threaded process can deadlock the child.
-            with _cf.ProcessPoolExecutor(
-                max_workers=n_jobs, mp_context=_mp.get_context("spawn")
-            ) as pool:
-                futs = {pool.submit(_annotate_file_worker, _kwargs(p)): p
-                        for p in regular_files}
-                for f in _cf.as_completed(futs):
-                    try:
-                        raw_results[futs[f]] = f.result()
-                    except Exception as exc:  # worker crash -> per-file error
-                        raw_results[futs[f]] = exc
-        else:
-            for p in regular_files:
-                try:
-                    raw_results[p] = clang_annotate_file(**_kwargs(p))
-                except Exception as exc:
-                    raw_results[p] = exc
-        # entry points last, serially, after all library files are written
-        for p in entry_files:
-            try:
-                raw_results[p] = clang_annotate_file(**_kwargs(p))
-            except Exception as exc:
-                raw_results[p] = exc
+        # Two phases on ONE process pool: every library file concurrently,
+        # then (after all of them are written) every entry-point file
+        # concurrently. Results come back in input order; a failing file is a
+        # per-file error, never dropped.
+        n_jobs = annotate_jobs(jobs, max(len(regular_files), len(entry_files)))
+        phases = [[_kwargs(p) for p in regular_files], [_kwargs(p) for p in entry_files]]
+        outs = run_file_pool(_annotate_file_worker, phases, n_jobs,
+                             serial_fn=lambda kw: clang_annotate_file(**kw))
+        raw_results: Dict[Path, object] = dict(zip(regular_files + entry_files, outs[0] + outs[1]))
 
         for p in regular_files + entry_files:
             rel = str(p.relative_to(ann_dir))

@@ -50,6 +50,7 @@ re-runs the application.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -263,10 +264,12 @@ def _collect_scripts(ws: Path, dest: Path, runs: List[str]) -> List[str]:
     dest.mkdir(parents=True, exist_ok=True)
     copied: List[str] = []
     tmp = ws / "tmp"
-    if not tmp.is_dir():
-        return copied
     for run in runs:
-        for cand in sorted(tmp.glob(f"*{run}*.sh")):
+        # a run's own launcher (<ws>/<run>/scripts/*.sh, e.g. the job script a campaign generated) wins over a
+        # tmp/ wrapper that merely mentions the run name
+        own = sorted((ws / run / "scripts").glob("*.sh")) if (ws / run / "scripts").is_dir() else []
+        cands = own + (sorted(tmp.glob(f"*{run}*.sh")) if tmp.is_dir() else [])
+        for cand in cands:
             target = dest / f"run_{run}.sh"
             shutil.copy2(cand, target)
             target.chmod(0o755)
@@ -977,9 +980,12 @@ def _session_final_report_impl(
     # runnable command present, a pointer back to REPORT.md to verify
     # against), not just that the file is non-empty.
     readme_check = _run_readme_smoke_test(final)
+    # ---- the verifier: deterministic checks of the whole folder (never trust the assembly above) ----
+    verify = verify_final_report(final, ws, [r for r in runs if r not in _NOT_RUNS])
 
     return _ok(
-        "final_report assembled",
+        "final_report assembled" + ("" if verify["status"] == "pass" else " - VERIFY FAILED: " + "; ".join(verify["problems"][:3])),
+        verify=verify,
         final_report_dir=str(final),
         runs=runs,
         patches=patches,
@@ -1001,6 +1007,7 @@ def _session_final_report_impl(
             "README.md is missing reproduction instructions — see the "
             "readme_check field's 'missing' list, fix README.md, and re-call "
             "session_final_report before calling this session done." if not readme_check["ok"] else
+            "The verifier failed - fix each item in verify.problems and re-call session_final_report." if verify["status"] != "pass" else
             None if validated else
             "Run a self-contained validation (config.ini + scripts/run_all.sh, "
             "output isolated from the original run data) before calling this "
@@ -1252,8 +1259,139 @@ def _session_capture_run_record_impl(
     )
 
 
+
+# ----------------------------------------------------------------------------- verifier
+#: Scripts that legitimately do not source the config loader.
+_NO_LOADER = {"lib_load_config.sh", "readme_smoke_test.sh", "render_pdf.sh"}   # generated helpers, no paths
+#: Larger files are reported, not scanned (a reproducible package holds scripts, patches and docs).
+_VERIFY_MAX_BYTES = 4 << 20
+#: Run directories that are build trees, not measured runs (no run script expected).
+_NOT_RUNS = {"annotated"}
+
+
+def verify_final_report(final: Path, ws: Optional[Path] = None, runs: Optional[List[str]] = None,
+                        extra_users: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Deterministic verifier of a ``final_report/`` folder (the builder's own claims are not trusted).
+
+    Checks (each ``{name, ok, detail}``; ``status`` is ``pass`` only when every one holds):
+      structure   config.ini, scripts/lib_load_config.sh, scripts/run_all.sh, scripts/install.sh, README.md, REPORT.md
+      config      config.ini defines WORKSPACE_ROOT
+      privacy     no file except config.ini contains the workspace path, a user name/home/PFS user path, an
+                  e-mail address or another identifier ``privacy.find_identifiers`` knows
+      syntax      every ``scripts/*.sh`` passes ``bash -n``
+      loader      every run/install script sources lib_load_config.sh (no hard-coded paths of its own)
+      runs        every measured run (``runs``, default: the session's baseline/opt<n>/variants) has
+                  ``scripts/run_<run>.sh`` and run_all.sh calls it
+      patches     patches/annotated.patch exists and is non-empty when the session has an annotated tree
+      readme      the README smoke test passes
+    ``reproduced`` (not part of ``status``) says whether REPORT.md carries a passed self-contained validation.
+    """
+    final = Path(final)
+    checks: List[Dict[str, Any]] = []
+
+    def chk(name: str, ok: bool, detail: str = "") -> None:
+        checks.append({"name": name, "ok": bool(ok), "detail": detail})
+
+    need = ["config.ini", "scripts/lib_load_config.sh", "scripts/run_all.sh", "scripts/install.sh", "README.md",
+            "REPORT.md"]
+    missing = [n for n in need if not (final / n).is_file()]
+    chk("structure", not missing, "missing: " + ", ".join(missing) if missing else "all present")
+    cfg = (final / "config.ini").read_text(errors="ignore") if (final / "config.ini").is_file() else ""
+    chk("config", any(l.strip().startswith("WORKSPACE_ROOT=") for l in cfg.splitlines()),
+        "WORKSPACE_ROOT defined" if "WORKSPACE_ROOT=" in cfg else "config.ini has no WORKSPACE_ROOT=")
+
+    users = list(extra_users or [])
+    try:
+        import getpass
+        users.append(getpass.getuser())
+    except Exception:
+        pass
+    leaks: List[str] = []
+    for f in sorted(x for x in final.rglob("*") if x.is_file()):
+        rel = f.relative_to(final).as_posix()
+        if rel == "config.ini" or f.suffix.lower() in (".pdf", ".png", ".gz", ".svg", ".pfw", ".zip", ".tar"):
+            continue
+        if f.stat().st_size > _VERIFY_MAX_BYTES:        # big data/log files do not belong in the package at all
+            leaks.append(f"{rel}: {f.stat().st_size >> 20} MiB file - raw data/logs stay in the session")
+            continue
+        try:
+            text = f.read_text(errors="ignore")
+        except OSError:
+            continue
+        hits = []
+        if ws is not None and str(ws) in text:
+            hits.append("workspace path")
+        try:
+            from ....privacy import find_identifiers
+            hits += find_identifiers(text, [u for u in users if u])
+        except Exception:
+            hits += [u for u in users if u and re.search(rf"(?<![A-Za-z0-9_]){re.escape(u)}(?![A-Za-z0-9_])", text)]
+        if hits:
+            leaks.append(f"{rel}: {', '.join(sorted(set(map(str, hits)))[:4])}")
+    chk("privacy", not leaks, "; ".join(leaks[:10]) if leaks else "no identifiers outside config.ini")
+
+    sd = final / "scripts"
+    scripts = sorted(sd.glob("*.sh")) if sd.is_dir() else []
+    bad_syntax, no_loader = [], []
+    for sc in scripts:
+        r = subprocess.run(["bash", "-n", str(sc)], capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            bad_syntax.append(f"{sc.name}: {(r.stderr or '').strip()[:120]}")
+        if sc.name not in _NO_LOADER and sc.name != "run_all.sh" and "lib_load_config.sh" not in sc.read_text(errors="ignore"):
+            no_loader.append(sc.name)
+    chk("syntax", not bad_syntax and bool(scripts), "; ".join(bad_syntax) if bad_syntax else f"{len(scripts)} scripts parse")
+    chk("loader", not no_loader, "do not source lib_load_config.sh: " + ", ".join(no_loader) if no_loader else "ok")
+
+    if runs is None and ws is not None and Path(ws).is_dir():
+        runs = [r for r in _discover_runs(Path(ws)) if r not in _NOT_RUNS]
+    runs = [r for r in (runs or []) if r not in _NOT_RUNS]
+    run_all = (sd / "run_all.sh").read_text(errors="ignore") if (sd / "run_all.sh").is_file() else ""
+    no_script = [r for r in runs if not (sd / f"run_{r}.sh").is_file()]
+    not_called = [r for r in runs if (sd / f"run_{r}.sh").is_file() and f"run_{r}.sh" not in run_all]
+    chk("runs", bool(runs) and not no_script and not not_called,
+        ("no runs found" if not runs else "") + ("; no script for: " + ", ".join(no_script) if no_script else "")
+        + ("; run_all.sh does not call: " + ", ".join(not_called) if not_called else "") or f"{len(runs)} runs scripted")
+
+    ap = final / "patches" / "annotated.patch"
+    has_ann = ws is not None and (Path(ws) / "annotated").is_dir()
+    chk("patches", (not has_ann) or (ap.is_file() and ap.stat().st_size > 0),
+        "annotated.patch present" if ap.is_file() and ap.stat().st_size else
+        ("session has an annotated tree but patches/annotated.patch is missing or empty" if has_ann else "no annotated tree"))
+
+    rm = _run_readme_smoke_test(final) if (sd / "readme_smoke_test.sh").is_file() else {"ok": False, "missing": ["readme_smoke_test.sh"]}
+    chk("readme", rm.get("ok"), "ok" if rm.get("ok") else "; ".join(map(str, rm.get("missing") or [rm.get("reason", "")])))
+
+    report = (final / "REPORT.md").read_text(errors="ignore") if (final / "REPORT.md").is_file() else ""
+    reproduced = bool(re.search(r"(?im)^.*validat\w*.*\b(pass(ed)?|reproduced)\b", report)) and \
+        not re.search(r"(?im)not (yet )?validated|validation:\s*(fail|pending)", report)
+    failed = [c for c in checks if not c["ok"]]
+    return {"status": "pass" if not failed else "fail", "final_report_dir": str(final), "checks": checks,
+            "problems": [f"{c['name']}: {c['detail']}" for c in failed], "reproduced": reproduced}
+
 def register_final_report_tools(mcp: FastMCP) -> None:
-    """Register the ``session_final_report`` MCP tool."""
+    """Register the ``session_final_report`` MCP tool (+ its verifier)."""
+
+    @mcp.tool()
+    def session_final_report_verify(run_id: str, runs: List[str] | None = None) -> str:
+        """Verify a session's ``final_report/`` deterministically (does not trust the builder or ``validated``).
+
+        Checks structure, config.ini (WORKSPACE_ROOT), privacy (no workspace path / user name / home or PFS user
+        path / e-mail / known identifier in any file except config.ini), ``bash -n`` of every script, that run and
+        install scripts source lib_load_config.sh, that every measured run (``runs`` or the session's
+        baseline/opt<n>/variants) has ``scripts/run_<run>.sh`` called by run_all.sh, the annotated patch, and the
+        README smoke test. Returns JSON ``{status: pass|fail, checks:[{name, ok, detail}], problems, reproduced}``;
+        ``reproduced`` says whether REPORT.md records a passed self-contained reproduction run.
+        """
+        try:
+            ws = _ws(run_id)
+        except Exception as e:  # noqa: BLE001
+            return _err(f"session_final_report_verify: {e}")
+        final = ws / "final_report"
+        if not final.is_dir():
+            return _err(f"no final_report/ in this session: call session_final_report first")
+        v = verify_final_report(final, ws, runs)
+        return _ok(f"final_report verify: {v['status']}", verdict=v["status"], checks=v["checks"],
+                   problems=v["problems"], reproduced=v["reproduced"], final_report_dir=v["final_report_dir"])
 
     @mcp.tool()
     def session_capture_run_record(

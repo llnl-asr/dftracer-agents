@@ -59,6 +59,12 @@ from .workspace import _ws, _ok, _err
 # ---------------------------------------------------------------------------
 _PY_FILE_CACHE: Dict[tuple, List[str]] = {}
 
+# python_annotate_project goes parallel (process pool) only from this many
+# files up when jobs=0. Measured on Megatron-DeepSpeed (276 files): serial
+# 2.6 s (~10 ms/file), 16 spawn workers 3.9 s - each worker re-imports the
+# package (~3 s), so the pool only pays off on trees of a few thousand files.
+PY_PARALLEL_MIN_FILES = 2000
+
 _PY_IMPORT = "from dftracer.python import dftracer, dft_fn as DFTracerFn"
 _DFT_INIT  = "_dft_log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=None)"
 _DFT_FINI  = "_dft_log.finalize()"
@@ -234,6 +240,17 @@ def _extract_functions_from_ast(source: str) -> List[dict]:
 # Module-level implementation so orchestrators (ml_pipeline) can drive the
 # same generic annotation logic without the MCP tool wrapper.
 # ---------------------------------------------------------------------------
+def _python_annotate_file_worker(kwargs: dict):
+    """Process-pool entry point for python_annotate_project.
+
+    Returns ``(json_result, cached_lines)`` so the parent can mirror the
+    ``_PY_FILE_CACHE`` entry the serial path would have left behind.
+    """
+    raw = _python_annotate_file_impl(**kwargs)
+    lines = _PY_FILE_CACHE.get((kwargs["run_id"], kwargs["filepath"]))
+    return raw, (list(lines) if lines is not None else None)
+
+
 def _python_annotate_file_impl(
     run_id: str,
     filepath: str,
@@ -770,6 +787,7 @@ def register_python_tools(mcp: FastMCP) -> None:
         logfile: str = "None",
         data_dir: str = "None",
         process_id: int = -1,
+        jobs: int = 0,
     ) -> str:
         """Annotate every Python source file in the ``annotated/`` workspace in one call.
 
@@ -810,6 +828,14 @@ def register_python_tools(mcp: FastMCP) -> None:
                                every entry-point file found.
             data_dir:         ``data_dir`` argument for ``initialize_log``.
             process_id:       ``process_id`` argument for ``initialize_log``.
+            jobs:             Parallel worker processes (each file is
+                              independent). ``0`` = ``$DFTRACER_ANNOTATE_JOBS``
+                              or min(16, CPU count), but only when there are at
+                              least ``PY_PARALLEL_MIN_FILES`` (2000) files (the
+                              per-file ast work is ~10 ms; a spawn pool costs ~3 s
+                              to start); ``1`` = serial. Entry
+                              files are annotated after every library file.
+                              Output is identical to the serial run.
 
         Returns:
             JSON string with keys:
@@ -871,18 +897,40 @@ def register_python_tools(mcp: FastMCP) -> None:
         file_results, errors = [], []
         annotated_count = skipped_count = 0
 
+        from .annotation_clang import annotate_jobs, run_file_pool
+
+        def _kw(p: "_Path") -> dict:
+            return dict(run_id=run_id, filepath=str(p.relative_to(ann_dir)),
+                        is_entry=p in entry_files, logfile=logfile,
+                        data_dir=data_dir, process_id=process_id)
+
+        n_files = len(all_files)
+        if jobs and jobs > 0:
+            n_jobs = annotate_jobs(jobs, n_files)
+        else:
+            n_jobs = annotate_jobs(0, n_files) if n_files >= PY_PARALLEL_MIN_FILES else 1
+
+        def _serial(kw: dict):
+            return _python_annotate_file_impl(**kw), None
+
+        phases = [[_kw(p) for p in regular_files], [_kw(p) for p in entry_files]]
+        outs = run_file_pool(_python_annotate_file_worker, phases, n_jobs, serial_fn=_serial)
+        raw_by_file = {}
+        for p, o in zip(regular_files + entry_files, outs[0] + outs[1]):
+            if isinstance(o, tuple):
+                raw, cached = o
+                if cached is not None:   # mirror the worker's cache entry
+                    _PY_FILE_CACHE[(run_id, str(p.relative_to(ann_dir)))] = cached
+                raw_by_file[p] = raw
+            else:
+                raw_by_file[p] = o       # the file's exception
+
         for p in regular_files + entry_files:
             rel = str(p.relative_to(ann_dir))
-            is_entry_file = p in entry_files
             try:
-                raw = _python_annotate_file_impl(
-                    run_id=run_id,
-                    filepath=rel,
-                    is_entry=is_entry_file,
-                    logfile=logfile,
-                    data_dir=data_dir,
-                    process_id=process_id,
-                )
+                raw = raw_by_file[p]
+                if isinstance(raw, Exception):
+                    raise raw
                 result = _json.loads(raw)
                 already = result.get("already_annotated", False)
                 if result.get("status") == "ok":

@@ -2821,8 +2821,27 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         mpi: Optional[bool] = None,
         pip_index_url: str = "https://pypi.org/simple",
         app_built_override: bool = False,
+        prebuilt: str = "auto",
     ) -> str:
         """Install dftracer via pip for all project types, then locate dirs in site-packages.
+
+        PREBUILT WHEELS (``prebuilt``): dftracer builds from source take minutes, so every successful build is packed
+        into a relocatable wheel and indexed (SQLite) by its exact combination - system, Python, MPI, HDF5,
+        compilers/modules, feature flags, dftracer repo/ref/commit and source patches - in ``$DFTRACER_WHEELHOUSE``.
+        ``auto`` (default): install the matching wheel when one exists, else build and store it; ``refresh``: build
+        fresh and replace the stored wheel; ``off``: build, store nothing. The result's ``wheelhouse.message`` says
+        which happened - tell the user. Search the index with ``dftracer_wheelhouse``.
+
+        DEMO MODE (``prebuilt="prerelease"``): install the ALREADY-COMPILED dftracer prerelease wheel from the package
+        index (``pip install --pre --only-binary=:all: dftracer``) - takes seconds and compiles NOTHING (no sdist, no
+        ``git+``, no wheelhouse build, no cmake). The public wheels are built WITHOUT MPI, HDF5, PAPI, HIP and variorum,
+        so those are forced off (``mpi``/``hdf5``/``papi``/``hip``/``variorum`` arguments are ignored) and recorded in
+        session state (``dftracer_build``), so ``session_build_annotated`` links only the plain core; POSIX/STDIO and
+        annotation tracing work. ``dftracer_repo`` is ignored; ``dftracer_ref`` pins a version only when it looks like
+        one (e.g. ``"2.2.0.post39.dev0"``), otherwise the newest prerelease is used. When no binary wheel matches this
+        Python/platform it fails fast (status error, what was tried, what the index offers) and never falls back to
+        compiling. The result's ``prerelease.message`` says this is the prebuilt prerelease without MPI/HDF5 tracing -
+        tell the user. Include/lib dirs are discovered and persisted exactly as in the normal path.
 
         Installs ``pip install git+<dftracer_repo>@<ref>`` (defaulting to
         ``https://github.com/llnl-asr/dftracer.git``, ref
@@ -2974,7 +2993,19 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 * ``lib_dir`` — resolved dftracer lib path in site-packages.
                 * ``lib_name`` — shared library filename found.
                 * ``steps`` — ``{"pip_install": <run result>}``.
+                * ``prerelease`` — only for ``prebuilt="prerelease"``: ``{version, wheel, tags, pip_cmd, seconds,
+                  compiled: false, excluded_features, message}``.
         """
+        _prebuilt_mode = (prebuilt or "auto").strip().lower()
+        if _prebuilt_mode not in ("auto", "refresh", "off", "prerelease"):
+            return _err(f"prebuilt must be one of auto, refresh, off, prerelease (got {prebuilt!r})")
+        _prerelease = _prebuilt_mode == "prerelease"
+        if _prerelease:
+            # The public prerelease wheels are compiled without these; forcing them
+            # off here makes every feature block below (detection overrides, power
+            # probe, compat checks, features_enabled) agree with what is installed.
+            mpi = hdf5 = papi = hip = variorum = False
+            variorum_build = ""
         ws = _ws(run_id)
         state = _load_state(run_id)
         # ORDER GATE: the ORIGINAL app must be built first. dftracer has to be
@@ -3313,16 +3344,39 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                     variorum_build or "ALWAYS"
                 ).upper()
 
-        result = _install_dftracer_pip_direct(
-            dftracer_ref=dftracer_ref,
-            dftracer_repo=dftracer_repo,
-            pip_index_url=pip_index_url,
-            features={**features, "dftracer_pip_env": _pip_env_in},
-            python_exe=venv_python_str,
-            jobs=jobs,
-            ws=ws,
-            run_id=run_id,
-        )
+        if _prerelease:
+            # Only what the public wheel really has: no MPI/HDF5/PAPI/HIP/variorum,
+            # and its libdftracer_core links no hwloc either (checked with ldd).
+            features_enabled = []
+            from .install import _install_dftracer_prerelease_wheel
+            result = _install_dftracer_prerelease_wheel(
+                python_exe=venv_python_str,
+                ws=ws,
+                run_id=run_id,
+                pip_index_url=pip_index_url,
+                dftracer_ref=dftracer_ref,
+            )
+            if not result["success"]:
+                return _err(
+                    "prebuilt dftracer prerelease install failed (nothing was compiled; no source fallback): "
+                    + result.get("error", ""),
+                    prerelease=result.get("prerelease"),
+                    venv=str(Path(venv_python_str).parent.parent),
+                    steps=_trim_steps(result["steps"]),
+                    full_log="artifacts/06_dftracer_prerelease_probe.log, artifacts/06_session_install_dftracer.log",
+                )
+        else:
+            result = _install_dftracer_pip_direct(
+                dftracer_ref=dftracer_ref,
+                dftracer_repo=dftracer_repo,
+                pip_index_url=pip_index_url,
+                features={**features, "dftracer_pip_env": _pip_env_in},
+                python_exe=venv_python_str,
+                jobs=jobs,
+                ws=ws,
+                run_id=run_id,
+                prebuilt=_prebuilt_mode,
+            )
         if not result["success"]:
             return _err(
                 "dftracer pip install failed",
@@ -3338,12 +3392,31 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
 
         install_dir = ws / "install_ann"
         install_dir.mkdir(exist_ok=True)
+        _pre_info = result.get("prerelease") or {}
+        if _pre_info.get("version"):
+            dftracer_ref = _pre_info["version"]
         _save_state(run_id, {
             "dftracer_install_prefix":  dirs.get("lib_dir", str(install_dir)),
             "dftracer_pip_include_dir": dirs.get("include_dir", ""),
             "dftracer_pip_lib_dir":     dirs.get("lib_dir", ""),
+            # What the INSTALLED dftracer was built with (detection.features
+            # still describes the APP, e.g. it may use MPI while this dftracer
+            # has no MPI tracing).
+            "dftracer_features_enabled": features_enabled,
+            "dftracer_build": {
+                "mode": _prebuilt_mode,
+                "version": dftracer_ref,
+                **{f: bool(features.get(f)) for f in ("mpi", "hdf5", "papi", "hip", "variorum")},
+            },
         })
+        _wh_info = result.get("wheelhouse") or {}
         msg = f"dftracer installed via pip into session venv (features={features_enabled})"
+        if _pre_info.get("message"):
+            msg += f"\n\nPrerelease: {_pre_info['message']}."
+        if not dirs.get("include_dir") or not dirs.get("lib_dir"):
+            msg += "\n\nWARNING: dftracer include/lib dirs not found in the venv."
+        if _wh_info.get("message"):
+            msg += f"\n\nWheelhouse: {_wh_info['message']}."
         if compat_warnings:
             msg += "\n\nCOMPATIBILITY WARNINGS:\n" + "\n".join(
                 f"  • {w}" for w in compat_warnings
@@ -3359,7 +3432,43 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
             lib_name=dirs.get("lib_name", "libdftracer_core.so"),
             steps=_trim_steps(result["steps"]),
             full_log="artifacts/ (session_install_dftracer step log)",
+            wheelhouse={k: v for k, v in _wh_info.items() if k != "stored"} | (
+                {"stored": {k: v for k, v in (_wh_info.get("stored") or {}).items() if k != "message"}}
+                if _wh_info.get("stored") else {}),
+            **({"prerelease": _pre_info} if _pre_info else {}),
         )
+
+    @mcp.tool()
+    def dftracer_wheelhouse(
+        action: str = "search",
+        text: str = "",
+        system: str = "",
+        python_tag: str = "",
+        ref: str = "",
+        commit: str = "",
+        include_broken: bool = False,
+        key: str = "",
+        limit: int = 50,
+    ) -> str:
+        """Search or manage the prebuilt dftracer wheels (one per exact build combination).
+
+        Use to see which dftracer builds already exist for a system before installing, or to retire a bad wheel.
+        action: "search" (default) lists wheels matching the filters - text: substring over MPI / HDF5 / compilers /
+        features / CMake args / modules / version / repo; system (e.g. tuolumne), python_tag (e.g. cp313), ref,
+        commit prefix; include_broken also lists wheels that failed an install check. "retire" marks the wheel
+        ``key`` broken so it is never installed again (the next install builds fresh and stores a new one).
+        Returns JSON {status, wheelhouse, index, count, wheels:[{system, python_tag, dftracer_ref, dftracer_commit,
+        mpi, hdf5, compilers, features_json, wheel_path, used_count, build_seconds, key, ...}], totals}.
+        """
+        from . import wheelhouse as _wh
+        if action == "retire":
+            if not key:
+                return _err("retire needs the wheel's key")
+            _wh.mark(key, "broken", "retired by request")
+            return _ok("wheel retired", key=key)
+        if action != "search":
+            return _err("action must be search or retire")
+        return json.dumps(_wh.search(text, system, python_tag, ref, commit, include_broken, limit), default=str)
 
     @mcp.tool()
     def session_install_dftracer_utils(

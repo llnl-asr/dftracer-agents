@@ -17,6 +17,10 @@ dependencies = [
     "libclang>=18.1.0",
     "matplotlib",
     "requests",
+    # imported when the MCP server starts (paper search, config search, agent templates): undeclared, the
+    # server crashed with ModuleNotFoundError in venvs where nothing else happened to install them
+    "httpx",
+    "pyyaml",
     # Codebase knowledge graph (tree-sitter AST extraction for C/C++/Fortran/
     # Python — every language this pipeline annotates). Agents query the graph to
     # locate code instead of reading whole files into context.

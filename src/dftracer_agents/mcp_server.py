@@ -359,6 +359,7 @@ def _build_utils_server() -> FastMCP:
         "dlio_subservice",
         "synthetic_subservice",
         "mpi_subservice",
+        "session_subservice",  # session_split_traces, session_validate_traces
     ):
         sub = getattr(service, sub_name, None)
         if sub is None:

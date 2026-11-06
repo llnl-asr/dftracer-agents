@@ -94,6 +94,41 @@ def _detect_running_allocation(flux_bin: str) -> Optional[str]:
         return None
 
 
+def _ranks(idset: str) -> set:
+    """Parse a Flux idset (``"0-3,7"``) into a set of ints; empty/unparseable -> empty set."""
+    out: set = set()
+    for part in (idset or "").strip().strip("[]").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            if "-" in part:
+                a, b = part.split("-", 1)
+                out.update(range(int(a), int(b) + 1))
+            else:
+                out.add(int(part))
+        except ValueError:
+            return set()
+    return out
+
+
+def _idle_nodes(flux_bin: str, jobid: str) -> int:
+    """How many nodes of allocation *jobid* have nothing allocated (what ``flux run --exclusive -N 1`` needs).
+
+    Best-effort and bounded (seconds): any error counts as 0 idle nodes, so the caller runs locally.
+    """
+    def ranks(state: str) -> set:
+        r = subprocess.run([flux_bin, "proxy", jobid, flux_bin, "resource", "list", "-s", state, "-no", "{ranks}"],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr)
+        return _ranks(r.stdout)
+    try:
+        return len(ranks("free") - ranks("allocated"))
+    except Exception:
+        return 0
+
+
 def find_active_allocation() -> Optional[str]:
     """Return a usable Flux jobid to proxy into, or ``None``.
 
@@ -112,6 +147,12 @@ def find_active_allocation() -> Optional[str]:
     if now - cached_at < _ALLOC_CACHE_TTL_S:
         return cached_id
     jobid = _detect_running_allocation(flux_bin)
+    # An auto-detected job is only usable when it has a whole idle node: the wrapper runs ``flux run --exclusive``,
+    # which inside a busy allocation (typically the user's own application run) does not fail - it waits in that
+    # job's queue until the job ends, then fails. That stalled trace tools for minutes (a sub-second comparator
+    # took 3-11 minutes and then errored) and, had it run, would have contended with the measured application.
+    if jobid and _idle_nodes(flux_bin, jobid) < 1:
+        jobid = None
     _alloc_cache = (now, jobid)
     return jobid
 
@@ -184,6 +225,14 @@ def run_on_allocation(
     if wrapped is cmd:
         return subprocess.run(cmd, **subprocess_kwargs)
     try:
-        return subprocess.run(wrapped, **subprocess_kwargs)
+        res = subprocess.run(wrapped, **subprocess_kwargs)
     except (FileNotFoundError, OSError):
         return subprocess.run(cmd, **subprocess_kwargs)
+    except subprocess.CalledProcessError:
+        if allocation_id:                 # the caller chose that allocation: its failure is the answer
+            raise
+        # an auto-detected allocation ended or refused the job: run locally rather than fail the tool
+        return subprocess.run(cmd, **subprocess_kwargs)
+    if res.returncode != 0 and not allocation_id:
+        return subprocess.run(cmd, **subprocess_kwargs)
+    return res

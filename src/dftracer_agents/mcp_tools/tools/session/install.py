@@ -34,6 +34,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -985,6 +986,191 @@ def _filesystem_links_without_stdcxxfs(env: Dict[str, str]) -> bool:
         return r.returncode == 0
 
 
+def _pip_install_dftracer_target(py: str, target: str, pip_env: Dict[str, str], modules: List[str],
+                                 ws: Optional[Path], env_script: Optional[Path], repo_url: str, ref: str,
+                                 run_id: str = "", prebuilt: str = "auto") -> Dict[str, Any]:
+    """``pip install`` dftracer from ``target`` through the prebuilt-wheel wheelhouse (see wheelhouse.py).
+
+    prebuilt="auto": install the indexed wheel of this exact combination when there is one, else build as always and
+    store the result; "refresh": always build, then store/replace; "off": build, store nothing. The result carries
+    ``wheelhouse`` = {hit, used, stored, message} so the caller can say which way it went."""
+    from . import wheelhouse as _wh
+
+    def _pip(args):
+        return _run_pip_via_module_script(py, args, pip_env, modules, ws=ws, timeout=1800, env_script=env_script)
+    info: Dict[str, Any] = {"hit": False, "used": False, "mode": prebuilt}
+    combo = None
+    if prebuilt != "off" and _wh.root():
+        try:
+            src = Path(target) if Path(target).is_dir() else None
+            combo = _wh.combination(py, pip_env, repo_url, ref, src, env_script, ws)
+            if combo is None:
+                info["reason"] = "no source checkout to pin the exact combination; building without the wheelhouse"
+        except Exception as exc:                       # the wheelhouse must never break an install
+            info["reason"] = f"combination failed: {type(exc).__name__}: {exc}"
+    if combo and prebuilt == "auto":
+        row = _wh.lookup(combo)
+        if row:
+            r = _wh.install_cached(row, py, _pip)
+            if r.get("success"):
+                return r
+            info = {**info, **(r.get("wheelhouse") or {}), "fallback": "building from source"}
+    t0 = time.time()
+    r = _pip(["install", "-v", "--no-cache-dir", "--upgrade", target])
+    if r.get("success") and combo:
+        try:
+            stored = _wh.harvest(py, combo, time.time() - t0, run_id)
+        except Exception as exc:
+            stored = {"stored": False, "reason": f"{type(exc).__name__}: {exc}"}
+        info["stored"] = stored
+        info["message"] = stored.get("message") or (f"built fresh from source; could not store a prebuilt wheel: "
+                                                     f"{stored.get('reason')}")
+    elif r.get("success"):
+        info["message"] = "built fresh from source" + (f" ({info['reason']})" if info.get("reason") else "")
+    r["wheelhouse"] = info
+    return r
+
+
+# ---------------------------------------------------------------------------
+# prebuilt="prerelease": install the ALREADY-COMPILED dftracer prerelease wheel
+# from the package index. Demo mode: seconds instead of a multi-minute C/C++
+# build, at the price of the features those public wheels are built without
+# (MPI, HDF5, PAPI, HIP, variorum). Never an sdist, never git+, never a compile.
+# ---------------------------------------------------------------------------
+
+# pip flags that make a compile impossible: --only-binary=:all: rejects every
+# sdist (dftracer AND its dependencies), so pip either installs wheels or fails.
+_PRERELEASE_PIP_FLAGS = ("--pre", "--only-binary=:all:")
+
+# Features the public prerelease wheels are built WITHOUT.
+_PRERELEASE_EXCLUDED_FEATURES = ("mpi", "hdf5", "papi", "hip", "variorum")
+
+# Log lines that only appear when pip builds something from source.
+_COMPILE_MARKERS = ("Building wheel for", "Running setup.py", "Preparing metadata (pyproject.toml)",
+                    "Getting requirements to build wheel", "Installing build dependencies",
+                    "-- The CXX compiler identification", "CMake Error")
+
+
+def _prerelease_spec(dftracer_ref: str = "") -> str:
+    """``dftracer==<ref>`` when ref is a version (starts with a digit), else bare ``dftracer`` (newest prerelease)."""
+    ref = (dftracer_ref or "").strip()
+    return f"dftracer=={ref}" if ref[:1].isdigit() else "dftracer"
+
+
+def _prerelease_pip_args(spec: str) -> List[str]:
+    """The exact ``pip install`` arguments of the prebuilt-prerelease path (binary wheels only)."""
+    if spec.startswith("git+") or "://" in spec or "/" in spec:
+        raise ValueError(f"prebuilt prerelease installs from the package index only, not {spec!r}")
+    return ["install", *_PRERELEASE_PIP_FLAGS, "--no-cache-dir", "--upgrade", "-v", spec]
+
+
+def _compile_markers_in(log: str) -> List[str]:
+    """Source-build markers present in a pip log (empty list = nothing was compiled)."""
+    return [m for m in _COMPILE_MARKERS if m in (log or "")]
+
+
+def _install_dftracer_prerelease_wheel(
+    python_exe: str,
+    ws: Optional[Path] = None,
+    run_id: str = "",
+    pip_index_url: str = "https://pypi.org/simple",
+    dftracer_ref: str = "",
+) -> Dict[str, Any]:
+    """Install the prebuilt dftracer prerelease wheel (``pip --pre --only-binary=:all:``); never compiles.
+
+    1. probe: ``pip download --pre --only-binary=:all: --no-deps`` into ``<ws>/tmp/dftracer_prerelease`` to learn
+       which wheel the index offers for THIS interpreter/platform; on failure also ask ``pip index versions --pre``
+       so the error says what exists. No fallback to a source build, ever.
+    2. install: ``pip install --pre --only-binary=:all: --no-cache-dir --upgrade -v dftracer==<probed version>``
+       (dependencies are binary-only too).
+    3. verify: the pip log must contain no source-build marker (cmake, setup.py, build deps).
+
+    Returns {success, steps, prerelease:{version, wheel, tags, pip_cmd, seconds, message, ...}, error?}.
+    """
+    py = python_exe
+    venv_root = Path(py).absolute().parent.parent
+    if not (venv_root / "pyvenv.cfg").exists():
+        raise RuntimeError(f"python_exe={py!r} is not inside a venv (no pyvenv.cfg at {venv_root}); "
+                           f"refusing to install dftracer outside a session-local venv")
+    env: Dict[str, str] = {"VIRTUAL_ENV": str(venv_root),
+                           "PATH": str(Path(py).absolute().parent) + os.pathsep + os.environ.get("PATH", "")}
+    env.update(_pip_index_env(pip_index_url))
+    # LC clusters intercept TLS; pip's bundled certifi does not trust the site CA.
+    if not (os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("PIP_CERT")):
+        for _ca in ("/etc/pki/tls/cert.pem", "/etc/ssl/certs/ca-certificates.crt"):
+            if Path(_ca).is_file():
+                env["REQUESTS_CA_BUNDLE"] = _ca
+                env["PIP_CERT"] = _ca
+                break
+    base = (Path(ws) / "tmp") if ws else Path(os.environ.get("TMPDIR", "/tmp"))
+    probe_dir = base / "dftracer_prerelease"
+    probe_dir.mkdir(parents=True, exist_ok=True)
+    for _old in probe_dir.glob("dftracer-*"):
+        try:
+            _old.unlink()
+        except OSError:
+            pass
+    spec = _prerelease_spec(dftracer_ref)
+    steps: Dict[str, Any] = {}
+    info: Dict[str, Any] = {"mode": "prerelease", "spec": spec, "index_url": pip_index_url or "(user pip config)",
+                            "excluded_features": list(_PRERELEASE_EXCLUDED_FEATURES)}
+
+    def _log(name: str, cmd: List[str], r: Dict[str, Any]) -> None:
+        if ws:
+            try:
+                (Path(ws) / "artifacts").mkdir(parents=True, exist_ok=True)
+                (Path(ws) / "artifacts" / name).write_text(
+                    " ".join(cmd) + "\n\n" + (r.get("stdout") or "") + "\n" + (r.get("stderr") or ""))
+            except OSError:
+                pass
+
+    probe_cmd = [py, "-m", "pip", "download", *_PRERELEASE_PIP_FLAGS, "--no-deps", "-d", str(probe_dir), spec]
+    r_probe = _run(probe_cmd, env=env, timeout=600)
+    _log("06_dftracer_prerelease_probe.log", probe_cmd, r_probe)
+    steps["probe"] = r_probe
+    wheels = sorted(probe_dir.glob("dftracer-*.whl"))
+    if not r_probe.get("success") or not wheels:
+        idx_cmd = [py, "-m", "pip", "index", "versions", "--pre", "dftracer"]
+        r_idx = _run(idx_cmd, env=env, timeout=300)
+        steps["index_versions"] = r_idx
+        offers = ((r_idx.get("stdout") or "") + "\n" + (r_idx.get("stderr") or "")).strip()[-1500:]
+        tags = _run([py, "-c", "import sys,sysconfig;print(f'cp{sys.version_info[0]}{sys.version_info[1]}',"
+                               "sysconfig.get_platform())"], timeout=60).get("stdout", "")
+        info["tried"] = " ".join(["pip", *probe_cmd[3:]])
+        info["message"] = (f"no prebuilt dftracer wheel on {pip_index_url or 'the configured index'} matches this "
+                           f"interpreter/platform ({(tags or '').strip() or 'unknown'}); tried: {info['tried']}. "
+                           f"Not compiling (prebuilt='prerelease' never builds from source). "
+                           f"Probe said: {(r_probe.get('stderr') or '')[-600:]} | Index offers: {offers}")
+        return {"success": False, "steps": steps, "prerelease": info, "error": info["message"]}
+    whl = wheels[-1].name
+    parts = whl[:-4].split("-")           # name-version(-build)?-python-abi-platform
+    version = parts[1]
+    info.update({"wheel": whl, "version": version, "tags": "-".join(parts[-3:])})
+
+    # Drop any previous (possibly source-built) dftracer so only the wheel's files are present.
+    _run([py, "-m", "pip", "uninstall", "-y", "dftracer"], env=env, timeout=120)
+    pip_args = _prerelease_pip_args(f"dftracer=={version}")
+    install_cmd = [py, "-m", "pip", *pip_args]
+    t0 = time.time()
+    r = _run(install_cmd, env=env, timeout=900)
+    info["seconds"] = round(time.time() - t0, 1)
+    info["pip_cmd"] = " ".join(["pip", *pip_args])
+    _log("06_session_install_dftracer.log", install_cmd, r)
+    steps["pip_install"] = r
+    markers = _compile_markers_in((r.get("stdout") or "") + "\n" + (r.get("stderr") or ""))
+    if markers:
+        info["message"] = f"pip log shows a source build ({markers}); prebuilt prerelease must never compile"
+        return {"success": False, "steps": steps, "prerelease": info, "error": info["message"]}
+    if not r.get("success"):
+        info["message"] = f"pip install of prebuilt wheel {whl} failed: {(r.get('stderr') or '')[-800:]}"
+        return {"success": False, "steps": steps, "prerelease": info, "error": info["message"]}
+    info["compiled"] = False
+    info["message"] = (f"installed the PREBUILT dftracer prerelease {version} ({info['tags']}) from the package index "
+                       f"in {info['seconds']}s - nothing was compiled. Demo build: MPI and HDF5 tracing (and PAPI/"
+                       f"HIP/variorum) are NOT included; POSIX/STDIO and annotation tracing work")
+    return {"success": True, "steps": steps, "prerelease": info}
+
+
 def _install_dftracer_pip_direct(
     dftracer_ref: str = _DFTRACER_DEFAULT_REF,
     features: Optional[Dict[str, Any]] = None,
@@ -995,8 +1181,13 @@ def _install_dftracer_pip_direct(
     run_id: str = "",
     dftracer_repo: str = "",
     pip_index_url: str = "https://pypi.org/simple",
+    prebuilt: str = "auto",
 ) -> Dict[str, Any]:
     """Install dftracer via pip with all setup.py env vars derived from detected features.
+
+    The install goes through the prebuilt-wheel wheelhouse (``prebuilt``: auto | refresh | off, see
+    ``_pip_install_dftracer_target`` and wheelhouse.py): an indexed wheel of the exact same combination is installed
+    instead of building, and a fresh build is stored for the next time.
 
     Runs::
 
@@ -2061,15 +2252,8 @@ bool MPIDFTracer::stop_trace = false;
                 # out of sync with upstream's actual variable names.
                 dep_cmake.write_text(dc)
 
-            r = _run_pip_via_module_script(
-                py,
-                ["install", "-v", "--no-cache-dir", "--upgrade", str(clone_dir)],
-                pip_env,
-                _install_modules,
-                ws=ws,
-                timeout=1800,
-                env_script=_install_env_script,
-            )
+            r = _pip_install_dftracer_target(py, str(clone_dir), pip_env, _install_modules, ws,
+                                             _install_env_script, repo_url, dftracer_ref, run_id, prebuilt)
             _shutil2.rmtree(str(clone_dir), ignore_errors=True)
         else:
             # Clone failed — fall back to direct git+ install (MPI_Errhandler issue
@@ -2093,15 +2277,8 @@ bool MPIDFTracer::stop_trace = false;
         import tempfile as _tempfile3, shutil as _shutil3
 
         def _pip_install_dftracer_from(target: str):
-            return _run_pip_via_module_script(
-                py,
-                ["install", "-v", "--no-cache-dir", "--upgrade", target],
-                pip_env,
-                _install_modules,
-                ws=ws,
-                timeout=1800,
-                env_script=_install_env_script,
-            )
+            return _pip_install_dftracer_target(py, target, pip_env, _install_modules, ws, _install_env_script,
+                                                repo_url, dftracer_ref, run_id, prebuilt)
 
         _clone_dir2 = None
         if repo_is_local_dir:
@@ -2278,6 +2455,7 @@ bool MPIDFTracer::stop_trace = false;
         "steps": {"pip_install": r},
         "pip_env": pip_env,
         "source_patches": locals().get("_source_patches", []),
+        "wheelhouse": r.get("wheelhouse"),
     }
 
 
