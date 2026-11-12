@@ -76,6 +76,15 @@ def _last_import_idx(lines: List[str]) -> int:
     Tracks preprocessor-style depth to stay out of try/except/if blocks
     where imports sometimes appear.
     """
+    # AST first: a multi-line import ("from x import (\n    a,\n    b,\n)") must be skipped whole; the line scan below
+    # sees only its first line and the insertion would land inside the parentheses (SyntaxError).
+    try:
+        mod = ast.parse("\n".join(lines))
+        ends = [n.end_lineno for n in mod.body if isinstance(n, (ast.Import, ast.ImportFrom)) and n.end_lineno]
+        if ends:
+            return max(ends)          # end_lineno is 1-based and inclusive: as a 0-based index it is the line after
+    except SyntaxError:
+        pass
     last = -1
     depth = 0
     for i, ln in enumerate(lines):
@@ -176,9 +185,21 @@ def _extract_functions_from_ast(source: str) -> List[dict]:
                 else:
                     dec_insert = child.lineno
 
+                # An @overload signature is a typing stub (its body is "..."): nothing runs, and a contextual region
+                # inserted into it breaks the file (observed: ems task.py _replace_futures_with_results, 3 overloads).
+                if any(
+                    (isinstance(d, ast.Name) and d.id == "overload")
+                    or (isinstance(d, ast.Attribute) and d.attr == "overload")
+                    for d in child.decorator_list
+                ):
+                    continue
+
+                # @classmethod is a descriptor object, not a callable: dft_fn.log(classmethod_obj) returns the bare decorator
+                # (callable() is False) and the method becomes that function (TypeError "takes 1 positional argument but 2 were
+                # given" at the first call). It takes the contextual region exactly like @staticmethod.
                 has_static = any(
-                    (isinstance(d, ast.Name) and d.id == "staticmethod")
-                    or (isinstance(d, ast.Attribute) and d.attr == "staticmethod")
+                    (isinstance(d, ast.Name) and d.id in ("staticmethod", "classmethod"))
+                    or (isinstance(d, ast.Attribute) and d.attr in ("staticmethod", "classmethod"))
                     for d in child.decorator_list
                 )
 
