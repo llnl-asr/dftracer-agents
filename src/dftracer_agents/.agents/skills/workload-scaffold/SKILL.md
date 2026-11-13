@@ -25,15 +25,10 @@ source $WS/venv/bin/activate
 # Install app first (ScaFFold)
 pip install ".[rocm]" --extra-index-url https://download.pytorch.org/whl/rocm7.1
 
-# Then install dftracer INTO THE SAME venv
-# (via pip with environment setup, never a separate install tool)
-export DFTRACER_ENABLE_MPI=ON
-export MPICC="/opt/cray/pe/mpich/9.1.0/ofi/crayclang/20.0/bin/mpicc"
-export MPICXX="/opt/cray/pe/mpich/9.1.0/ofi/crayclang/20.0/bin/mpicxx"
-export DFTRACER_ENABLE_HDF5=ON
-export HDF5_ROOT=/usr
-export DFTRACER_ENABLE_HIP_TRACING=ON
-pip install "git+https://github.com/llnl-asr/dftracer.git@develop"
+# Then install dftracer INTO THE SAME venv: the prerelease with its prebuilt modules,
+# composed against the modules env.sh loaded (MPI, HDF5, ROCm here)
+pip install --pre "dftracer[modules]" dftracer-modules
+dftracer-compose --enable mpi,hdf5,hip --disable papi,hwloc,cuda
 
 # Then install mpi4py with Cray linkage fix (see [[software-mpi]])
 export MPI4PY_MPIABI=mpich
