@@ -865,17 +865,14 @@ when building via session_install_dftracer after STEP 1 has resolved a newer CCE
      mpicxx="/opt/cray/pe/mpich/9.1.0/ofi/crayclang/20.0/bin/mpicxx")
    ```
 
-2. Then install dftracer into the shared venv with the corrected environment:
+2. Then install dftracer into the shared venv with the corrected environment: the prerelease with its prebuilt
+   modules, composed against the modules `env.sh` loads (Cray MPICH, HDF5, ROCm). No compile unless a variant is
+   not prebuilt (2026-11-13 on tuolumne: 16 s install, 14 s compose for Cray MPICH 9.0, parallel HDF5 1.14, PAPI):
    ```bash
    source $WS/scripts/env.sh
-   export DFTRACER_ENABLE_MPI=ON
-   export MPICC="/opt/cray/pe/mpich/9.1.0/ofi/crayclang/20.0/bin/mpicc"
-   export MPICXX="/opt/cray/pe/mpich/9.1.0/ofi/crayclang/20.0/bin/mpicxx"
-   export DFTRACER_ENABLE_HDF5=ON
-   export HDF5_ROOT=/usr
-   export DFTRACER_ENABLE_HIP_TRACING=ON
-   pip install setuptools_scm pybind11
-   pip install "git+https://github.com/llnl-asr/dftracer.git@develop"
+   pip install --pre "dftracer[modules]" dftracer-modules
+   dftracer-compose --enable mpi,hdf5,hip --disable papi,hwloc,cuda
+   dftracer_install_info --composition     # what was linked
    ```
 
 **Important:** For Python/AI/ML apps, **dftracer MUST install into the same venv as the app** (not a separate `install/` directory). The session_install_dftracer MCP tool may create a separate environment; if so, manually install via pip into the shared venv instead.

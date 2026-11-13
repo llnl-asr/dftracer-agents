@@ -1,6 +1,6 @@
 ---
 name: tools-dftracer
-description: The dftracer PyPI package itself (C core + CMake build) — package layout, dependency graph (dftracer-utils, pybind11, pydftracer), install sources (PyPI release vs GitHub develop via pip), and session-local vs shared-venv install rules. Load this skill before any session_install_dftracer call or before diagnosing a "dftracer works but X sub-feature is missing" report.
+description: The dftracer PyPI package itself (C core + CMake build) — package layout, dependency graph (dftracer-utils, pybind11, pydftracer), install sources (the prerelease composed for the run by default, source builds via pip), and session-local vs shared-venv install rules. Load this skill before any session_install_dftracer call or before diagnosing a "dftracer works but X sub-feature is missing" report.
 metadata:
   type: software
 ---
@@ -19,128 +19,50 @@ So a CORRECT install pulls in three related-but-separate packages:
 
 ## Install sources
 
-**MANDATORY rule (corrected 2026-08-04, user-taught, YGM session): never use
-the prebuilt distribution when ANY build-time feature flag needs to be
-configured — MPI, ROCm/HIP, or HDF5.** The prebuilt wheel is a single fixed
-build with whatever flags its own CI happened to use (confirmed: the
-Tuolumne prerelease wheel linked NO MPI library at all — `ldd
-libdftracer_core.so | grep -i mpi` came back empty). If the traced app needs
-dftracer's own MPI-IO interception, HDF5 tracing, or HIP tracing, you MUST
-build from source (options 1, 2, or 4 below) with the matching
-`DFTRACER_ENABLE_*`/`MPICC`/`MPICXX`/`HDF5_ROOT` env vars — see RULE 1 in
-`dftracer-install`. Only reach for the prebuilt distribution (option 3) when
-the workload needs nothing beyond plain FUNCTION-mode app-level annotation
-tracing with no dftracer-side feature flags at all.
+**Default (2026-11): the dftracer prerelease, composed for the run.** dftracer's develop publishes a prerelease
+to PyPI with a second wheel, `dftracer-modules`: its optional modules (MPI for every common MPI and Cray MPICH,
+HDF5 serial and parallel, PAPI, hwloc, ROCm's rocprofiler-sdk, CUDA's CUPTI) prebuilt per library version.
+`dftracer-compose` links the ones this machine and run need into the installed `libdftracer_core`, against
+the libraries the loaded modules provide, and builds from the sources the wheel ships any variant that is not
+prebuilt. `session_install_dftracer` does all of it by default (`prebuilt="compose"`): binary wheels only,
+then compose inside the session's `env.sh` for the features detection (or the `mpi`/`hdf5`/`papi`/`hip`
+arguments) asks for -- seconds to a minute or two instead of a source build, with the same features.
+By hand, in the app's venv with its modules loaded:
 
-Four valid ways to install (never a manual git clone + hand-driven cmake build
-for a session-local install — that's what `session_install_dftracer` is for,
-and it already knows the CMake two-pass dependency-bootstrap quirk, see
-`dftracer-build-dftracer/pitfalls.md`):
+```bash
+/path/to/venv/bin/pip install --pre "dftracer[modules]" dftracer-modules
+/path/to/venv/bin/dftracer-compose --enable mpi,hdf5 --disable papi,hwloc,hip,cuda   # what the run needs
+/path/to/venv/bin/dftracer_install_info --composition                                # what is linked
+```
 
-1. **PyPI release**: `pip install dftracer==<version>` (e.g. `2.0.3`). Gets a
-   tagged, stable version.
-2. **GitHub develop branch via pip's git URL support**:
-   `pip install "git+https://github.com/llnl-asr/dftracer.git@develop"`. Use this
-   when you need a fix that hasn't shipped to PyPI yet. This is still a pip
-   install, NOT a manual `git clone` + `cmake configure/build/install` — pip
-   drives the same build backend, it just resolves the source from the git ref
-   instead of a PyPI sdist/wheel.
-3. **Prebuilt prerelease distribution (Tuolumne, no compile step, LIMITED — see mandatory rule above)**:
-   `session_install_dftracer` does NOT know about this path yet — it must be
-   run manually. Skips the entire CC/CXX/LD_LIBRARY_PATH/chid_t/dlopen
-   compile-time pitfall surface because nothing gets compiled:
-   ```bash
-   ml use $HOME/dftracer/distributions/modulefiles
-   ml load dftracer-dist
-   ml load python/3.11        # must match the modulefile's target Python
-   python -m venv venv-311 && source venv-311/bin/activate
-   pip install --pre dftracer
-   ```
-   Installs a prebuilt wheel with `libdftracer_core.so`, headers, AND ready
-   CMake config files (`lib64/cmake/dftracer/dftracer-config.cmake`) — no
-   `session_generate_dftracer_pc` needed for CMake C++ projects. Caveat: this
-   wheel showed no MPI library linked in `ldd` — verify with `ldd
-   libdftracer_core.so | grep -i mpi` before relying on it for anything beyond
-   FUNCTION-mode app-level annotation. See `dftracer-annotation-lessons`
-   LESSONS_LOG.md (2026-08-04, YGM session) for the full trace.
+Verify what was linked, never what was asked: the tool result's `compose` (`linked`, and `absent` for a
+library this machine does not have -- load its module in `env.sh`, then re-run
+`scripts/compose_dftracer.sh`), or `dftracer_install_info --composition`. A module that did not build fails
+the tool. Never the plain prerelease wheel alone (`prebuilt="prerelease"`): uncomposed, it traces POSIX,
+STDIO and annotations only -- the 2026-08-04 YGM session found exactly that (`ldd` showed no MPI), which is
+why the rule was once "always build from source" (see [[feedback-never-prebuilt-when-config-knobs-needed]]).
+Variorum needs no compose: `dftracer_service` loads `libvariorum.so` (0.8 or later) when it starts; name it
+with `DFTRACER_VARIORUM_LIBRARY` when the system's own Variorum (TOSS 4 has one in `/lib`) is not the one
+built for the machine.
 
-4. **`llnl-asr` on GitHub — the canonical org for feature-configurable source
-   builds.** (The heading here used to say "czgitlab, SSH" while listing GitHub
-   URLs; czgitlab is the older internal mirror, not the canonical source.)
-   `develop` already contains CUPTI — `feature/cupti` was merged — so there is no
-   separate GPU branch to select. One repo per package:
-   ```
-   https://github.com/llnl-asr/dftracer.git
-   https://github.com/llnl-asr/dftracer-utils.git
-   https://github.com/llnl-asr/pydftracer.git
-   ```
-   (dfanalyzer and dfdiagnoser live under the same org too.) Install order:
-   `dftracer` BEFORE `dftracer-utils` (RULE 3 in `dftracer-install` — a stale
-   `zconf.h` header collision otherwise). `pip install
-   "git+https://github.com/llnl-asr/dftracer.git"` with the
-   `DFTRACER_ENABLE_MPI`/`DFTRACER_ENABLE_HDF5`/`MPICC`/`MPICXX`/`HDF5_ROOT`
-   env vars set BEFORE the pip call (RULE 1). SSH access confirmed working
-   from Tuolumne compute/login nodes without extra setup (2026-08-04).
-   **`czgitlab.llnl.gov` is only reachable from inside the LC (Livermore
-   Computing) network** — this works from any LC system (Tuolumne, etc.) but
-   will NOT resolve/connect from outside LC. Don't assume this source is
-   reachable in a non-LC or external/sandboxed environment; fall back to
-   options 1/2 (GitHub/PyPI) there.
-   ALWAYS verify the feature actually compiled in — a green pip install does
-   not guarantee it: `ldd <prefix>/lib64/libdftracer_core.so | grep -i mpi`
-   must show exactly one `libmpi`, not zero.
+**Source builds** (`prebuilt="auto"`, cached in the wheelhouse): only when the user asks for one or for a
+dftracer branch or fork that is not a release. `pip install "git+https://github.com/llnl-asr/dftracer.git@<ref>"`
+drives the same CMake build; `session_install_dftracer(prebuilt="auto", dftracer_ref=..., dftracer_repo=...)`
+does it with the CMake two-pass bootstrap and the `DFTRACER_ENABLE_*`/`MPICC`/`MPICXX`/`HDF5_ROOT` env vars set
+(RULE 1 in `dftracer-install`); never a manual clone + cmake. The canonical repos are under `llnl-asr` on
+GitHub (`dftracer`, `dftracer-utils`, `pydftracer`, dfanalyzer, dfdiagnoser); install `dftracer` before
+`dftracer-utils` (RULE 3 in `dftracer-install`). Verify a source build in what was installed, not in the
+tool's response: `grep -E "PAPI_TRACING_ENABLE|MPI_ENABLE|HIP_TRACING_ENABLE"
+<prefix>/include/dftracer/core/dftracer_config.hpp`, and `ldd <prefix>/lib64/libdftracer_core.so | grep -i mpi`
+must show exactly one `libmpi`. A source build with Variorum links `libvariorum` into `dftracer_service`
+only, never into `libdftracer_core.so` or the traced app
+([[bug-dftracer-variorum-linked-into-app-heap-corruption]]). Reinstalling over a previous dftracer leaves a
+stale cmake/brahma tree: remove the session venv first (`session_remove_path(relpath="venv", recursive=True)`)
+-- see [[bug-dftracer-stale-brahma-after-pip-uninstall]].
 
-   **PAPI and Variorum exist ONLY on czgitlab, and asking GitHub for them fails
-   SILENTLY.** The public GitHub `develop` branch (seen as package version
-   2.0.3) has no `DFTRACER_ENABLE_PAPI_TRACING` / `DFTRACER_ENABLE_VARIORUM`
-   option at all. CMake therefore discards both as
-   `CMake Warning (unused-cli): Manually-specified variables were not used by
-   the project`, the build succeeds, and `session_install_dftracer` still
-   returns `status: ok` with
-   `features=['mpi', 'papi', 'variorum', 'hwloc']` — the tool reports what it
-   *requested*, not what was *compiled*. The installed
-   `dftracer_config.hpp` then contains **no `DFTRACER_PAPI_TRACING_ENABLE` and
-   no `DFTRACER_VARIORUM_ENABLE` line at all** (not even as `/* #undef ... */`,
-   because the `#cmakedefine` is absent from that branch's template), and the
-   run produces zero `papi` and zero power events with no error.
+## Source builds: CC/CXX/LD_LIBRARY_PATH MUST be set before pip install (this always fails otherwise)
 
-   So for any PAPI or Variorum session you MUST pass
-   `dftracer_repo="https://github.com/llnl-asr/dftracer.git"`
-   and then verify **in the installed header**, never in the tool's response:
-
-   ```bash
-   CFG=<prefix>/include/dftracer/core/dftracer_config.hpp
-   grep -E "PAPI_TRACING_ENABLE|VARIORUM_ENABLE|MPI_ENABLE|HIP_TRACING_ENABLE" $CFG
-   # want: #define DFTRACER_PAPI_TRACING_ENABLE 1
-   #       #define DFTRACER_VARIORUM_ENABLE 1
-   ```
-
-   A correct czgitlab build also prints, in the install log,
-   `-- [DFTRACER] found PAPI at ...`, `-- [DFTRACER] detected N PAPI counters
-   (M fit in K hardware slots...)` and `-- [DFTRACER] variorum power domains to
-   build: ...`. Absence of those three lines means the feature is not in.
-
-   Linkage check, which doubles as the regression test for
-   [[bug-dftracer-variorum-linked-into-app-heap-corruption]]:
-   `libvariorum` must appear in `ldd <prefix>/bin/dftracer_service` and must
-   **NOT** appear in `ldd <prefix>/lib64/libdftracer_core.so` (nor in any
-   traced application binary). `libpapi` correctly appears in both.
-
-   Reinstalling over a previous dftracer leaves a stale cmake/brahma tree, so
-   remove the session venv first (`session_remove_path(relpath="venv",
-   recursive=True)`) rather than reinstalling in place — see
-   [[bug-dftracer-stale-brahma-after-pip-uninstall]].
-
-Prefer `session_install_dftracer` (the MCP tool) for sources 1-2 and 4 — check
-what it actually does before assuming; it may already default to
-develop-branch pip install with the CMake two-pass bootstrap baked in, and may
-or may not yet accept an arbitrary git URL (including the czgitlab SSH form) —
-if it doesn't, fall back to a manual pip install with the env vars above,
-still inside the session's own venv, never the shared framework venv. Source 3
-is currently a manual-only path (an MCP tool gap worth closing —
-`session_install_dftracer` could grow a `source="prerelease-module"` option).
-
-## CC/CXX/LD_LIBRARY_PATH MUST be set before pip install (this always fails otherwise)
+Applies to source builds only; the default composed install compiles nothing unless a module has no prebuilt variant, and then dftracer-compose builds it in the session env.
 
 `pip install dftracer` (from PyPI OR from the GitHub develop git URL) compiles
 a C/C++ extension under the hood — it is NOT a pure-Python wheel install. This
@@ -247,9 +169,17 @@ Confirm the diagnosis first — on the stale copy,
 `grep -c readv <venv>/.../site-packages/dftracer/include/brahma/interface/posix.h`
 returns 0 (the old header has no `readv` declaration at all).
 
-## Prebuilt prerelease wheel's packaged CMake config is broken for CMake C++ consumers (confirmed 2026-08-04, YGM)
+## Prebuilt prerelease wheel's packaged CMake config is broken for CMake C++ consumers (confirmed 2026-08-04, YGM; again 2026-11-13 on 2.2.0.post57.dev0)
 
-The prerelease distribution (see Install sources, option 3) ships
+Still true of the composed prerelease (2026-11-13, tuolumne, 2.2.0.post57.dev0 + dftracer-compose):
+`find_package(dftracer CONFIG REQUIRED)` stops with "The imported target dftracer_core references the file
+/project/build/lib.linux-x86_64-cpython-313/dftracer/lib64/libdftracer_core.so.4.3.0 ... does not exist", and
+`dftracer-config.cmake` still sets `brahma_DIR=/opt/dftracer-deps/...` and requires brahma, which is now linked
+statically into the core and not needed by a consumer. Compiling and linking against the install directly works
+(`-I<pkg>/include -L<pkg>/lib64 -ldftracer_core`, as `session_build_annotated` and the generated `.pc` do), and
+`dftracer/dftracer.h` no longer includes `<cpp-logger/logger.h>`, so the cpp-logger note below is out of date.
+
+The prerelease distribution (see Install sources) ships
 `lib64/cmake/dftracer/dftracer-config.cmake` + `dftracer-targets-release.cmake`,
 but for a C++ project that does `find_package(dftracer CONFIG REQUIRED)`
 against it, two real breakages surface:

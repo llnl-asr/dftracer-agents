@@ -91,9 +91,10 @@ Always use the full path so the active environment is unambiguous:
 python my_app.py
 pip install dftracer
 
-# correct
+# correct (session_install_dftracer does this by default; see [[tools-dftracer]] Install sources)
 /path/to/venv/bin/python my_app.py
-/path/to/venv/bin/pip install dftracer
+/path/to/venv/bin/pip install --pre "dftracer[modules]" dftracer-modules
+/path/to/venv/bin/dftracer-compose --enable mpi,hdf5   # with the app's modules loaded
 
 # in MCP tool Python code — always sys.executable or the venv bin path
 import sys

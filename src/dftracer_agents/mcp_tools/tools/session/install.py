@@ -3,12 +3,17 @@ dftracer install helpers — pip installer, cmake builder, and dftracer-utils in
 
 This module handles the external installation concerns of the dftracer pipeline:
 
-1. **dftracer via pip** (:func:`_install_dftracer_pip_direct`) — installs
-   dftracer directly via ``pip install git+<dftracer_repo>@<ref>`` (default
-   remote: LC GitLab over SSH; see ``_DFTRACER_DEFAULT_REPO``)
+0. **dftracer prerelease, composed** (:func:`_install_dftracer_prerelease_wheel` with ``with_modules=True``, then
+   :func:`_compose_dftracer`) — the default (``session_install_dftracer(prebuilt="compose")``): the prerelease wheel
+   and ``dftracer-modules`` (binary only), then ``dftracer-compose`` in the session's ``env.sh`` links the modules
+   the run needs, building from the shipped sources only a variant that is not prebuilt.
+
+1. **dftracer via pip from source** (:func:`_install_dftracer_pip_direct`) — installs
+   dftracer directly via ``pip install git+<dftracer_repo>@<ref>`` (see ``_DFTRACER_DEFAULT_REPO``)
    with all setup.py feature env vars (MPI, HDF5, HIP, hwloc, build type, jobs)
-   derived from the detected application source and system.  This is the
-   standard installation method for all project types.
+   derived from the detected application source and system. For a dftracer
+   branch or fork that is not a release, or when a source build is asked for
+   (``prebuilt="auto"|"refresh"|"off"``).
 
 2. **dftracer via cmake** (:func:`_install_dftracer_cmake`) — clones the
    dftracer repository and builds/installs it directly via cmake configure +
