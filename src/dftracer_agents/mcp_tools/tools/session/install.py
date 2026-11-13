@@ -1057,11 +1057,78 @@ def _prerelease_spec(dftracer_ref: str = "") -> str:
     return f"dftracer=={ref}" if ref[:1].isdigit() else "dftracer"
 
 
-def _prerelease_pip_args(spec: str) -> List[str]:
+def _prerelease_pip_args(*specs: str) -> List[str]:
     """The exact ``pip install`` arguments of the prebuilt-prerelease path (binary wheels only)."""
-    if spec.startswith("git+") or "://" in spec or "/" in spec:
-        raise ValueError(f"prebuilt prerelease installs from the package index only, not {spec!r}")
-    return ["install", *_PRERELEASE_PIP_FLAGS, "--no-cache-dir", "--upgrade", "-v", spec]
+    for spec in specs:
+        if spec.startswith("git+") or "://" in spec or "/" in spec:
+            raise ValueError(f"prebuilt prerelease installs from the package index only, not {spec!r}")
+    return ["install", *_PRERELEASE_PIP_FLAGS, "--no-cache-dir", "--upgrade", "-v", *specs]
+
+
+# dftracer-compose's modules, and the session feature each one serves (variorum is not one: dftracer_service loads it
+# when it starts, so every install reads node power where Variorum 0.8 is).
+_COMPOSE_MODULES = ("mpi", "hdf5", "papi", "hwloc", "hip", "cuda")
+
+
+def _compose_dftracer(python_exe: str, ws: Optional[Path], want: List[str], jobs: int = 4,
+                      env_script: Optional[Path] = None, timeout: int = 3600) -> Dict[str, Any]:
+    """Link the dftracer pre-release's modules this session needs: ``dftracer-compose --enable <want> --disable <the rest>``.
+
+    Runs in a login shell that sources the session's ``env.sh`` (*env_script*), so it detects the MPI, HDF5, PAPI and
+    ROCm the application builds and runs with, exactly as every other step loads them. A module whose variant is not
+    prebuilt in dftracer-modules is built from the sources the wheel ships (compose does that itself). The script is
+    kept as ``scripts/compose_dftracer.sh`` and its output as ``artifacts/06c_compose_dftracer.log``.
+
+    Returns {success, linked: [module], missing: [module], absent: [module], composition: [[module, variant, status]],
+    asked: [module], script, error?}: *missing* were asked for and not linked although the machine has the library
+    (the build failed); *absent* were asked for and the machine has none (nothing to link).
+    """
+    py = str(python_exe)
+    want = [m for m in _COMPOSE_MODULES if m in set(want)]
+    off = [m for m in _COMPOSE_MODULES if m not in want]
+    cmd = [py, "-m", "dftracer.compose", "--jobs", str(max(1, int(jobs)))]
+    if want:
+        cmd += ["--enable", ",".join(want)]
+    if off:
+        cmd += ["--disable", ",".join(off)]
+    lines = ["#!/bin/bash", "set -e"]
+    if env_script is not None and Path(env_script).exists():
+        lines.append(f"source {shlex.quote(str(env_script))}")
+    lines.append(f"exec {' '.join(shlex.quote(c) for c in cmd)}")
+    body = "\n".join(lines) + "\n"
+    script = None
+    if ws is not None:
+        script = Path(ws) / "scripts" / "compose_dftracer.sh"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(body)
+        script.chmod(0o755)
+        r = _run(["bash", "-l", str(script)], timeout=timeout)
+        try:
+            (Path(ws) / "artifacts").mkdir(parents=True, exist_ok=True)
+            (Path(ws) / "artifacts" / "06c_compose_dftracer.log").write_text(
+                body + "\n" + (r.get("stdout") or "") + "\n" + (r.get("stderr") or ""))
+        except OSError:
+            pass
+    else:
+        r = _run(["bash", "-lc", body], timeout=timeout)
+    pkg = _run([py, "-c", "import dftracer, os; print(os.path.dirname(dftracer.__file__))"], timeout=60).get("stdout", "").strip()
+    composition: List[List[str]] = []
+    for libdir in ("lib64", "lib"):
+        f = Path(pkg) / libdir / "dftracer" / "composition.txt" if pkg else None
+        if f is not None and f.is_file():
+            composition = [l.split() for l in f.read_text().splitlines() if len(l.split()) == 3]
+            break
+    status = {m: s for m, _, s in composition}
+    linked = [m for m in want if status.get(m) == "linked"]
+    absent = [m for m in want if status.get(m) == "absent"]
+    missing = [m for m in want if m not in linked and m not in absent]
+    out: Dict[str, Any] = {"success": bool(r.get("success")) and bool(composition), "linked": linked, "missing": missing,
+                           "absent": absent, "asked": want, "composition": composition, "script": str(script or ""),
+                           "stdout": (r.get("stdout") or "")[-4000:], "stderr": (r.get("stderr") or "")[-2000:]}
+    if not out["success"]:
+        out["error"] = ("dftracer-compose failed" if not r.get("success") else "dftracer-compose wrote no composition.txt") + \
+                       f": {(r.get('stderr') or r.get('stdout') or '')[-800:]}"
+    return out
 
 
 def _compile_markers_in(log: str) -> List[str]:
@@ -1075,6 +1142,7 @@ def _install_dftracer_prerelease_wheel(
     run_id: str = "",
     pip_index_url: str = "https://pypi.org/simple",
     dftracer_ref: str = "",
+    with_modules: bool = False,
 ) -> Dict[str, Any]:
     """Install the prebuilt dftracer prerelease wheel (``pip --pre --only-binary=:all:``); never compiles.
 
@@ -1084,6 +1152,9 @@ def _install_dftracer_prerelease_wheel(
     2. install: ``pip install --pre --only-binary=:all: --no-cache-dir --upgrade -v dftracer==<probed version>``
        (dependencies are binary-only too).
     3. verify: the pip log must contain no source-build marker (cmake, setup.py, build deps).
+
+    *with_modules*: also install ``dftracer-modules`` (the optional modules, prebuilt) at the same version, through the
+    ``modules`` extra, for ``_compose_dftracer`` to link the ones the session needs.
 
     Returns {success, steps, prerelease:{version, wheel, tags, pip_cmd, seconds, message, ...}, error?}.
     """
@@ -1112,8 +1183,9 @@ def _install_dftracer_prerelease_wheel(
             pass
     spec = _prerelease_spec(dftracer_ref)
     steps: Dict[str, Any] = {}
-    info: Dict[str, Any] = {"mode": "prerelease", "spec": spec, "index_url": pip_index_url or "(user pip config)",
-                            "excluded_features": list(_PRERELEASE_EXCLUDED_FEATURES)}
+    info: Dict[str, Any] = {"mode": "compose" if with_modules else "prerelease", "spec": spec,
+                            "index_url": pip_index_url or "(user pip config)",
+                            "excluded_features": [] if with_modules else list(_PRERELEASE_EXCLUDED_FEATURES)}
 
     def _log(name: str, cmd: List[str], r: Dict[str, Any]) -> None:
         if ws:
@@ -1148,8 +1220,9 @@ def _install_dftracer_prerelease_wheel(
     info.update({"wheel": whl, "version": version, "tags": "-".join(parts[-3:])})
 
     # Drop any previous (possibly source-built) dftracer so only the wheel's files are present.
-    _run([py, "-m", "pip", "uninstall", "-y", "dftracer"], env=env, timeout=120)
-    pip_args = _prerelease_pip_args(f"dftracer=={version}")
+    _run([py, "-m", "pip", "uninstall", "-y", "dftracer", "dftracer-modules"], env=env, timeout=120)
+    pip_args = (_prerelease_pip_args(f"dftracer[modules]=={version}", f"dftracer-modules=={version}") if with_modules
+                else _prerelease_pip_args(f"dftracer=={version}"))
     install_cmd = [py, "-m", "pip", *pip_args]
     t0 = time.time()
     r = _run(install_cmd, env=env, timeout=900)
@@ -1165,6 +1238,10 @@ def _install_dftracer_prerelease_wheel(
         info["message"] = f"pip install of prebuilt wheel {whl} failed: {(r.get('stderr') or '')[-800:]}"
         return {"success": False, "steps": steps, "prerelease": info, "error": info["message"]}
     info["compiled"] = False
+    if with_modules:
+        info["message"] = (f"installed the PREBUILT dftracer prerelease {version} ({info['tags']}) with dftracer-modules "
+                           f"from the package index in {info['seconds']}s; dftracer-compose links the modules next")
+        return {"success": True, "steps": steps, "prerelease": info}
     info["message"] = (f"installed the PREBUILT dftracer prerelease {version} ({info['tags']}) from the package index "
                        f"in {info['seconds']}s - nothing was compiled. Demo build: MPI and HDF5 tracing (and PAPI/"
                        f"HIP/variorum) are NOT included; POSIX/STDIO and annotation tracing work")

@@ -2821,9 +2821,19 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         mpi: Optional[bool] = None,
         pip_index_url: str = "https://pypi.org/simple",
         app_built_override: bool = False,
-        prebuilt: str = "auto",
+        prebuilt: str = "compose",
     ) -> str:
         """Install dftracer via pip for all project types, then locate dirs in site-packages.
+
+        COMPOSE (``prebuilt="compose"``, the default): install the dftracer PRERELEASE with ``dftracer-modules`` (its
+        optional modules, prebuilt for many MPI, HDF5, PAPI, hwloc, ROCm and CUDA versions) from the package index -
+        binary wheels only, seconds - then run ``dftracer-compose`` inside the session's ``env.sh`` (the application's
+        modules loaded) to link the modules detection asks for (``mpi``, ``hdf5``, ``papi``, ``hip``, ``hwloc``; the
+        arguments override detection) and leave the others out. A module this machine needs whose variant is not
+        prebuilt is built from the sources the wheel ships, by dftracer-compose itself, so the result has the same
+        features a source build would. The result's ``compose`` says what was linked, what the machine does not have
+        (``absent``) and what failed to build (``missing``: the tool fails then); variorum needs no compose (the
+        service loads Variorum 0.8 when it starts). ``scripts/compose_dftracer.sh`` re-runs the step.
 
         PREBUILT WHEELS (``prebuilt``): dftracer builds from source take minutes, so every successful build is packed
         into a relocatable wheel and indexed (SQLite) by its exact combination - system, Python, MPI, HDF5,
@@ -2996,10 +3006,11 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 * ``prerelease`` — only for ``prebuilt="prerelease"``: ``{version, wheel, tags, pip_cmd, seconds,
                   compiled: false, excluded_features, message}``.
         """
-        _prebuilt_mode = (prebuilt or "auto").strip().lower()
-        if _prebuilt_mode not in ("auto", "refresh", "off", "prerelease"):
-            return _err(f"prebuilt must be one of auto, refresh, off, prerelease (got {prebuilt!r})")
+        _prebuilt_mode = (prebuilt or "compose").strip().lower()
+        if _prebuilt_mode not in ("compose", "auto", "refresh", "off", "prerelease"):
+            return _err(f"prebuilt must be one of compose, auto, refresh, off, prerelease (got {prebuilt!r})")
         _prerelease = _prebuilt_mode == "prerelease"
+        _compose = _prebuilt_mode == "compose"
         if _prerelease:
             # The public prerelease wheels are compiled without these; forcing them
             # off here makes every feature block below (detection overrides, power
@@ -3344,7 +3355,47 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                     variorum_build or "ALWAYS"
                 ).upper()
 
-        if _prerelease:
+        _compose_info: Dict[str, Any] = {}
+        if _compose:
+            # The prerelease with its prebuilt modules, then dftracer-compose links what the session asked for.
+            from .install import _install_dftracer_prerelease_wheel, _compose_dftracer, _ensure_session_env_script
+            result = _install_dftracer_prerelease_wheel(
+                python_exe=venv_python_str,
+                ws=ws,
+                run_id=run_id,
+                pip_index_url=pip_index_url,
+                dftracer_ref=dftracer_ref,
+                with_modules=True,
+            )
+            if not result["success"]:
+                return _err(
+                    "dftracer prerelease (with dftracer-modules) install failed: " + result.get("error", ""),
+                    prerelease=result.get("prerelease"),
+                    venv=str(Path(venv_python_str).parent.parent),
+                    steps=_trim_steps(result["steps"]),
+                    full_log="artifacts/06_dftracer_prerelease_probe.log, artifacts/06_session_install_dftracer.log",
+                )
+            _want = [m for m in ("mpi", "hdf5", "papi", "hip", "hwloc", "cuda") if features.get(m)]
+            _compose_info = _compose_dftracer(
+                venv_python_str, ws, _want, jobs=jobs,
+                env_script=_ensure_session_env_script(ws, ws / "source"),
+            )
+            result["steps"]["compose"] = {k: _compose_info.get(k) for k in ("success", "stdout", "stderr")}
+            if not _compose_info["success"] or _compose_info["missing"]:
+                return _err(
+                    "dftracer-compose did not link "
+                    + (", ".join(_compose_info["missing"]) or "the modules")
+                    + ": " + (_compose_info.get("error") or "a module this machine has did not build; see the log"),
+                    compose={k: _compose_info.get(k) for k in ("asked", "linked", "absent", "missing", "composition", "script")},
+                    venv=str(Path(venv_python_str).parent.parent),
+                    full_log="artifacts/06c_compose_dftracer.log",
+                )
+            # What the installed dftracer has: the modules linked, plus variorum (read at run time, no compose).
+            features_enabled = [f for f in features_enabled
+                                if f.split("=")[0] in _compose_info["linked"] or f.split("=")[0] == "variorum"]
+            for _m in ("mpi", "hdf5", "papi", "hip", "hwloc", "cuda"):
+                features[_m] = _m in _compose_info["linked"]
+        elif _prerelease:
             # Only what the public wheel really has: no MPI/HDF5/PAPI/HIP/variorum,
             # and its libdftracer_core links no hwloc either (checked with ldd).
             features_enabled = []
@@ -3411,6 +3462,10 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
         })
         _wh_info = result.get("wheelhouse") or {}
         msg = f"dftracer installed via pip into session venv (features={features_enabled})"
+        if _compose_info:
+            msg += (f"\n\nComposed: linked {', '.join(_compose_info['linked']) or 'no optional module'}"
+                    + (f"; not on this machine: {', '.join(_compose_info['absent'])}" if _compose_info["absent"] else "")
+                    + f" (re-run: {_compose_info.get('script')}).")
         if _pre_info.get("message"):
             msg += f"\n\nPrerelease: {_pre_info['message']}."
         if not dirs.get("include_dir") or not dirs.get("lib_dir"):
@@ -3436,6 +3491,8 @@ def register_session_tools(mcp: FastMCP) -> None:  # noqa: C901  (long but inten
                 {"stored": {k: v for k, v in (_wh_info.get("stored") or {}).items() if k != "message"}}
                 if _wh_info.get("stored") else {}),
             **({"prerelease": _pre_info} if _pre_info else {}),
+            **({"compose": {k: _compose_info.get(k) for k in ("asked", "linked", "absent", "composition", "script")}}
+               if _compose_info else {}),
         )
 
     @mcp.tool()
