@@ -398,12 +398,20 @@ def register_pipeline_tools(mcp: FastMCP) -> None:
                         step="8.5", report=report)
         _save_state(rid, {"session_venv_python": str(venv_python)})
 
-        dft_r = _install_dftracer_pip_direct(
-            dftracer_ref=dftracer_ref,
-            features=info.get("features", {}),
-            python_exe=str(venv_python),
-            jobs=jobs,
-        )
+        # The dftracer prerelease with its prebuilt modules, then dftracer-compose links the ones detection
+        # asks for (with the application's modules loaded), building from source only a variant that is not
+        # prebuilt -- as session_install_dftracer does by default.
+        from .install import _install_dftracer_prerelease_wheel, _compose_dftracer, _ensure_session_env_script
+        _feats = info.get("features", {}) or {}
+        dft_r = _install_dftracer_prerelease_wheel(
+            python_exe=str(venv_python), ws=ws, run_id=rid, dftracer_ref=dftracer_ref, with_modules=True)
+        _composed: Dict[str, Any] = {}
+        if dft_r["success"]:
+            _composed = _compose_dftracer(
+                str(venv_python), ws, [m for m in ("mpi", "hdf5", "papi", "hip", "hwloc", "cuda") if _feats.get(m)],
+                jobs=jobs, env_script=_ensure_session_env_script(ws, ws / "source"))
+            dft_r["steps"]["compose"] = {k: _composed.get(k) for k in ("success", "stdout", "stderr")}
+            dft_r["success"] = bool(_composed.get("success")) and not _composed.get("missing")
         _finish_step(_t85)
         step_timings.append(_t85)
         report["step_8_5_install_dftracer"] = {
@@ -411,11 +419,14 @@ def register_pipeline_tools(mcp: FastMCP) -> None:
             "venv": str(ws / "venv"),
             "steps": dft_r["steps"],
             "success": dft_r["success"],
+            "compose": {k: _composed.get(k) for k in ("asked", "linked", "absent", "missing", "script")},
             **{k: v for k, v in _t85.items() if k != "step_label"},
         }
         _write_artifact_log(ws, 9, "session_install_dftracer", report["step_8_5_install_dftracer"], rid)
         if not dft_r["success"]:
-            return _err("Step 8.5 failed: dftracer pip install", step="8.5", report=report)
+            return _err("Step 8.5 failed: dftracer prerelease install or dftracer-compose "
+                        f"({(_composed or {}).get('error') or (dft_r.get('error') or 'see artifacts/06c_compose_dftracer.log')})",
+                        step="8.5", report=report)
         dft_prefix = str(install_ann)
 
         _save_state(rid, {"dftracer_install_prefix": dft_prefix})
