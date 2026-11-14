@@ -1,0 +1,33 @@
+{
+ "name": "dftracer_diagnose",
+ "description": "Diagnosis stage of the dftracer pipeline: score dfanalyzer checkpoints with DFDiagnoser into a ranked high/critical bottleneck list (diagnose, session_diagnose_bottlenecks -> diagnosis.json) and map symptoms to causes; dftracer_diagnose_check validates the diagnosis. Load after analysis, before optimizing, or on 'traces_split not found', 'dfanalyzer ran but produced no _flat_view_*.parquet', 'DFDiagnoser did not run successfully', 'No module named dfdiagnoser', or a diagnosis whose numbers disagree with event_count.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "diagnose"
+ ],
+ "tools": [
+  "diagnose",
+  "session_diagnose_bottlenecks",
+  "dftracer_diagnose_check"
+ ],
+ "pvc": {
+  "predictor": [
+   "diagnose",
+   "session_diagnose_bottlenecks"
+  ],
+  "validator": [
+   "dftracer_diagnose_check"
+  ]
+ },
+ "topic": "dftracer",
+ "review": [],
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607564.387476,
+   "by": "conversion",
+   "why": "converted from dftracer-agents dfdiagnoser_service (diagnose, session_diagnose_bottlenecks), the dftracer-diagnoser skill (rules, pitfalls, lessons, permissions) and agent"
+  }
+ ]
+}

@@ -1,0 +1,70 @@
+[
+ {
+  "tool": "dftracer_diagnose_check",
+  "args": {},
+  "expect": {
+   "json": {
+    "status": "inconclusive"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_diagnose_check",
+  "args": {
+   "run_id": "no_such_run"
+  },
+  "expect": {
+   "contains": "unknown run or no diagnosis"
+  }
+ },
+ {
+  "tool": "dftracer_diagnose_check",
+  "args": {
+   "diagnosis_json": "{\"severity_counts\": {\"critical\": 1, \"high\": 1, \"medium\": 0, \"low\": 0, \"trivial\": 0}, \"bottlenecks\": [{\"view\": \"time_range_scored\", \"scope\": \"0\", \"metric\": \"read_time\", \"score\": 5, \"severity\": \"critical\", \"value\": 12.5}, {\"view\": \"time_range_scored\", \"scope\": \"1\", \"metric\": \"small_io\", \"score\": 4, \"severity\": \"high\", \"value\": 0.8}], \"phases\": {\"dfanalyzer\": {\"success\": true}, \"dfdiagnoser\": {\"success\": true}}}"
+  },
+  "expect": {
+   "json": {
+    "status": "pass",
+    "bottlenecks": 2
+   }
+  }
+ },
+ {
+  "tool": "dftracer_diagnose_check",
+  "args": {
+   "diagnosis_json": "{\"severity_counts\": {\"critical\": 1, \"high\": 1, \"medium\": 0, \"low\": 0, \"trivial\": 0}, \"bottlenecks\": [{\"view\": \"time_range_scored\", \"scope\": \"1\", \"metric\": \"small_io\", \"score\": 4, \"severity\": \"high\", \"value\": 0.8}, {\"view\": \"time_range_scored\", \"scope\": \"0\", \"metric\": \"read_time\", \"score\": 5, \"severity\": \"low\", \"value\": 12.5}], \"phases\": {\"dfanalyzer\": {\"success\": true}, \"dfdiagnoser\": {\"success\": true}}}"
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "severity_matches_score",
+     "ranked"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "dftracer_diagnose_check",
+  "args": {
+   "diagnosis_json": "{not json"
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "diagnosis_parse"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "session_diagnose_bottlenecks",
+  "args": {
+   "run_id": "no_such_run"
+  },
+  "expect": {
+   "contains": "run session_split_traces first"
+  }
+ }
+]

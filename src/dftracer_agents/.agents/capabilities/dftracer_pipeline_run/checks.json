@@ -1,0 +1,90 @@
+[
+ {
+  "tool": "dftracer_pipeline_run_check",
+  "args": {
+   "result": "{\"status\": \"ok\", \"message\": \"Run ior/20261113_101500 created\", \"run_id\": \"ior/20261113_101500\", \"app_name\": \"ior\", \"workspace\": \"/tmp/ws/ior/20261113_101500\", \"created_at\": \"2026-11-13T10:15:00\"}",
+   "app": "https://github.com/hpc/ior.git"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_run_check",
+  "args": {
+   "result": "{\"status\": \"ok\", \"message\": \"Run ior/20261113_101500 created\", \"run_id\": \"h5bench/20261113_101500\", \"app_name\": \"ior\", \"workspace\": \"/tmp/ws/ior/20261113_101500\", \"created_at\": \"2026-11-13T10:15:00\"}",
+   "app": "ior"
+  },
+  "expect": {
+   "contains": "\"check\": \"run_id_app\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_run_check",
+  "args": {
+   "result": "{\"status\": \"error\", \"message\": \"No runs found for app 'ior'. Call pipeline_create_run to start one.\", \"app_name\": \"ior\"}"
+  },
+  "expect": {
+   "contains": "call pipeline_create_run(app) first"
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_run_check",
+  "args": {
+   "result": "{\"status\": \"ok\", \"message\": \"Run ior/20261113_101500 created\", \"run_id\": \"ior/20261113_101500\", \"app_name\": \"ior\", \"workspace\": \"/tmp/ws/ior/20261113_101500\", \"created_at\": \"2026-11-13T10:15:00\"}",
+   "check_files": true
+  },
+  "expect": {
+   "contains": "\"check\": \"workspace_exists\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_run_check",
+  "args": {
+   "result": "{\"status\": \"ok\", \"app_name\": \"ior\", \"current_run_id\": \"ior/b\", \"runs\": [{\"run_id\": \"ior/a\", \"is_current\": true}, {\"run_id\": \"ior/b\", \"is_current\": true}]}"
+  },
+  "expect": {
+   "json": {
+    "status": "fail"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_run_check",
+  "args": {
+   "result": "not json"
+  },
+  "expect": {
+   "contains": "result_json"
+  }
+ },
+ {
+  "tool": "pipeline_get_run_id",
+  "args": {
+   "app": "conversion_check_app"
+  },
+  "expect": {
+   "contains": "No runs found for app 'conversion_check_app'"
+  }
+ },
+ {
+  "tool": "pipeline_list_runs",
+  "args": {
+   "app": "conversion_check_app"
+  },
+  "expect": {
+   "contains": "\"runs\": []"
+  }
+ },
+ {
+  "tool": "pipeline_create_run",
+  "args": {
+   "app": "https://example.invalid/org/MyApp.git"
+  },
+  "expect": {
+   "contains": "\"app_name\": \"myapp\""
+  }
+ }
+]

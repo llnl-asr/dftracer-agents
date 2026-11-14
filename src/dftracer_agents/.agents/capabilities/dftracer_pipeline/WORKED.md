@@ -1,0 +1,11 @@
+# What worked: dftracer_pipeline
+
+What finally worked, portable (${WS} = the session workspace from session_get_run_paths, ${RUN_ID} its run id).
+
+- [tool:dftracer_pipeline_plan_template] 2026-11-13: dftracer_pipeline_plan_template(run_id=${RUN_ID}) -> fill every '<fill: ...>' -> session_write_file(run_id=${RUN_ID}, subfolder=".", filepath="pipeline_plan.md", content=plan) -> dftracer_pipeline_check(plan_md=plan, run_id=${RUN_ID}) status pass -> return run_id, plan path, 'DISPATCH ORDER: ...' only.
+- [tool:session_run_pipeline] 2026-07-06: first call session_run_pipeline(url, ref, smoke_test_command) runs steps 1-8 and returns awaiting_confirmation=True with annotation_report; after the user confirms, call again with annotation_confirmed=True and the same run_id; timings in ${WS}/step_timings.json. If the resume raises NameError (smoke_cmd), continue with session_install_dftracer -> session_build_annotated -> session_run_with_dftracer -> session_split_traces -> session_analyze_traces.
+- [pipeline/perf/order] 2026-07-10: system-detect -> session-setup -> build-app -> build-dftracer -> annotator (+ file-type annotators, validators) -> build-smoke -> tracer -> analyzer -> diagnoser -> optimizer -> report -> privacy-guard.
+- [pipeline/provenance/order] 2026-10-02: system-detect -> session-setup -> build-app -> tracer (plain run) -> provenance-discover -> USER DECISION (provenance_write_spec) -> build-dftracer -> provenance-annotate -> build-smoke -> tracer (DFTRACER_INC_METADATA=1) -> provenance-graph -> report -> privacy-guard.
+- [pipeline/any/trace_env] 2026-06-20: DFTRACER_ENABLE=1, DFTRACER_INC_METADATA=1, DFTRACER_INIT=FUNCTION, data_dir="all"; HYBRID + LD_PRELOAD=<dftracer>/lib/libdftracer_preload.so only when FUNCTION gives an empty trace.
+- [pipeline/c/init] 2026-06-20: DFTRACER_C_INIT(NULL, NULL, NULL) before FUNCTION_START in main(); DFTRACER_C_FINI() after the work and before MPI_Finalize().
+- [pipeline/any/run_record] 2026-07-06: session_capture_run_record(run_id, run_name, prev_run_name, source_path, run_script, run_log, param_files, notes) after every run; session_final_report(run_id, report_md, conversation_md, readme_md) at the end with pdf.generated, completeness.ok and readme_check.ok all true.

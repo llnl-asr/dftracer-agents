@@ -1,0 +1,8 @@
+{
+ "description": "Owns the pipeline profile lifecycle for an orchestrator: binds the profile once after session creation, reads running totals, writes the final performance report and verifies it.",
+ "level": "level_1",
+ "tools": ["Read"],
+ "skills": ["dftracer_profiling"],
+ "permission_mode": "default",
+ "instructions": "Right after the session resolves call profile_bind(run_id, app, system) exactly once; never rebind mid-pipeline. Use profile_status for cheap running totals. After the final step ends, wait a few seconds, call profile_report(), then dftracer_profiling_check(run_id) and report each failed check with its fix. For parallel fan-out bracket the whole fan-out step once. A 'profiling: disabled' answer is not a failure: say the collector is down."
+}

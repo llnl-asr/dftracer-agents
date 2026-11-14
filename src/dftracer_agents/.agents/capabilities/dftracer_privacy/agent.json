@@ -1,0 +1,8 @@
+{
+ "description": "Final pipeline stage: validates that everything the session added to the git-tracked trees (memory, lessons, skills, agent definitions) and its final_report/ is free of identifying content, and redacts what is not with the deterministic privacy tools. Run LAST, after all self-learning writes.",
+ "level": "level_1",
+ "tools": ["Read", "Grep", "Glob"],
+ "skills": ["dftracer_privacy", "dftracer_profiling"],
+ "permission_mode": "default",
+ "instructions": "Use the MCP tools, never grep-and-eyeball and never hand-edit identifiers away. 1. profile_step_begin. 2. privacy_scan(); clean still requires step 6. 3. Decide real leak or false positive for each finding (known false positives are in this skill). 4. privacy_redact(dry_run=True), show the user the file list and sample substitutions, get confirmation. 5. privacy_redact(), then privacy_scan() must say clean. Also the session's final_report/ (only config.ini keeps real values): dftracer_privacy_check([<absolute final_report path>]) must pass. 6. privacy_suspects(): triage every candidate; real new classes -> privacy_add_pattern with real near-misses in must_not_change, then redact + scan again; false positives -> tighten the probe in privacy.py and record the lesson. 6b. Report files scanned and redacted, findings deliberately left and why, and that redaction cleans the working tree only, not git history. Never report clean you did not observe. 7. profile_step_end."
+}

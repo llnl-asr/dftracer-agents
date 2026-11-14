@@ -1,0 +1,32 @@
+{
+ "name": "dftracer_smoke",
+ "description": "Single-process smoke test of the instrumented app (session_run_smoke_test strips MPI launchers, prepends the app's module preamble, wraps flux-proxy commands); validator dftracer_smoke_check (passed, single process, no /tmp output, no dftracer failure strings, non-empty traces). Load at pipeline stage 3 or on return code 127, an empty/580-byte trace, 'unable to create log file ... errno=2', 'Code 2001', 'DFTracer was enabled but not available', or empty FUNCTION traces from a Fortran binary.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "smoke"
+ ],
+ "tools": [
+  "session_run_smoke_test",
+  "dftracer_smoke_check",
+  "dftracer_smoke_selftest"
+ ],
+ "pvc": {
+  "predictor": [
+   "session_run_smoke_test"
+  ],
+  "validator": [
+   "dftracer_smoke_check",
+   "dftracer_smoke_selftest"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607856.6922483,
+   "by": "conversion",
+   "why": "converted from dftracer-agents session_run_smoke_test (register_session_tools), skill dftracer-smoke-test and the run entries of dftracer-pitfalls, agent dftracer-build-smoke (.yaml and .md)"
+  }
+ ]
+}

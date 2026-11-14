@@ -1,0 +1,8 @@
+[
+ {"tool": "dftracer_privacy_selftest", "args": {}, "expect": {"contains": "\"found_fake_path\": true"}},
+ {"tool": "dftracer_privacy_selftest", "args": {}, "expect": {"contains": "\"status\": \"pass\""}},
+ {"tool": "dftracer_privacy_check", "args": {"paths": ["/nonexistent/dir/for/check"]}, "expect": {"contains": "inconclusive"}},
+ {"tool": "privacy_add_pattern", "args": {"name": "x", "regex": "abc", "replacement": "<x>", "must_redact": [], "must_not_change": ["v"]}, "expect": {"contains": "must each contain at least one sample"}},
+ {"tool": "privacy_add_pattern", "args": {"name": "x", "regex": "(", "replacement": "<x>", "must_redact": ["a"], "must_not_change": ["v"]}, "expect": {"contains": "regex does not compile"}},
+ {"tool": "privacy_add_pattern", "args": {"name": "x", "regex": "zzz", "replacement": "<x>", "must_redact": ["abc"], "must_not_change": ["v"]}, "expect": {"contains": "rule does not redact its own samples"}}
+]

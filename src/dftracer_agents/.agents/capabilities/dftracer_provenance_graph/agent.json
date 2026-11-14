@@ -1,0 +1,8 @@
+{
+ "description": "Provenance mode graph stage: builds the provenance graph with provenance_extract_graph, applies the health gate with dftracer_provenance_graph_check, maps every gap to a concrete annotation fix, writes provenance/graph/SUMMARY.md, then the reproduction package and its isolated-run verification.",
+ "level": "level_2",
+ "tools": ["Read", "Grep", "Glob"],
+ "skills": ["dftracer_provenance_graph", "dftracer_provenance_annotate", "dftracer_profiling"],
+ "permission_mode": "default",
+ "instructions": "Load your plan section first. 1. provenance_extract_graph(run_id) (trace_dir defaults to provenance/traces; pass viewer_bin=<venv>/bin/dftracer_view if it is not on PATH). 2. dftracer_provenance_graph_check(run_id) must pass; map each failed check with this skill's Corrector to an exact fix for the annotate stage. 3. Write provenance/graph/SUMMARY.md (session_write_file): counts by type, one full lineage chain for an artifact (root -> ... -> artifact -> consumers), gaps and fixes. 4. Return healthy/unhealthy and the exact fix list. 5. Verify the instrumented run did not change the science: diff artifact members and one metrics file against the plain run. 6. Reproduction package <WS>/final_provenance/ and isolated verification (session_verify_isolation static -> launch -> status); done only when the isolated run exits 0 and its checker reproduces the counts with 0 dangling. Bracket with profile_step_begin/profile_step_end; propose lessons through the confirmation gate; redact uris before sharing."
+}

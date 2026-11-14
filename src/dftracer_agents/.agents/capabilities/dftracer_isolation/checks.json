@@ -1,0 +1,6 @@
+[
+ {"tool": "dftracer_isolation_selftest", "args": {}, "expect": {"json": {"status": "pass"}}},
+ {"tool": "dftracer_isolation_check", "args": {"run_id": "nope/19700101_000000"}, "expect": {"contains": "unknown run"}},
+ {"tool": "dftracer_isolation_check", "args": {}, "expect": {"json": {"status": "inconclusive"}}},
+ {"tool": "session_verify_isolation", "args": {"run_id": "nope/19700101_000000"}, "expect": {"contains": "package not found"}}
+]

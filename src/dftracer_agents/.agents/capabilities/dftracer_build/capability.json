@@ -1,0 +1,45 @@
+{
+ "name": "dftracer_build",
+ "description": "Detect the build system, configure and build the original app (cmake, autotools, meson, pip), copy and patch the annotated tree to link dftracer, build it, report annotation coverage; validator dftracer_build_check (original: app_built + install tree; annotated: binary names libdftracer_core). Load on 'Unknown build tool', 'fatal error: dftracer/dftracer.h: No such file or directory', 'undefined reference to dftracer_init' / 'initialize_main', 'libdftracer_core.so: cannot open shared object file', '.deps/...Po:1: *** missing separator', an ignored -D flag, or an annotated build failing on a dftracer macro.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "build",
+  "build_annotated"
+ ],
+ "tools": [
+  "session_detect",
+  "session_configure",
+  "session_build_install",
+  "session_copy_annotated",
+  "session_patch_build",
+  "session_build_annotated",
+  "session_annotation_report",
+  "dftracer_build_check",
+  "dftracer_build_selftest"
+ ],
+ "pvc": {
+  "predictor": [
+   "session_detect",
+   "session_configure",
+   "session_build_install",
+   "session_copy_annotated",
+   "session_patch_build",
+   "session_build_annotated",
+   "session_annotation_report"
+  ],
+  "validator": [
+   "dftracer_build_check",
+   "dftracer_build_selftest"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607856.6859343,
+   "by": "conversion",
+   "why": "converted from dftracer-agents session_detect/configure/build_install/copy_annotated/patch_build/build_annotated/annotation_report (register_session_tools), skills dftracer-build-app and dftracer-build-run and the build entries of dftracer-pitfalls, agents dftracer-build-app and dftracer-build-system-{cmake,autotools,meson,pip}"
+  }
+ ]
+}

@@ -1,0 +1,15 @@
+{
+ "description": "Answers which dftracer annotation macro or call to use (init/fini, function, metadata, update) per language, and checks a snippet with dftracer_annotate_api_check.",
+ "level": "level_1",
+ "tools": [
+  "Read",
+  "Grep",
+  "Glob"
+ ],
+ "skills": [
+  "dftracer_annotate_api",
+  "dftracer_annotate"
+ ],
+ "permission_mode": "default",
+ "instructions": "Look the API up with dftracer_get_init_fini / dftracer_get_function_annotations / dftracer_get_metadata_api / dftracer_get_function_update_api, then check any code you wrote with dftracer_annotate_api_check(language, code)."
+}

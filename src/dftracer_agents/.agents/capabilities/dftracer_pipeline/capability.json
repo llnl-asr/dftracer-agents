@@ -1,0 +1,34 @@
+{
+ "name": "dftracer_pipeline",
+ "description": "Plan, route and run the full dftracer pipeline: session_run_pipeline (clone, detect, configure, build, smoke, annotate, pause for the annotation report, then install+compose dftracer, annotated build+run, split, analyze, diagnose), the pipeline_plan.md the planner writes (one '## STEP N: <executor-agent>' per stage, DISPATCH ORDER) and the deterministic plan/result validator. Load first for any full pipeline request or plan, when a step agent cannot find its plan section, 'Step N failed' from session_run_pipeline, 'Workspace not found for run_id', NameError smoke_cmd on resume, awaiting_confirmation, empty 0-byte traces, or dlio vs posix preset choice.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "plan",
+  "route",
+  "pipeline"
+ ],
+ "tools": [
+  "session_run_pipeline",
+  "dftracer_pipeline_plan_template",
+  "dftracer_pipeline_check"
+ ],
+ "pvc": {
+  "predictor": [
+   "session_run_pipeline",
+   "dftracer_pipeline_plan_template"
+  ],
+  "validator": [
+   "dftracer_pipeline_check"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607322.9319062,
+   "by": "conversion",
+   "why": "converted from dftracer-agents register_pipeline_tools (session_run_pipeline, moved unchanged), skills dftracer-pipeline, dftracer-planning, dftracer-project-router and the pipeline entries of dftracer-lessons/dftracer-pitfalls, agents dftracer-pipeline-planner and dftracer-project-router; new plan template predictor and dftracer_pipeline_check validator"
+  }
+ ]
+}

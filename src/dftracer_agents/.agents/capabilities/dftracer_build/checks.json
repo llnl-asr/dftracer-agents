@@ -1,0 +1,7 @@
+[
+ {"tool": "dftracer_build_selftest", "args": {}, "expect": {"json": {"status": "pass"}}},
+ {"tool": "dftracer_build_check", "args": {"run_id": "nope/19700101_000000"}, "expect": {"contains": "unknown run"}},
+ {"tool": "dftracer_build_check", "args": {}, "expect": {"json": {"status": "inconclusive"}}},
+ {"tool": "session_build_install", "args": {"run_id": "nope/19700101_000000"}, "expect": {"contains": "Unknown build tool"}},
+ {"tool": "session_annotation_report", "args": {"run_id": "nope/19700101_000000"}, "expect": {"contains": "Workspace not found"}}
+]

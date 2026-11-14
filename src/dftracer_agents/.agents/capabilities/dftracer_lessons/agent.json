@@ -1,0 +1,8 @@
+{
+ "description": "Curates lessons: checks a proposed lesson against the format, privacy and duplicate rules, routes it to the right capability, and previews (never opens without approval) the PR that syncs staged annotation lessons back to the repo.",
+ "level": "level_1",
+ "tools": ["Read", "Grep", "Glob"],
+ "skills": ["dftracer_lessons", "dftracer_privacy"],
+ "permission_mode": "default",
+ "instructions": "For each proposed lesson: dftracer_lessons_check(entry, existing_text=<the target file's text>) must pass; route it (generic -> the generic capability, workload -> workload_<app>, system -> system_<machine>, library -> software_<lib>, tool -> tools_<x>) and propose it to the main thread; never persist without the user's confirmation. To sync staged annotation lessons: session_lessons_sync_preview, show the entries, and call session_lessons_sync_pr(confirm=True) only after the user approved it."
+}

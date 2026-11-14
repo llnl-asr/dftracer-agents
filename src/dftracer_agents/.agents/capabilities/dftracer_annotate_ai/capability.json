@@ -1,0 +1,42 @@
+{
+ "name": "dftracer_annotate_ai",
+ "description": "dftracer AI/ML-region annotation of Python (dft_ai.pipeline/compute/data/dataloader/checkpoint/device/comm decorators and iter() wrappers): find_source_files, python_annotate_ai_file, python_write_ai_file, dftracer_get_ai_annotation, session_detect_ml_workload, session_search_local_papers, session_ml_append_lesson. Load for per-file AI region annotation, choosing the dft_ai region for a function, detecting PyTorch/TensorFlow/JAX workloads, or recording an ML annotation lesson.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "annotate"
+ ],
+ "tools": [
+  "dftracer_annotate_ai_check",
+  "dftracer_get_ai_annotation",
+  "find_source_files",
+  "python_annotate_ai_file",
+  "python_write_ai_file",
+  "session_detect_ml_workload",
+  "session_ml_append_lesson",
+  "session_search_local_papers"
+ ],
+ "pvc": {
+  "predictor": [
+   "python_annotate_ai_file",
+   "python_write_ai_file",
+   "dftracer_get_ai_annotation",
+   "find_source_files",
+   "session_detect_ml_workload",
+   "session_search_local_papers",
+   "session_ml_append_lesson"
+  ],
+  "validator": [
+   "dftracer_annotate_ai_check"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794608050.918299,
+   "by": "conversion",
+   "why": "converted from dftracer-agents register_ai_tools (session/annotation_ai.py) and the manual STEP 4 recipe of dftracer-ml-annotate"
+  }
+ ]
+}

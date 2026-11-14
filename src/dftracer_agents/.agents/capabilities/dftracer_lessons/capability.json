@@ -1,0 +1,11 @@
+{
+ "name": "dftracer_lessons",
+ "description": "How dftracer-agents learns and the full catalogue of annotation pitfalls: skills first and capture every Q&A; the lessons-learned cache read before and appended after every build/install/annotate fix; workload- vs software- naming; generic vs specific routing; redaction and confirmation gates; validating a proposed lesson (dftracer_lessons_check); syncing staged annotation lessons to the repo by preview and confirmed PR. Load before any build, install, configure or annotation step, to record a fix, or on annotation build errors ('data_fn undeclared', 'missing terminating \" character', 'conflicting types for finalize_region', 'dftracer/dftracer.h: No such file or directory', 'undefined reference to dftracer_init', 'libdftracer_core.so: cannot open shared object file', '.deps ... missing separator'), an empty trace with DFTRACER_INIT=1, or START without END in traces.",
+ "version": 1,
+ "enabled": true,
+ "stages": ["lessons"],
+ "tools": ["session_lessons_sync_preview", "session_lessons_sync_pr", "dftracer_lessons_check", "dftracer_lessons_selftest"],
+ "pvc": {"predictor": ["session_lessons_sync_preview", "session_lessons_sync_pr"], "validator": ["dftracer_lessons_check", "dftracer_lessons_selftest"]},
+ "topic": "dftracer",
+ "history": [{"version": 1, "ts": 1794607030, "by": "conversion", "why": "converted from dftracer-agents lessons_sync.py (session_lessons_sync_preview/pr) and skills dftracer-lessons and dftracer-pitfalls (carried verbatim; every pitfall also a LESSONS.md entry). Neither skill has a LESSONS_LOG.md; the only LESSONS_LOG.md belongs to dftracer-annotation-lessons, converted separately."}]
+}

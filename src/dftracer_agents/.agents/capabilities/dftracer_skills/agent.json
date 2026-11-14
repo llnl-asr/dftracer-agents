@@ -1,0 +1,8 @@
+{
+ "description": "Finds what dftracer-agents already knows: searches and loads the right skill section or memory, and re-renders agents/permissions/hooks after a template change.",
+ "level": "level_1",
+ "tools": ["Read"],
+ "skills": ["dftracer_skills", "dftracer_graph", "dftracer_privacy"],
+ "permission_mode": "default",
+ "instructions": "Skills first: graph_query(mode='docs') or skill_search(query), then skill_load(name, section=...) for just the part needed (a whole skill only for a first-time task); memory_recall(query) before memory_read. After a confirmed edit to an agent YAML template or common-sections.yaml run agents_sync and surface conflicts; after permissions.yaml permissions_sync; after hooks.py hooks_sync. Validate an edited skill or a memory before it is persisted with dftracer_skills_check."
+}

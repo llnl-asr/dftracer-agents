@@ -1,0 +1,8 @@
+# Lessons: dftracer_smoke
+
+- [L-27983bba] trace file empty (0 bytes or 580 bytes with no events) -> DFTRACER_INIT=1 set while the source already calls DFTRACER_C_INIT() (double init) -> pass env_extra='{"DFTRACER_INIT": "FUNCTION"}' when grep finds explicit INIT calls (undated, dftracer-pitfalls)
+- [L-23c29387] ./ior: not found (return code 127) -> relative binary path in the smoke command -> use the full absolute path; find it outside source/ first (undated, dftracer-pitfalls)
+- [L-66a2dba1] gpfs_access_start, beegfs_getStriping annotated but not in the trace -> guarded by #ifdef HAVE_GPFS_FCNTL_H etc. and only invoked on those filesystems -> expected; report "annotated, not traced (filesystem not available)" (undated, dftracer-pitfalls)
+- [L-3d9793fd] an empty smoke trace was blamed on FUNCTION mode -> DFTRACER_DATA_DIR narrower than the I/O paths / LOG_FILE dir missing -> DATA_DIR=all and an existing absolute per-run LOG_FILE dir; FUNCTION + DATA_DIR=all later gave ~284k events with HDF5 categories on Flash-X Sedov 3D at 768 ranks (undated, dftracer-smoke-test)
+- [L-8e92cdd9] FUNCTION-mode traces empty on a Fortran code (Flash-X) although the binary ran -> the Fortran linker (crayftn) did not fire the C constructor wrapper -> pivot to PRELOAD with DATA_DIR=all and LD_PRELOAD=libdftracer_core.so.<version> (undated, dftracer-build-smoke)
+- [L-847e69a7] the smoke launch was not bracketed by the node-counter daemon (AF3 session) -> session_service_start/stop were absent from the agent's tool set -> bracket every smoke launch; if the tools are missing, flag the gap explicitly in the report (2026-07-29)

@@ -1,0 +1,92 @@
+[
+ {
+  "tool": "dftracer_analyze_check",
+  "args": {},
+  "expect": {
+   "json": {
+    "status": "inconclusive"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_analyze_check",
+  "args": {
+   "baseline": "/nonexistent/base_traces"
+  },
+  "expect": {
+   "contains": "\"check\": \"comparison_has_both_runs\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_analyze_check",
+  "args": {
+   "baseline": "/nonexistent/a",
+   "variant": "/nonexistent/a"
+  },
+  "expect": {
+   "contains": "same directory twice"
+  }
+ },
+ {
+  "tool": "dftracer_analyze_check",
+  "args": {
+   "analysis_output": "dfanalyzer exited with code 1\nstdout:\n\nstderr:\nFailed to open RocksDB"
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "analysis_output_ok"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "dftracer_analyze_check",
+  "args": {
+   "analysis_output": "Analyzed 527,206 events across 4 processes",
+   "expected_processes": 16
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "process_count_matches"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "dftracer_analyze_check",
+  "args": {
+   "analysis_output": "Analyzed 2,111,806 events across 16 processes",
+   "expected_processes": 16
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_analyze_check",
+  "args": {
+   "trace_dir": "/nonexistent/compact"
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "trace_dir_exists"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "list_presets",
+  "args": {},
+  "expect": {
+   "contains": "ANALYZER PRESETS"
+  }
+ }
+]

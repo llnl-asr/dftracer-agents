@@ -1,0 +1,30 @@
+{
+ "name": "dftracer_annotate_c",
+ "description": "Annotate C files with dftracer C macros (DFTRACER_C_INIT/FINI, FUNCTION_START/END, UPDATE_STR/INT with comp=) and validate them deterministically. Load for C annotation, 'undeclared identifier' from an UPDATE parameter name, END after return, missing comp=, DFTRACER_C_INIT third argument errors ('incompatible integer to pointer conversion'), dftracer.h not found / linker undefined references to dftracer_core.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "annotate"
+ ],
+ "tools": [
+  "dftracer_annotate_c_check",
+  "session_annotate_c_file"
+ ],
+ "pvc": {
+  "predictor": [
+   "session_annotate_c_file"
+  ],
+  "validator": [
+   "dftracer_annotate_c_check"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794608050.918299,
+   "by": "conversion",
+   "why": "converted from dftracer-agents tool session_annotate_c_file (annotations/annotate_c.py), skill dftracer-annotate-c, C-specific pitfalls (PC) of dftracer-annotation-lessons, agents dftracer-annotate-c and dftracer-validate-c"
+  }
+ ]
+}

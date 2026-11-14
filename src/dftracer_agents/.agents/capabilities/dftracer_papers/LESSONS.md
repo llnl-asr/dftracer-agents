@@ -1,0 +1,5 @@
+# Lessons: dftracer_papers
+
+- [L-ee918dde] Semantic Scholar searches failing with HTTP 429 even with an API key -> the key raises the daily quota, not the 1 req/s per-second limit, and concurrent callers raced it -> every request goes through a per-source rate limiter (semantic_scholar 1.2 s, arxiv 3.0 s, ...); prefer search_papers_combined so other sources fill in (undated, carried from the academic service)
+- [L-730cdef0] paper search failing with SSL certificate verify errors on HPC/corporate networks -> the default trust store lacks the site CA -> set REQUESTS_CA_BUNDLE/SSL_CERT_FILE (or rely on the auto-detected /etc/pki or /etc/ssl bundle), HTTPX_SSL_VERIFY=false only as a last resort, then restart the server (undated, carried from the academic service)
+- [L-1b47484e] each session re-paid network and rate-limit cost to rediscover the same papers -> found papers were not persisted -> save every useful paper/article into the local library (.dftracer_agents/resources) and search it first with rag_search / search_local_resources (undated, carried from the local library service)

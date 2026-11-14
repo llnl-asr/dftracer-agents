@@ -1,0 +1,34 @@
+{
+ "name": "dftracer_annotate_ml",
+ "description": "End-to-end ML/DL Python workload annotation with dftracer AI regions: ml_categorize_files (entry/train/data/ckpt/comm/other buckets), ml_annotate_plan, ml_annotate_project (one call for the whole project), plus the full dftracer-ml-annotate recipe (system detection, install flags, smoke, traces, patch generation, lessons). Load for PyTorch/DeepSpeed/Megatron/DLIO-style workloads, DataLoader workers, checkpoint annotation, or an ML annotation that validate_annotations rejects.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "annotate"
+ ],
+ "tools": [
+  "dftracer_annotate_ml_check",
+  "ml_annotate_plan",
+  "ml_annotate_project",
+  "ml_categorize_files"
+ ],
+ "pvc": {
+  "predictor": [
+   "ml_categorize_files",
+   "ml_annotate_plan",
+   "ml_annotate_project"
+  ],
+  "validator": [
+   "dftracer_annotate_ml_check"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794608050.918299,
+   "by": "conversion",
+   "why": "converted from dftracer-agents register_ml_pipeline_tools (session/ml_pipeline.py) and skill dftracer-ml-annotate"
+  }
+ ]
+}

@@ -1,0 +1,37 @@
+{
+ "name": "dftracer_system",
+ "description": "Detect the system a dftracer session runs on (systems.yaml entry from the hostname without digits: modules in order, env with ${VAR}, MPI launcher, sudo, notes), probe the PAPI counter budget, derived presets and node power, register new systems, and validate a detection result or system config deterministically. Load at stage 0 of every pipeline, on 'is not in systems.yaml', FileNotFoundError systems.yaml, wrong launcher/modules, PAPI scaled estimates or multiplexing, or site env vars missing in a subprocess.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "system",
+  "plan"
+ ],
+ "tools": [
+  "system_detect",
+  "system_list",
+  "system_papi_counters",
+  "system_save",
+  "dftracer_system_check"
+ ],
+ "pvc": {
+  "predictor": [
+   "system_detect",
+   "system_list",
+   "system_papi_counters",
+   "system_save"
+  ],
+  "validator": [
+   "dftracer_system_check"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607475.1217546,
+   "by": "conversion",
+   "why": "converted from dftracer-agents register_system_tools (system_detect, system_list, system_papi_counters, system_save, moved unchanged), skill dftracer-system-detect, agent dftracer-system-detect and the system entries of the lessons; new validator dftracer_system_check"
+  }
+ ]
+}

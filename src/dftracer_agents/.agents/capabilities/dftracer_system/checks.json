@@ -1,0 +1,133 @@
+[
+ {
+  "tool": "dftracer_system_check",
+  "args": {
+   "detect_output": "Detected system: **tuolumne** (from hostname `tuolumne1003`)\n\n## System: tuolumne\n**LLNL El Capitan-class AMD MI300A system**\n- sudo available: False\n- MPI launcher: `flux run`\n\n### Modules (load in order)\n  1. cce/20.0.0\n  2. cray-mpich\n\n### PAPI hardware counters\n  version: 7.2.0  (module: `papi`)\n  **hardware counters: 5** - 30 presets are listed\n    run 1 (est. cost 5/5): `DFTRACER_PAPI_EVENTS=PAPI_TOT_CYC,PAPI_TOT_INS`\n    run 2 (est. cost 4/5): `DFTRACER_PAPI_EVENTS=PAPI_TOT_CYC,PAPI_L2_DCM`\n"
+  },
+  "expect": {
+   "json": {
+    "status": "pass",
+    "scheduler": "flux"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_system_check",
+  "args": {
+   "detect_output": "System `zzz` (from hostname `zzz1`) is not in systems.yaml.\n\nKnown systems: none\n"
+  },
+  "expect": {
+   "contains": "system_save"
+  }
+ },
+ {
+  "tool": "dftracer_system_check",
+  "args": {
+   "detect_output": "Detected system: **tuolumne** (from hostname `tuolumne1003`)\n\n## System: tuolumne\n**LLNL El Capitan-class AMD MI300A system**\n- sudo available: False\n- MPI launcher: `flux run`\n\n### Modules (load in order)\n  1. cce/20.0.0\n  2. cray-mpich\n\n### PAPI hardware counters\n  version: 7.2.0  (module: `papi`)\n  **hardware counters: 5** - 30 presets are listed\n    run 1 (est. cost 5/5): `DFTRACER_PAPI_EVENTS=PAPI_TOT_CYC,PAPI_TOT_INS`\n    run 2 (est. cost 7/5): `DFTRACER_PAPI_EVENTS=PAPI_TOT_CYC,PAPI_L2_DCM`\n"
+  },
+  "expect": {
+   "contains": "\"check\": \"papi_runs_fit\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_system_check",
+  "args": {
+   "detect_output": "Detected system: **tuolumne** (from hostname `tuolumne1003`)\n\n## System: tuolumne\n**LLNL El Capitan-class AMD MI300A system**\n- sudo available: False\n- MPI launcher: `qsub`\n\n### Modules (load in order)\n  1. cce/20.0.0\n  2. cray-mpich\n\n### PAPI hardware counters\n  version: 7.2.0  (module: `papi`)\n  **hardware counters: 5** - 30 presets are listed\n    run 1 (est. cost 5/5): `DFTRACER_PAPI_EVENTS=PAPI_TOT_CYC,PAPI_TOT_INS`\n    run 2 (est. cost 4/5): `DFTRACER_PAPI_EVENTS=PAPI_TOT_CYC,PAPI_L2_DCM`\n"
+  },
+  "expect": {
+   "contains": "\"check\": \"launcher_known\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_system_check",
+  "args": {
+   "config": {
+    "description": "test cluster",
+    "sudo": false,
+    "modules": [
+     "gcc/12.1.1",
+     "openmpi/4.1.2"
+    ],
+    "env": {
+     "LD_LIBRARY_PATH": "/opt/x/lib:${LD_LIBRARY_PATH}"
+    },
+    "mpi_launcher": "srun",
+    "tracing": {
+     "power": "off",
+     "papi_module": ""
+    }
+   },
+   "name": "testcl12"
+  },
+  "expect": {
+   "json": {
+    "status": "pass",
+    "scheduler": "slurm"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_system_check",
+  "args": {
+   "config": {
+    "description": "test cluster",
+    "sudo": false,
+    "modules": [
+     "gcc/12.1.1",
+     "openmpi/4.1.2"
+    ],
+    "env": {
+     "LD_LIBRARY_PATH": "/opt/x/lib:$LD_LIBRARY_PATH"
+    },
+    "mpi_launcher": "srun",
+    "tracing": {
+     "power": "off",
+     "papi_module": ""
+    }
+   }
+  },
+  "expect": {
+   "contains": "\"check\": \"env_var_syntax\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_system_check",
+  "args": {
+   "config": {
+    "description": "x",
+    "mpi_launcher": "srun"
+   }
+  },
+  "expect": {
+   "contains": "\"check\": \"required_keys\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_system_check",
+  "args": {},
+  "expect": {
+   "json": {
+    "status": "inconclusive"
+   }
+  }
+ },
+ {
+  "tool": "system_detect",
+  "args": {
+   "hostname": "zzznosuchsystem1",
+   "probe_features": false
+  },
+  "expect": {
+   "contains": "System `zzznosuchsystem` (from hostname",
+   "raises": "FileNotFoundError"
+  }
+ },
+ {
+  "tool": "system_list",
+  "args": {},
+  "expect": {
+   "contains": "systems",
+   "raises": "FileNotFoundError"
+  }
+ }
+]

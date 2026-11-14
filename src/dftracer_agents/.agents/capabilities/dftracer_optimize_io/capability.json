@@ -1,0 +1,31 @@
+{
+ "name": "dftracer_optimize_io",
+ "description": "I/O component of the dftracer optimizer: the exhaustive 12-dimension I/O checklist (buffering, caching, prefetching, staging, MPI-IO, HDF5, middleware, striping, burst buffer, OS tuning, metadata, overlap) and built-in L1/L2/L3 strategies (opt_io_checklist); dftracer_optimize_io_check validates the citation-backed findings table. Load for small_io, rand_pct, read_time, write_time, metadata_time, fetch_pressure, epoch_straggler or fs_bw bottlenecks, datasets on NFS, Lustre striping, Rabbit/near-node flash, or HDF5/MPI-IO tuning.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "optimize"
+ ],
+ "tools": [
+  "opt_io_checklist",
+  "dftracer_optimize_io_check"
+ ],
+ "pvc": {
+  "predictor": [
+   "opt_io_checklist"
+  ],
+  "validator": [
+   "dftracer_optimize_io_check"
+  ]
+ },
+ "topic": "dftracer",
+ "review": [],
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607564.387476,
+   "by": "conversion",
+   "why": "converted from the dftracer-io-optimization skill and the dftracer-optimizer-io agent"
+  }
+ ]
+}

@@ -1,0 +1,79 @@
+[
+ {
+  "tool": "dftracer_annotate_c_check",
+  "args": {
+   "source": "#include <stdio.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <dftracer/dftracer.h>\n\nstatic int do_read(const char *path) {\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"comp\", \"io\");\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"fname\", path);\n  int fd = open(path, O_RDONLY);\n  if (fd < 0) {\n    DFTRACER_C_FUNCTION_END();\n    return -1;\n  }\n  close(fd);\n  DFTRACER_C_FUNCTION_END();\n  return 0;\n}\n\nint main(int argc, char **argv) {\n  DFTRACER_C_INIT(NULL, NULL, NULL);\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"comp\", \"io\");\n  // dftracer app-parameter metadata\n  DFTRACER_C_METADATA(meta_n, \"n\", \"1\");\n  int r = do_read(argc > 1 ? argv[1] : \"x\");\n  DFTRACER_C_FINI();\n  DFTRACER_C_FUNCTION_END();\n  return r;\n}\n"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_c_check",
+  "args": {
+   "source": "#include <stdio.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <dftracer/dftracer.h>\n\nstatic int do_read(const char *path) {\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"fname\", path);\n  int fd = open(path, O_RDONLY);\n  if (fd < 0) return -1;\n  close(fd);\n  DFTRACER_C_FUNCTION_END();\n  return 0;\n}\n\nint main(int argc, char **argv) {\n  DFTRACER_C_INIT(NULL, NULL, NULL);\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"comp\", \"io\");\n  // dftracer app-parameter metadata\n  DFTRACER_C_METADATA(meta_n, \"n\", \"1\");\n  int r = do_read(argc > 1 ? argv[1] : \"x\");\n  DFTRACER_C_FUNCTION_END();\n  return r;\n}\n"
+  },
+  "expect": {
+   "contains": "comp UPDATE first\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_c_check",
+  "args": {
+   "source": "#include <stdio.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <dftracer/dftracer.h>\n\nstatic int do_read(const char *path) {\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"fname\", path);\n  int fd = open(path, O_RDONLY);\n  if (fd < 0) return -1;\n  close(fd);\n  DFTRACER_C_FUNCTION_END();\n  return 0;\n}\n\nint main(int argc, char **argv) {\n  DFTRACER_C_INIT(NULL, NULL, NULL);\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"comp\", \"io\");\n  // dftracer app-parameter metadata\n  DFTRACER_C_METADATA(meta_n, \"n\", \"1\");\n  int r = do_read(argc > 1 ? argv[1] : \"x\");\n  DFTRACER_C_FUNCTION_END();\n  return r;\n}\n"
+  },
+  "expect": {
+   "contains": "without braces"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_c_check",
+  "args": {
+   "source": "#include <stdio.h>\n#include <dftracer/dftracer.h>\nint save(const char *p) {\n  FILE *f = fopen(p, \"w\");\n  fclose(f);\n  return 0;\n}\nint main(void) {\n  DFTRACER_C_INIT(NULL, NULL, -1);\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"comp\", \"io\");\n  save(\"x\");\n  DFTRACER_C_FINI();\n  DFTRACER_C_FUNCTION_END();\n  return 0;\n}\n"
+  },
+  "expect": {
+   "contains": "save:4 fopen"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_c_check",
+  "args": {
+   "source": "#include <stdio.h>\n#include <dftracer/dftracer.h>\nint save(const char *p) {\n  FILE *f = fopen(p, \"w\");\n  fclose(f);\n  return 0;\n}\nint main(void) {\n  DFTRACER_C_INIT(NULL, NULL, -1);\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"comp\", \"io\");\n  save(\"x\");\n  DFTRACER_C_FINI();\n  DFTRACER_C_FUNCTION_END();\n  return 0;\n}\n"
+  },
+  "expect": {
+   "contains": "third argument is a pointer\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_c_check",
+  "args": {
+   "source": "#include <stdio.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <dftracer/dftracer.h>\n\nstatic int do_read(const char *path) {\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"comp\", \"io\");\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"fname\", path);\n  int fd = open(path, O_RDONLY);\n  if (fd < 0) {\n    DFTRACER_C_FUNCTION_END();\n    return -1;\n  }\n  close(fd)\n  DFTRACER_C_FUNCTION_END();\n  return 0;\n}\n\nint main(int argc, char **argv) {\n  DFTRACER_C_INIT(NULL, NULL, NULL);\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"comp\", \"io\");\n  // dftracer app-parameter metadata\n  DFTRACER_C_METADATA(meta_n, \"n\", \"1\");\n  int r = do_read(argc > 1 ? argv[1] : \"x\");\n  DFTRACER_C_FINI();\n  DFTRACER_C_FUNCTION_END();\n  return r;\n}\n"
+  },
+  "expect": {
+   "json": {
+    "status": "fail"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_c_check",
+  "args": {},
+  "expect": {
+   "json": {
+    "status": "fail"
+   }
+  }
+ },
+ {
+  "tool": "session_annotate_c_file",
+  "args": {
+   "run_id": "nope/0",
+   "filepath": "a.c"
+  },
+  "expect": {
+   "contains": "Workspace not found"
+  }
+ }
+]

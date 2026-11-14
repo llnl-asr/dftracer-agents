@@ -1,0 +1,57 @@
+{
+ "name": "dftracer_analyze",
+ "description": "Analysis stage of the dftracer pipeline: dfanalyzer (analyze, list_presets) and the dftracer-utils trace tools (reader, info, event_count, split, stats, aggregator, comparator, view, index, aggregator_mpi, call_tree_mpi) over a run's compact traces, plus compute/I-O/communication overlap analysis; dftracer_analyze_check validates the inputs and outputs. Load to analyze or compare traces, or on 'Failed to open RocksDB ... .dftindex', an empty Layer Breakdown with returncode 0 (posix/dlio preset on a custom-category trace), analyze reporting fewer processes than ranks ran, no u_<layer>_time_proc overlap columns (async_layers empty), or dfanalyzer hanging after 'Cluster teardown'.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "analyze"
+ ],
+ "tools": [
+  "analyze",
+  "list_presets",
+  "reader",
+  "info",
+  "event_count",
+  "split",
+  "stats",
+  "aggregator",
+  "comparator",
+  "view",
+  "index",
+  "aggregator_mpi",
+  "call_tree_mpi",
+  "dftracer_analyze_check"
+ ],
+ "pvc": {
+  "predictor": [
+   "analyze",
+   "list_presets",
+   "reader",
+   "info",
+   "event_count",
+   "split",
+   "stats",
+   "aggregator",
+   "comparator",
+   "view",
+   "index",
+   "aggregator_mpi",
+   "call_tree_mpi"
+  ],
+  "validator": [
+   "dftracer_analyze_check"
+  ]
+ },
+ "topic": "dftracer",
+ "review": [
+  "imports subprocess: runs commands"
+ ],
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607564.387476,
+   "by": "conversion",
+   "why": "converted from dftracer-agents dfanalyzer_service (analyze, list_presets), dftracer_utils_service analysis/query/core/MPI tools, the dftracer-analyzer agent and the dftracer-overlap-analysis skill"
+  }
+ ]
+}

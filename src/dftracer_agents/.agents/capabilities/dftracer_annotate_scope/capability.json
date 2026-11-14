@@ -1,0 +1,34 @@
+{
+ "name": "dftracer_annotate_scope",
+ "description": "Decide what to annotate before annotating: session_identify_smoke_test_files (only the files a smoke command reaches) and the Python cost gate (python_estimate_function_cost, python_estimate_file_costs), with Rule 0 skip, ALWAYS_ANNOTATE lifecycle/vendor functions and hot-loop exclusion. Load for large codebases, trace noise from over-annotation, 'annotated but fails the cost gate', hot loops dominating a trace, or choosing exclude_functions.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "annotate"
+ ],
+ "tools": [
+  "dftracer_annotate_scope_check",
+  "python_estimate_file_costs",
+  "python_estimate_function_cost",
+  "session_identify_smoke_test_files"
+ ],
+ "pvc": {
+  "predictor": [
+   "session_identify_smoke_test_files",
+   "python_estimate_function_cost",
+   "python_estimate_file_costs"
+  ],
+  "validator": [
+   "dftracer_annotate_scope_check"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794608050.918299,
+   "by": "conversion",
+   "why": "converted from dftracer-agents register_annotation_filter_tools (session/annotation_filter.py) and register_python_cost_tools (session/python_cost.py), with the Rule 0 / ALWAYS_ANNOTATE rules of dftracer-annotation-lessons (copy)"
+  }
+ ]
+}

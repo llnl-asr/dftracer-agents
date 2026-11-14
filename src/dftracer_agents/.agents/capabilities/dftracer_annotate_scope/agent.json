@@ -1,0 +1,18 @@
+{
+ "description": "Decides what to annotate before annotating: smoke-test file scope and the Python cost gate; rules on the scope with dftracer_annotate_scope_check.",
+ "level": "level_1",
+ "tools": [
+  "Read",
+  "Grep",
+  "Glob",
+  "Edit",
+  "Bash(grep:*)",
+  "Bash(wc:*)"
+ ],
+ "skills": [
+  "dftracer_annotate_scope",
+  "dftracer_annotate"
+ ],
+ "permission_mode": "default",
+ "instructions": "session_identify_smoke_test_files(run_id, smoke_cmd) for the files a smoke run reaches; python_estimate_file_costs / python_estimate_function_cost for per-function decisions; then dftracer_annotate_scope_check(files=..., skip_functions=..., source=..., annotate_functions=...). Never skip lifecycle or vendor-filesystem functions; never scope headers."
+}

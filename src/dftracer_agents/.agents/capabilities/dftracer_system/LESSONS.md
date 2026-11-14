@@ -1,0 +1,8 @@
+# Lessons: dftracer_system
+
+- [L-b3be7bcc] dftracer install link failed on tuolumne with 'ld.lld: undefined reference: dlopen ... disallowed by --no-allow-shlib-undefined' -> libdl.so.2 in /usr/lib64 was not on the systems.yaml LD_LIBRARY_PATH, and ld.lld does not use LD_LIBRARY_PATH at link time -> add /usr/lib64 to the tuolumne env, merge get_current_system_env() into install subprocesses, and pass -ldl (LDFLAGS or DFTRACER_CMAKE_ARGS linker flags) (2026-07-06)
+- [L-8627554d] Tracing produced empty traces after an install with a different python than the app pins -> swallowed ImportError in dftracer.dftracer (GLIBCXX/RPATH) -> take python/modules/LD_PRELOAD from the app's own install/job scripts, install env == run env (2026-07-08)
+- [L-c7c9789e] Downstream routing went wrong on a new site -> a launcher/filesystem was assumed instead of detected, or stale assumptions reused -> detect once at stage 0, record before build/trace, reuse (2026-07-08)
+- [L-974d9f07] system_save dropped the tracing: block (papi_module pin, power opt-out) when updating a module list -> it replaced the entry -> it now merges onto the existing entry (2026-10-02)
+- [L-82b96eba] system_detect raised FileNotFoundError on .dftracer_agents/resources/systems.yaml -> the file is not in the repository tree and PyYAML's open is tried before the missing-file branch -> restore/create systems.yaml (systems: {}) before detecting; moved unchanged (2026-11-13)
+- [L-00d5cfde] A PAPI run reported plausible counts with exit 0 but they were scaled estimates -> more events than hardware counters (derived presets cost 2+) -> partition with system_papi_counters, keep PAPI_TOT_CYC in each run, verify args.multiplex (2026-10-02)

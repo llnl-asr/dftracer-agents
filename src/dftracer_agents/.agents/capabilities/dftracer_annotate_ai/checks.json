@@ -1,0 +1,59 @@
+[
+ {
+  "tool": "dftracer_annotate_ai_check",
+  "args": {
+   "source": "from dftracer.python import dftracer, dft_fn as DFTracerFn, ai as dft_ai\n\n\n@dft_ai.pipeline.train\ndef train(model, loader):\n    for batch in loader:\n        model.step(batch)\n\n\n@dft_ai.checkpoint.capture\ndef save_checkpoint(model, path):\n    with open(path, \"wb\") as f:\n        f.write(model.state())\n"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_ai_check",
+  "args": {
+   "source": "from dftracer.python import dftracer\n\n\n@dft_ai.pipeline.trian\n@dft_ai.compute\ndef train(model, loader):\n    for batch in loader:\n        model.step(batch)\n"
+  },
+  "expect": {
+   "contains": "train:@dft_ai.pipeline.trian"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_ai_check",
+  "args": {
+   "source": "from dftracer.python import dftracer\n\n\n@dft_ai.pipeline.trian\n@dft_ai.compute\ndef train(model, loader):\n    for batch in loader:\n        model.step(batch)\n"
+  },
+  "expect": {
+   "contains": "dft_ai imported\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_ai_check",
+  "args": {
+   "source": "from dftracer.python import dftracer\n\n\n@dft_ai.pipeline.trian\n@dft_ai.compute\ndef train(model, loader):\n    for batch in loader:\n        model.step(batch)\n"
+  },
+  "expect": {
+   "contains": "one dft_ai decorator per function\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_get_ai_annotation",
+  "args": {
+   "function_name": "train"
+  },
+  "expect": {
+   "contains": "dft_ai.pipeline.train"
+  }
+ },
+ {
+  "tool": "python_annotate_ai_file",
+  "args": {
+   "run_id": "nope/0",
+   "filepath": "a.py"
+  },
+  "expect": {
+   "contains": "File not found"
+  }
+ }
+]

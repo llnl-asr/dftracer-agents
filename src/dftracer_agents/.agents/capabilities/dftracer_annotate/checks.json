@@ -1,0 +1,79 @@
+[
+ {
+  "tool": "dftracer_annotate_check",
+  "args": {
+   "source": "#include <stdio.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <dftracer/dftracer.h>\n\nstatic int do_read(const char *path) {\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"comp\", \"io\");\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"fname\", path);\n  int fd = open(path, O_RDONLY);\n  if (fd < 0) {\n    DFTRACER_C_FUNCTION_END();\n    return -1;\n  }\n  close(fd);\n  DFTRACER_C_FUNCTION_END();\n  return 0;\n}\n\nint main(int argc, char **argv) {\n  DFTRACER_C_INIT(NULL, NULL, NULL);\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"comp\", \"io\");\n  // dftracer app-parameter metadata\n  DFTRACER_C_METADATA(meta_n, \"n\", \"1\");\n  int r = do_read(argc > 1 ? argv[1] : \"x\");\n  DFTRACER_C_FINI();\n  DFTRACER_C_FUNCTION_END();\n  return r;\n}\n",
+   "language": "c"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_check",
+  "args": {
+   "source": "#include <stdio.h>\n#include <fcntl.h>\n#include <unistd.h>\n#include <dftracer/dftracer.h>\n\nstatic int do_read(const char *path) {\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"fname\", path);\n  int fd = open(path, O_RDONLY);\n  if (fd < 0) return -1;\n  close(fd);\n  DFTRACER_C_FUNCTION_END();\n  return 0;\n}\n\nint main(int argc, char **argv) {\n  DFTRACER_C_INIT(NULL, NULL, NULL);\n  DFTRACER_C_FUNCTION_START();\n  DFTRACER_C_FUNCTION_UPDATE_STR(\"comp\", \"io\");\n  // dftracer app-parameter metadata\n  DFTRACER_C_METADATA(meta_n, \"n\", \"1\");\n  int r = do_read(argc > 1 ? argv[1] : \"x\");\n  DFTRACER_C_FUNCTION_END();\n  return r;\n}\n",
+   "language": "c"
+  },
+  "expect": {
+   "json": {
+    "status": "fail"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_check",
+  "args": {
+   "source": "from dftracer.python import dftracer, dft_fn as DFTracerFn\n\n_dft = DFTracerFn(\"app\")\n\n\n@_dft.log\ndef load_data(path):\n    with open(path) as f:\n        data = f.read()\n    total = 0\n    for row in data.splitlines():\n        total += len(row)\n    return total\n\n\ndef main():\n    _dft_log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=None)\n    # dftracer app-parameter metadata\n    _dft_log.log_metadata_event(\"path\", \"x\")\n    n = load_data(\"x\")\n    _dft_log.finalize()\n    return n\n\n\nif __name__ == \"__main__\":\n    main()\n",
+   "language": "python"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_check",
+  "args": {
+   "source": "from dftracer.python import dftracer, dft_fn as DFTracerFn\n\n_dft = DFTracerFn(\"app\")\n\n\n@_dft.log\ndef load_data(path):\n    with open(path) as f:\n        data = f.read()\n    total = 0\n    for row in data.splitlines():\n        total += len(row)\n    return total\n\n\ndef main():\n    _dft_log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=None)\n    n = load_data(\"x\")\n    _dft_log.finalize()\n    return n\n\n\nif __name__ == \"__main__\":\n    main()\n",
+   "language": "python"
+  },
+  "expect": {
+   "contains": "\"check\": \"project: app-parameter metadata\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_check",
+  "args": {
+   "path": "/nonexistent/annotated"
+  },
+  "expect": {
+   "contains": "path not found"
+  }
+ },
+ {
+  "tool": "validate_annotations",
+  "args": {
+   "run_id": "nope/0",
+   "language": "c"
+  },
+  "expect": {
+   "contains": "annotated tree not found"
+  }
+ },
+ {
+  "tool": "annotate_add_app_metadata",
+  "args": {
+   "run_id": "nope/0",
+   "filepath": "a.c",
+   "language": "c",
+   "params_json": "{\"n\": 1}"
+  },
+  "expect": {
+   "contains": "File not found"
+  }
+ }
+]

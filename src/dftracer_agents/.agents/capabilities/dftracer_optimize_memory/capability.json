@@ -1,0 +1,31 @@
+{
+ "name": "dftracer_optimize_memory",
+ "description": "Memory component of the dftracer optimizer: the 10-dimension memory checklist (buffer pooling, in-place ops, cache blocking, allocator, pinned memory, huge pages, middleware buffers, NUMA binding, VM tuning, roofline check) and built-in strategies for mem_bw (opt_memory_checklist); dftracer_optimize_memory_check validates the findings table. Load for mem_bw/cache_miss/numa bottlenecks, unified-memory APUs (MI300A) where classic memory levers are inert, or a proposed shared/mmap weight load.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "optimize"
+ ],
+ "tools": [
+  "opt_memory_checklist",
+  "dftracer_optimize_memory_check"
+ ],
+ "pvc": {
+  "predictor": [
+   "opt_memory_checklist"
+  ],
+  "validator": [
+   "dftracer_optimize_memory_check"
+  ]
+ },
+ "topic": "dftracer",
+ "review": [],
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607564.387476,
+   "by": "conversion",
+   "why": "converted from the dftracer-memory-optimization skill and the dftracer-optimizer-memory agent"
+  }
+ ]
+}

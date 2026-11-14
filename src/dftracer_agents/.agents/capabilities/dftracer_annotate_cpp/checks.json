@@ -1,0 +1,52 @@
+[
+ {
+  "tool": "dftracer_annotate_cpp_check",
+  "args": {
+   "source": "#include <cstdio>\n#include <dftracer/dftracer.h>\nnamespace app {\nint write_file(const char *path) {\n  DFTRACER_CPP_FUNCTION();\n  DFTRACER_CPP_FUNCTION_UPDATE(\"comp\", \"io\");\n  DFTRACER_CPP_FUNCTION_UPDATE(\"path\", path);\n  FILE *f = fopen(path, \"w\");\n  if (!f) return -1;\n  fclose(f);\n  return 0;\n}\n}\nint main(int argc, char **argv) {\n  DFTRACER_CPP_INIT(nullptr, nullptr, nullptr);\n  DFTRACER_CPP_REGION_START(main);\n  int r = app::write_file(argc > 1 ? argv[1] : \"x\");\n  DFTRACER_CPP_REGION_END(main);\n  DFTRACER_CPP_FINI();\n  return r;\n}\n"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_cpp_check",
+  "args": {
+   "source": "#include <cstdio>\n#include <dftracer/dftracer.h>\nnamespace app {\nint write_file(const char *path) {\n  DFTRACER_CPP_FUNCTION();\n  DFTRACER_CPP_FUNCTION_UPDATE(\"path\", path);\n  FILE *f = fopen(path, \"w\");\n  if (!f) return -1;\n  fclose(f);\n  return 0;\n}\n}\nint main(int argc, char **argv) {\n  DFTRACER_CPP_INIT(nullptr, nullptr, nullptr);\n  DFTRACER_CPP_FUNCTION();\n  int r = app::write_file(argc > 1 ? argv[1] : \"x\");\n  DFTRACER_CPP_FINI();\n  return r;\n}\n"
+  },
+  "expect": {
+   "contains": "main uses REGION, not FUNCTION\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_cpp_check",
+  "args": {
+   "source": "#include <cstdio>\n#include <dftracer/dftracer.h>\nnamespace app {\nint write_file(const char *path) {\n  DFTRACER_CPP_FUNCTION();\n  DFTRACER_CPP_FUNCTION_UPDATE(\"path\", path);\n  FILE *f = fopen(path, \"w\");\n  if (!f) return -1;\n  fclose(f);\n  return 0;\n}\n}\nint main(int argc, char **argv) {\n  DFTRACER_CPP_INIT(nullptr, nullptr, nullptr);\n  DFTRACER_CPP_FUNCTION();\n  int r = app::write_file(argc > 1 ? argv[1] : \"x\");\n  DFTRACER_CPP_FINI();\n  return r;\n}\n"
+  },
+  "expect": {
+   "contains": "comp UPDATE first\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_cpp_check",
+  "args": {
+   "source": "#include <cstdio>\n#include <dftracer/dftracer.h>\nnamespace app {\nint write_file(const char *path) {\n  DFTRACER_CPP_FUNCTION();\n  DFTRACER_CPP_FUNCTION_UPDATE(\"comp\", \"io\");\n  DFTRACER_CPP_FUNCTION_UPDATE(\"path\", path);\n  FILE *f = fopen(path, \"w\");\n  if (!f) return -1;\n  fclose(f)\n  return 0;\n}\n}\nint main(int argc, char **argv) {\n  DFTRACER_CPP_INIT(nullptr, nullptr, nullptr);\n  DFTRACER_CPP_REGION_START(main);\n  int r = app::write_file(argc > 1 ? argv[1] : \"x\");\n  DFTRACER_CPP_REGION_END(main);\n  DFTRACER_CPP_FINI();\n  return r;\n}\n"
+  },
+  "expect": {
+   "json": {
+    "status": "fail"
+   }
+  }
+ },
+ {
+  "tool": "session_annotate_cpp_file",
+  "args": {
+   "run_id": "nope/0",
+   "filepath": "a.cpp"
+  },
+  "expect": {
+   "contains": "Workspace not found"
+  }
+ }
+]

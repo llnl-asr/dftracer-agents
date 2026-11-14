@@ -1,0 +1,80 @@
+[
+ {
+  "tool": "dftracer_opt_kb_check",
+  "args": {},
+  "expect": {
+   "json": {
+    "status": "inconclusive"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_opt_kb_check",
+  "args": {
+   "entry_json": "{\"scope\": \"software\", \"change\": \"cb_nodes=16 + CRAY_CB_NODES_MULTIPLIER=2\", \"metric\": \"write time (s)\", \"before\": 100.0, \"after\": 80.0, \"citation\": \"https://www.mpich.org/static/docs/latest/\", \"software\": \"mpi-io\", \"verdict\": \"win\"}"
+  },
+  "expect": {
+   "json": {
+    "status": "pass",
+    "entries": 1
+   }
+  }
+ },
+ {
+  "tool": "dftracer_opt_kb_check",
+  "args": {
+   "entry_json": "{\"scope\": \"system\", \"change\": \"\", \"metric\": \"aggregate fs bandwidth\", \"before\": \"n/a\", \"after\": 5, \"citation\": \"\", \"metric_scope\": \"system\"}"
+  },
+  "expect": {
+   "contains": "non-degradation guard"
+  }
+ },
+ {
+  "tool": "dftracer_opt_kb_check",
+  "args": {
+   "entry_json": "{\"scope\": \"software\", \"change\": \"cb_nodes=16 + CRAY_CB_NODES_MULTIPLIER=2\", \"metric\": \"write time (s)\", \"before\": 100.0, \"after\": 80.0, \"citation\": \"https://www.mpich.org/static/docs/latest/\", \"software\": \"mpi-io\", \"verdict\": \"regression\"}"
+  },
+  "expect": {
+   "contains": "disagrees with the numbers"
+  }
+ },
+ {
+  "tool": "dftracer_opt_kb_check",
+  "args": {
+   "kb_file": "/nonexistent/optimization_kb.jsonl"
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "kb_file_exists"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "opt_kb_lookup",
+  "args": {
+   "system": "tuolumne"
+  },
+  "expect": {
+   "contains": "0 prior result(s)"
+  }
+ },
+ {
+  "tool": "opt_proposal_table",
+  "args": {
+   "proposals_json": "[{\"level\": \"L2\", \"bottleneck\": \"small_io\", \"change\": \"x\", \"citation\": \"\"}]"
+  },
+  "expect": {
+   "contains": "0 accepted, 1 rejected"
+  }
+ },
+ {
+  "tool": "session_memory_stats",
+  "args": {},
+  "expect": {
+   "contains": "Memory store is empty"
+  }
+ }
+]

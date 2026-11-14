@@ -1,0 +1,11 @@
+{
+ "name": "dftracer_docs",
+ "description": "Search and read the dftracer documentation on ReadTheDocs (dftracer core C/C++/Python API and configuration, dftracer-utils CLI, pydftracer, dfanalyzer) with live HTTP: docs_list_sources, docs_search (RTD search API, key-page fallback, best sections with code examples), docs_fetch_page, docs_search_key_pages; validate a source/URL/page offline (dftracer_docs_check). Load when an agent needs an official dftracer API, macro, environment variable or CLI option it has no skill for, or on 'Unknown source', 'Could not fetch page', or an empty results list.",
+ "version": 1,
+ "enabled": true,
+ "stages": ["docs"],
+ "tools": ["docs_list_sources", "docs_search", "docs_fetch_page", "docs_search_key_pages", "dftracer_docs_check", "dftracer_docs_selftest"],
+ "pvc": {"predictor": ["docs_search", "docs_fetch_page", "docs_search_key_pages", "docs_list_sources"], "validator": ["dftracer_docs_check", "dftracer_docs_selftest"]},
+ "topic": "dftracer",
+ "history": [{"version": 1, "ts": 1794607030, "by": "conversion", "why": "converted from dftracer-agents dftracer/docs_service.py (docs_* tools); no dedicated skill or agent existed"}]
+}

@@ -1,0 +1,44 @@
+{
+ "name": "dftracer_annotate_python",
+ "description": "Annotate Python with dftracer decorators and regions (DFTracerFn @_dft.log / @_dft.log_init, initialize_log/finalize, manual log_event) using the AST tools python_extract_functions, python_annotate_file/project, python_annotate_manual_event, python_lint_annotations, python_dedup_annotations, python_write_annotated_file, session_annotate_python_file, and validate deterministically. Load for Python annotation, decorators on @property, DataLoader workers with 0-byte traces, console-script entry points, simulated-clock events, duplicate decorators, 'DFTracer was enabled but not available'.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "annotate"
+ ],
+ "tools": [
+  "dftracer_annotate_python_check",
+  "python_annotate_file",
+  "python_annotate_manual_event",
+  "python_annotate_project",
+  "python_dedup_annotations",
+  "python_extract_functions",
+  "python_lint_annotations",
+  "python_write_annotated_file",
+  "session_annotate_python_file"
+ ],
+ "pvc": {
+  "predictor": [
+   "python_extract_functions",
+   "python_annotate_file",
+   "python_annotate_project",
+   "python_annotate_manual_event",
+   "python_dedup_annotations",
+   "python_write_annotated_file",
+   "session_annotate_python_file"
+  ],
+  "validator": [
+   "dftracer_annotate_python_check",
+   "python_lint_annotations"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794608050.918299,
+   "by": "conversion",
+   "why": "converted from dftracer-agents register_python_tools (session/annotation_python.py) and session_annotate_python_file (annotations/annotate_python.py), skill dftracer-annotate-python, Python-specific pitfalls (PP) of dftracer-annotation-lessons, agents dftracer-annotate-python and dftracer-validate-python"
+  }
+ ]
+}

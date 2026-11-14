@@ -1,0 +1,11 @@
+{
+ "name": "dftracer_admin",
+ "description": "Self-management of the dftracer MCP server a session talks to: server_status (stdio/http/zero-downtime worker, uptime, whether package code or skills/agents changed since start, supervisor generation/workers/last error/counters), server_reload (rolling restart under `dftracer-mcp-server start --ha`), server_refresh_content (re-link skills and agents), and a validator of a status report (dftracer_admin_check). Load after editing dftracer-agents tool code or skills and before relying on the change, or on 'not running under the zero-downtime supervisor', code_changed_since_start true, a supervisor last_error, or tools behaving like old code.",
+ "version": 1,
+ "enabled": true,
+ "stages": ["admin"],
+ "tools": ["server_status", "server_reload", "server_refresh_content", "dftracer_admin_check", "dftracer_admin_selftest"],
+ "pvc": {"predictor": ["server_reload", "server_refresh_content", "server_status"], "validator": ["dftracer_admin_check", "dftracer_admin_selftest"]},
+ "topic": "dftracer",
+ "history": [{"version": 1, "ts": 1794607030, "by": "conversion", "why": "converted from dftracer-agents dftracer/admin_service.py (server_status/reload/refresh_content); no dedicated skill or agent existed"}]
+}

@@ -1,0 +1,73 @@
+[
+ {
+  "tool": "dftracer_papers_check",
+  "args": {
+   "citations_json": "[\"https://arxiv.org/abs/2401.12345\", {\"title\": \"WisIO: Automated I/O Bottleneck Detection\", \"venue\": \"ICS\", \"year\": \"2025\"}, \"wisio\", \"10.1145/3721145.3730395\"]"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_papers_check",
+  "args": {
+   "citations_json": "[\"a guess\", \"a guess\"]"
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "citations_usable",
+     "no_duplicates"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "dftracer_papers_check",
+  "args": {
+   "citations_json": "{\"papers\": [{\"title\": \"X\", \"url\": \"https://arxiv.org/abs/notanid\"}]}"
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "arxiv_ids_wellformed"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "dftracer_papers_check",
+  "args": {
+   "citations_json": "[]"
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "citations_present"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "rank_papers_by_relevance",
+  "args": {
+   "papers_json": "[{\"title\": \"Small I/O aggregation for HPC\", \"abstract\": \"small I/O coalescing buffering on Lustre\"}, {\"title\": \"Protein folding\", \"abstract\": \"biology\"}]",
+   "bottleneck_description": "small I/O on Lustre"
+  },
+  "expect": {
+   "contains": "Small I/O aggregation"
+  }
+ },
+ {
+  "tool": "list_local_resources",
+  "args": {},
+  "expect": {
+   "contains": "\"status\": \"ok\""
+  }
+ }
+]

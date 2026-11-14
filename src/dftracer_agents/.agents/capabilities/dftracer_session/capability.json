@@ -1,0 +1,58 @@
+{
+ "name": "dftracer_session",
+ "description": "Create and manage a dftracer session workspace: clone or import an app (session_create, session_import_local_tree), build the canonical baseline/annotated/opt<n> layout, read/write/edit/remove files inside it, run paths, runs, structure validation and reorganization, status and system info; validator dftracer_session_check. Load at pipeline stage 1, or on 'Session <id> not found', 'Workspace not found', session_create FileNotFoundError on a dangling symlink (TurbGen.h), a clone on the wrong commit, 'submodule is not present', session_validate_structure clean=false, or a session tool missing/stale in the MCP server.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "session"
+ ],
+ "tools": [
+  "session_create",
+  "session_import_local_tree",
+  "session_init_structure",
+  "session_list_files",
+  "session_read_file",
+  "session_write_file",
+  "session_edit_file",
+  "session_remove_path",
+  "session_get_run_paths",
+  "session_list_runs",
+  "session_validate_structure",
+  "session_reorganize_structure",
+  "session_status",
+  "session_collect_system_info",
+  "dftracer_session_check",
+  "dftracer_session_selftest"
+ ],
+ "pvc": {
+  "predictor": [
+   "session_create",
+   "session_import_local_tree",
+   "session_init_structure",
+   "session_list_files",
+   "session_read_file",
+   "session_write_file",
+   "session_edit_file",
+   "session_remove_path",
+   "session_get_run_paths",
+   "session_list_runs",
+   "session_validate_structure",
+   "session_reorganize_structure",
+   "session_status",
+   "session_collect_system_info"
+  ],
+  "validator": [
+   "dftracer_session_check",
+   "dftracer_session_selftest"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607856.6702597,
+   "by": "conversion",
+   "why": "converted from dftracer-agents the session-lifecycle tools of mcp_tools/tools/session/session_tools.py (register_session_tools), skill dftracer-mcp-server-ops and the session layout rules of dftracer-cheatsheet/dftracer-lessons/dftracer-pitfalls, agent dftracer-session-setup"
+  }
+ ]
+}
