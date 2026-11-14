@@ -248,8 +248,18 @@ def _anonymize_path_refs(path: Path, ws: Path) -> None:
     except OSError:
         return
     ws_str = str(ws)
-    if ws_str in text:
-        path.write_text(text.replace(ws_str, "$WS"))
+    new = text.replace(ws_str, "$WS") if ws_str in text else text
+    # Patches also carry user PFS paths baked in by an optimize-stage redirect
+    # (e.g. /p/lustre5/<user>/<cid>/baseline/data): replace the user name,
+    # keeping the path shape so hunk offsets survive.
+    try:
+        import getpass
+        from ....privacy import anonymize
+        new = anonymize(new, [getpass.getuser()], preserve_structure=True)
+    except Exception:
+        pass
+    if new != text:
+        path.write_text(new)
 
 
 def _collect_scripts(ws: Path, dest: Path, runs: List[str]) -> List[str]:
@@ -516,7 +526,6 @@ def _write_install(dest: Path, state: Dict[str, Any]) -> None:
     are inlined instead of the placeholder.
     """
     app_name = state.get("app_name", "the application")
-    dft = state.get("dftracer_install_prefix", "<dftracer_prefix>")
     build_cmds = state.get("build_commands", "")
     build_block = (
         build_cmds if build_cmds else
@@ -533,9 +542,9 @@ set -e
 HERE="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
 source "$HERE/lib_load_config.sh"
 
-# dftracer install prefix used by this session (for reference only --
-# re-install from source into $WS, never reuse a path from another machine):
-#   {dft}
+# dftracer was installed into this session's own venv (see ../config.ini's
+# WORKSPACE_ROOT); re-install from source into $WS, never reuse a venv path
+# from another machine or session.
 
 {build_block}
 """
@@ -823,6 +832,7 @@ def _session_final_report_impl(
     base_src = ws / "baseline" / "source"
     ann_src = ws / "annotated" / "source"
     variants = _variant_source_files(ws)
+    existing_annotation_patch = ws / "instrument" / "patches" / "annotated.patch"
     if base_src.is_dir() and ann_src.is_dir():
         patches["annotated.patch"] = _diff_trees(
             base_src, ann_src, patch_dir / "annotated.patch")
@@ -831,6 +841,17 @@ def _session_final_report_impl(
         n = _build_config_diff(base_src, ann_src, patch_dir / "build_config.diff")
         if n:
             patches["build_config.diff"] = n
+    elif existing_annotation_patch.is_file() and existing_annotation_patch.stat().st_size:
+        # ropt-style sessions snapshot source/ (pre-annotation) and
+        # instrument/source/ (post-annotation) instead of baseline/source +
+        # annotated/source, and already computed the annotation-only patch
+        # once (ropt_instrument_build_run / ropt_stage_patch) -- that patch
+        # must stay annotation-only even after a later stage (e.g. opt<n>)
+        # redirects the live annotated/ tree in place, so re-diffing here
+        # would be wrong; reuse the one already on disk instead.
+        dest = patch_dir / "annotated.patch"
+        shutil.copy2(existing_annotation_patch, dest)
+        patches["annotated.patch"] = dest.stat().st_size
     elif "base" in variants:
         # Single-file app: no per-run source/ tree, but annotated/src holds the
         # base script directly (already the annotated version at this point in
