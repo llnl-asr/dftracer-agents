@@ -1,0 +1,69 @@
+[
+ {
+  "tool": "dftracer_annotate_python_check",
+  "args": {
+   "source": "from dftracer.python import dftracer, dft_fn as DFTracerFn\n\n_dft = DFTracerFn(\"app\")\n\n\n@_dft.log\ndef load_data(path):\n    with open(path) as f:\n        data = f.read()\n    total = 0\n    for row in data.splitlines():\n        total += len(row)\n    return total\n\n\ndef main():\n    _dft_log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=None)\n    # dftracer app-parameter metadata\n    _dft_log.log_metadata_event(\"path\", \"x\")\n    n = load_data(\"x\")\n    _dft_log.finalize()\n    return n\n\n\nif __name__ == \"__main__\":\n    main()\n"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_python_check",
+  "args": {
+   "source": "from dftracer.python import dftracer, dft_fn as DFTracerFn\n\n_dft = DFTracerFn(\"app\")\n\n\ndef load_data(path):\n    with open(path) as f:\n        data = f.read()\n    total = 0\n    for row in data.splitlines():\n        total += len(row)\n    return total\n\n\ndef main():\n    _dft_log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=None)\n    # dftracer app-parameter metadata\n    _dft_log.log_metadata_event(\"path\", \"x\")\n    n = load_data(\"x\")\n    return n\n\n\nif __name__ == \"__main__\":\n    main()\n\n\nclass Cfg:\n    @_dft.log\n    @property\n    def name(self):\n        return 'x'\n"
+  },
+  "expect": {
+   "contains": "critical I/O flow not annotated"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_python_check",
+  "args": {
+   "source": "from dftracer.python import dftracer, dft_fn as DFTracerFn\n\n_dft = DFTracerFn(\"app\")\n\n\ndef load_data(path):\n    with open(path) as f:\n        data = f.read()\n    total = 0\n    for row in data.splitlines():\n        total += len(row)\n    return total\n\n\ndef main():\n    _dft_log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=None)\n    # dftracer app-parameter metadata\n    _dft_log.log_metadata_event(\"path\", \"x\")\n    n = load_data(\"x\")\n    return n\n\n\nif __name__ == \"__main__\":\n    main()\n\n\nclass Cfg:\n    @_dft.log\n    @property\n    def name(self):\n        return 'x'\n"
+  },
+  "expect": {
+   "contains": "no decorator on a property\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_python_check",
+  "args": {
+   "source": "from dftracer.python import dftracer, dft_fn as DFTracerFn\n\n_dft = DFTracerFn(\"app\")\n\n\ndef load_data(path):\n    with open(path) as f:\n        data = f.read()\n    total = 0\n    for row in data.splitlines():\n        total += len(row)\n    return total\n\n\ndef main():\n    _dft_log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=None)\n    # dftracer app-parameter metadata\n    _dft_log.log_metadata_event(\"path\", \"x\")\n    n = load_data(\"x\")\n    return n\n\n\nif __name__ == \"__main__\":\n    main()\n\n\nclass Cfg:\n    @_dft.log\n    @property\n    def name(self):\n        return 'x'\n"
+  },
+  "expect": {
+   "contains": "init=yes fini=no"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_python_check",
+  "args": {
+   "source": "from dftracer.python import dftracer, dft_fn as DFTracerFn\n\n_dft = DFTracerFn(\"app\")\n\n\n@_dft.log\ndef load_data(path):\n    with open(path) as f:\n        data = f.read()\n    total = 0\n    for row in data.splitlines():\n        total += len(row)\n    return total\n\n\ndef main(:\n    _dft_log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=None)\n    # dftracer app-parameter metadata\n    _dft_log.log_metadata_event(\"path\", \"x\")\n    n = load_data(\"x\")\n    _dft_log.finalize()\n    return n\n\n\nif __name__ == \"__main__\":\n    main()\n"
+  },
+  "expect": {
+   "contains": "SyntaxError"
+  }
+ },
+ {
+  "tool": "python_extract_functions",
+  "args": {
+   "run_id": "nope/0",
+   "filepath": "a.py"
+  },
+  "expect": {
+   "contains": "File not found"
+  }
+ },
+ {
+  "tool": "session_annotate_python_file",
+  "args": {
+   "run_id": "nope/0",
+   "filepath": "a.py"
+  },
+  "expect": {
+   "contains": "Workspace not found"
+  }
+ }
+]

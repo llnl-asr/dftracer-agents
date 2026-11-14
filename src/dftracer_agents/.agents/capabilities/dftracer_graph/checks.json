@@ -1,0 +1,4 @@
+[
+ {"tool": "dftracer_graph_selftest", "args": {}, "expect": {"contains": "\"status\": \"pass\""}},
+ {"tool": "dftracer_graph_check", "args": {"graph_json": "/nonexistent/graphify-out/graph.json"}, "expect": {"contains": "inconclusive"}}
+]

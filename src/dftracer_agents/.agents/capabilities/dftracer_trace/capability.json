@@ -1,0 +1,47 @@
+{
+ "name": "dftracer_trace",
+ "description": "Collect one run's dftracer traces: per-run paths, source snapshot, the traced run (DFTRACER_* env, flux wrapper, allocation-aware), the dftracer_service daemon start/stop, flux job wait, dftracer_info summary, paper/repo configuration search; validator dftracer_trace_check (run succeeded, traces present, none zero-byte, single attempt, rank count, compacted, daemon stopped). Load at pipeline stage 4, for PRELOAD/HYBRID runs, or on zero-byte traces, 'Code 2001', missing POSIX/HDF5/MPI categories, 'DFTRACER_ENABLE: No such file or directory' under flux run, 'No running server found.', 0-byte service traces, or analysis showing 1 process / ~1542 events.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "trace",
+  "baseline"
+ ],
+ "tools": [
+  "session_init_run",
+  "session_snapshot_run_source",
+  "session_run_with_dftracer",
+  "session_wait_flux_job",
+  "session_analyze_traces",
+  "session_search_papers_for_config",
+  "session_service_start",
+  "session_service_stop",
+  "dftracer_trace_check",
+  "dftracer_trace_selftest"
+ ],
+ "pvc": {
+  "predictor": [
+   "session_init_run",
+   "session_snapshot_run_source",
+   "session_run_with_dftracer",
+   "session_wait_flux_job",
+   "session_analyze_traces",
+   "session_search_papers_for_config",
+   "session_service_start",
+   "session_service_stop"
+  ],
+  "validator": [
+   "dftracer_trace_check",
+   "dftracer_trace_selftest"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607856.6986284,
+   "by": "conversion",
+   "why": "converted from dftracer-agents session_init_run/snapshot_run_source/run_with_dftracer/wait_flux_job/analyze_traces/search_papers_for_config (register_session_tools) and session_service_start/stop (register_daemon_tools), skills dftracer-preload-run and dftracer-trace-utils, agent dftracer-tracer"
+  }
+ ]
+}

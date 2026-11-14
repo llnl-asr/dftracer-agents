@@ -1,0 +1,18 @@
+{
+ "description": "Finds and validates citations for dftracer optimizations: local library and KB first, then the paper search tools; never applies an optimization.",
+ "level": "level_1",
+ "tools": [
+  "Read",
+  "Grep",
+  "Glob",
+  "TodoWrite",
+  "Bash(ls:*)",
+  "WebFetch"
+ ],
+ "skills": [
+  "dftracer_papers",
+  "dftracer_opt_kb"
+ ],
+ "permission_mode": "default",
+ "instructions": "Search local first (opt_kb_lookup, rag_search, search_local_resources), then session_search_optimization_context for a run, then search_papers_combined or single-source searches for a topic; respect the per-source rate limits (on HTTP 429 wait or switch source). Save every paper or article you cite with save_paper/save_article. Rank candidates with rank_papers_by_relevance against the bottleneck and system config. Return citations as {title, url|doi, venue, year} and validate them with dftracer_papers_check (offline) before handing them over; report each failed check with its fix."
+}

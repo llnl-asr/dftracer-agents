@@ -1,0 +1,70 @@
+[
+ {
+  "tool": "dftracer_optimize_check",
+  "args": {},
+  "expect": {
+   "json": {
+    "status": "inconclusive"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_optimize_check",
+  "args": {
+   "proposals_json": "[{\"level\": \"L2\", \"bottleneck\": \"small_io\", \"change\": \"Enable HDF5 collective metadata ops and set the chunk cache to 64 MiB\", \"citation\": \"https://arxiv.org/abs/2401.12345\", \"app_impact_pct\": 20, \"system_impact_pct\": 5, \"status\": \"applied\", \"actual_app_impact_pct\": 14}, {\"level\": \"L3\", \"bottleneck\": \"read_time\", \"change\": \"lfs setstripe -c 8 -S 4M on the output directory\", \"citation\": \"Yildirim et al., ICS 2025\", \"app_impact_pct\": 10, \"system_impact_pct\": 10, \"status\": \"not-applied\", \"skip_reason\": \"KB shows no effect on this system\"}]",
+   "comparison_json": "{\"baseline\": {\"run_id\": \"app/base\", \"metric\": \"io_time_s\", \"value\": 100.0}, \"variant\": {\"run_id\": \"app/opt1\", \"metric\": \"io_time_s\", \"value\": 86.0}}"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_optimize_check",
+  "args": {
+   "proposals_json": "[{\"level\": \"L4\", \"bottleneck\": \"read_time\", \"change\": \"Reduce the number of epochs from 10 to 2\", \"citation\": \"\", \"app_impact_pct\": 80, \"system_impact_pct\": 0, \"status\": \"deferred\"}]"
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "level_is_L1_L2_L3",
+     "citation_backed",
+     "never_do_less",
+     "skip_reason_for_not_applied"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "dftracer_optimize_check",
+  "args": {
+   "comparison_json": "{\"baseline\": {\"run_id\": \"app/base\", \"value\": 100.0}}"
+  },
+  "expect": {
+   "contains": "\"check\": \"comparison_has_both_runs\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_optimize_check",
+  "args": {
+   "proposals_json": "{\"proposals\": [{\"level\": \"L1\", \"title\": \"Coalesce small reads\", \"change\": \"staging buffer\", \"citation\": {\"title\": \"WisIO\", \"venue\": \"ICS\", \"year\": \"2025\"}}]}",
+   "stage": "generated"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "session_optimization_plan",
+  "args": {
+   "run_id": "no_such_run"
+  },
+  "expect": {
+   "contains": "No optimization iterations"
+  }
+ }
+]

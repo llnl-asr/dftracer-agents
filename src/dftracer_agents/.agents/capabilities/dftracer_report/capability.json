@@ -1,0 +1,11 @@
+{
+ "name": "dftracer_report",
+ "description": "Final dftracer pipeline stage: capture each run's record (session_capture_run_record) before iterations overwrite it, assemble the self-contained, reproducible final_report/ (REPORT.md + REPORT.pdf, README.md, CONVERSATION.md, config.ini, scripts with lib_load_config.sh, patches, plan, performance) with session_final_report, and verify it deterministically (session_final_report_verify, dftracer_report_check). Load at the end of every pipeline, or on completeness.ok false, readme_check.ok false, pdf.generated false, 'no final_report/ in this session', 'do not source lib_load_config.sh', 'run_all.sh does not call', or identifiers leaking into final_report/.",
+ "version": 1,
+ "enabled": true,
+ "stages": ["report"],
+ "tools": ["session_final_report_verify", "session_capture_run_record", "session_final_report", "dftracer_report_check", "dftracer_report_selftest"],
+ "pvc": {"predictor": ["session_final_report", "session_capture_run_record"], "validator": ["session_final_report_verify", "dftracer_report_check", "dftracer_report_selftest"]},
+ "topic": "dftracer",
+ "history": [{"version": 1, "ts": 1794607030, "by": "conversion", "why": "converted from dftracer-agents final_report.py (final report, run record, verify tools), agent dftracer-report (report structure, gates, reproducibility, finalization) and the final_report regeneration bug from skill dftracer-privacy-guard"}]
+}

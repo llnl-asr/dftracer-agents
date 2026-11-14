@@ -1,0 +1,60 @@
+[
+ {
+  "tool": "dftracer_annotate_ml_check",
+  "args": {
+   "source": "from dftracer.python import dftracer, dft_fn as DFTracerFn, ai as dft_ai\nfrom torch.utils.data import Dataset, DataLoader\n\n\nclass Images(Dataset):\n    @dft_ai.data.item\n    def __getitem__(self, i):\n        with open(self.files[i], \"rb\") as f:\n            return f.read()\n\n\ndef _worker_init(worker_id):\n    dftracer.initialize_log(logfile=None, data_dir=None, process_id=worker_id)\n\n\ndef make_loader(ds):\n    return DataLoader(ds, batch_size=4, num_workers=2, worker_init_fn=_worker_init)\n"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_ml_check",
+  "args": {
+   "source": "from dftracer.python import dftracer, dft_fn as DFTracerFn, ai as dft_ai\nfrom torch.utils.data import Dataset, DataLoader\n\n\nclass Images(Dataset):\n    def __getitem__(self, i):\n        with open(self.files[i], \"rb\") as f:\n            return f.read()\n\n\ndef _worker_init(worker_id):\n    dftracer.initialize_log(logfile=None, data_dir=None, process_id=worker_id)\n\n\ndef make_loader(ds):\n    return DataLoader(ds, batch_size=4, num_workers=2)\n"
+  },
+  "expect": {
+   "contains": "(data): ML region present\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_ml_check",
+  "args": {
+   "source": "from dftracer.python import dftracer, dft_fn as DFTracerFn, ai as dft_ai\nfrom torch.utils.data import Dataset, DataLoader\n\n\nclass Images(Dataset):\n    def __getitem__(self, i):\n        with open(self.files[i], \"rb\") as f:\n            return f.read()\n\n\ndef _worker_init(worker_id):\n    dftracer.initialize_log(logfile=None, data_dir=None, process_id=worker_id)\n\n\ndef make_loader(ds):\n    return DataLoader(ds, batch_size=4, num_workers=2)\n"
+  },
+  "expect": {
+   "contains": "DataLoader workers traced\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_ml_check",
+  "args": {
+   "source": "from dftracer.python import dftracer, dft_fn as DFTracerFn, ai as dft_ai\n\n\n@dft_ai.pipeline.train\ndef train(model, loader):\n    for batch in loader:\n        model.step(batch)\n\n\n@dft_ai.checkpoint.capture\ndef save_checkpoint(model, path):\n    with open(path, \"wb\") as f:\n        f.write(model.state())\n"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "ml_categorize_files",
+  "args": {
+   "run_id": "nope/0"
+  },
+  "expect": {
+   "contains": "no annotated/ or source/ tree"
+  }
+ },
+ {
+  "tool": "ml_annotate_plan",
+  "args": {
+   "run_id": "nope/0"
+  },
+  "expect": {
+   "contains": "\"status\": \"error\""
+  }
+ }
+]

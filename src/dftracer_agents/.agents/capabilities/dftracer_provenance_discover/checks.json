@@ -1,0 +1,10 @@
+[
+ {"tool": "dftracer_provenance_discover_check", "args": {"spec_yaml": "app: demo\nscientific_artifacts: [field]\nentity_types:\n  - name: deck\n    store: file\n    role: input\n    id_scheme: input deck path relative to run dir\n    description: The input deck that configures the simulation run.\n  - name: field\n    store: file\n    role: output\n    id_scheme: step=N\n    description: The simulated field snapshot written at a step, the artifact.\nactivities:\n  - name: simulate\n    where: sim.c:run\n    used: [deck]\n    generated: [field]\n"}, "expect": {"contains": "\"status\": \"pass\""}},
+ {"tool": "dftracer_provenance_discover_check", "args": {"spec_yaml": "app: demo\nscientific_artifacts: [field]\nentity_types:\n  - name: field\n    store: file\n    role: intermediate\n    description: short\n"}, "expect": {"contains": "must have role: output"}},
+ {"tool": "dftracer_provenance_discover_check", "args": {"spec_yaml": "app: [unclosed"}, "expect": {"contains": "not valid YAML"}},
+ {"tool": "dftracer_provenance_discover_check", "args": {"run_id": "no_such_app/20000101_000000"}, "expect": {"contains": "unknown run"}},
+ {"tool": "provenance_write_spec", "args": {"run_id": "x/1", "spec_yaml": "a: ["}, "expect": {"contains": "spec is not valid YAML"}},
+ {"tool": "provenance_write_spec", "args": {"run_id": "x/1", "spec_yaml": "app: demo\n"}, "expect": {"contains": "spec failed validation"}},
+ {"tool": "provenance_inventory_outputs", "args": {"run_id": "no_such_app/20000101_000000"}, "expect": {"contains": "does not exist"}},
+ {"tool": "provenance_scan_candidates", "args": {"run_id": "no_such_app/20000101_000000"}, "expect": {"contains": "does not exist"}}
+]

@@ -1,0 +1,20 @@
+{
+ "description": "Runs the clang_* C/C++ annotation tools for small, scoped fixups (one file, one function, braces, a missing END) and rules on the result with dftracer_annotate_clang_check.",
+ "level": "level_1",
+ "tools": [
+  "Read",
+  "Grep",
+  "Glob",
+  "Edit",
+  "Bash(grep:*)",
+  "Bash(wc:*)"
+ ],
+ "skills": [
+  "dftracer_annotate_clang",
+  "dftracer_annotate_c",
+  "dftracer_annotate_cpp",
+  "dftracer_annotate"
+ ],
+ "permission_mode": "default",
+ "instructions": "Use clang_extract_functions -> clang_add_braces (when the check reports a braceless return) -> clang_annotate_file (writes immediately; check written_to_disk) -> clang_syntax_check -> clang_lint_annotations, then dftracer_annotate_clang_check(path=<file>). Pass compile_flags / extra_include_dirs: a fatal parse error yields functions: 0 (Corner cases). Ground-truth already_annotated:true with a grep for DFTRACER_C_/DFTRACER_CPP_. Never edit source by hand when a clang tool can do it."
+}

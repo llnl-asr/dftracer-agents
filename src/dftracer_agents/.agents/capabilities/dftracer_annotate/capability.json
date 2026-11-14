@@ -1,0 +1,32 @@
+{
+ "name": "dftracer_annotate",
+ "description": "dftracer annotation stage (pipeline stage 2): scope, dispatch per language (C, C++, Python), emit app-parameter metadata and gate the annotated tree before the build. Load for any 'annotate <app> with dftracer' request, for validate_annotations failures ('critical I/O flow not annotated', 'no dftracer init found anywhere', 'no dftracer finalize found', 'no app-parameter metadata events'), empty traces after annotation, START/comp count mismatch, or when deciding which annotation rules apply.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "annotate"
+ ],
+ "tools": [
+  "annotate_add_app_metadata",
+  "dftracer_annotate_check",
+  "validate_annotations"
+ ],
+ "pvc": {
+  "predictor": [
+   "annotate_add_app_metadata",
+   "validate_annotations"
+  ],
+  "validator": [
+   "dftracer_annotate_check"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794608050.918299,
+   "by": "conversion",
+   "why": "converted from dftracer-agents tools annotate_add_app_metadata and validate_annotations (session/annotation_validate.py), skills dftracer-annotate-general, dftracer-annotate-process, dftracer-annotate-project, dftracer-cheatsheet, dftracer-annotation-lessons (standing rules, core rules, general pitfalls, log), dftracer-lessons (copy), agent dftracer-annotator (.yaml + .md)"
+  }
+ ]
+}

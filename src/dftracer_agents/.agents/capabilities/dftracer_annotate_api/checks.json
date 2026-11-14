@@ -1,0 +1,114 @@
+[
+ {
+  "tool": "dftracer_annotate_api_check",
+  "args": {
+   "language": "c",
+   "code": "DFTRACER_C_INIT(NULL, NULL, NULL);\nDFTRACER_C_FUNCTION_START();\nDFTRACER_C_FUNCTION_UPDATE_STR(\"comp\", \"io\");\nDFTRACER_C_FUNCTION_END();\nDFTRACER_C_FINI();\n"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_api_check",
+  "args": {
+   "language": "c",
+   "code": "DFTRACER_C_INIT(NULL, NULL, -1);\nDFTRACER_CPP_FUNCTION();\nDFTRACER_C_FUNCTION_UPDATE_STR(comp, \"io\");\nDFTRACER_C_FUNCTION_BEGIN();\n"
+  },
+  "expect": {
+   "contains": "DFTRACER_C_FUNCTION_BEGIN"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_api_check",
+  "args": {
+   "language": "c",
+   "code": "DFTRACER_C_INIT(NULL, NULL, -1);\nDFTRACER_CPP_FUNCTION();\nDFTRACER_C_FUNCTION_UPDATE_STR(comp, \"io\");\nDFTRACER_C_FUNCTION_BEGIN();\n"
+  },
+  "expect": {
+   "contains": "is a literal, must be int*"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_api_check",
+  "args": {
+   "language": "c",
+   "code": "DFTRACER_C_INIT(NULL, NULL, -1);\nDFTRACER_CPP_FUNCTION();\nDFTRACER_C_FUNCTION_UPDATE_STR(comp, \"io\");\nDFTRACER_C_FUNCTION_BEGIN();\n"
+  },
+  "expect": {
+   "contains": "C and C++ macros not mixed\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_api_check",
+  "args": {
+   "language": "python",
+   "code": "_dft_log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=-1)\n_dft_log.log_metadata_event(\"bs\", \"4\")\n_dft_log.finalize()\n"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_api_check",
+  "args": {
+   "language": "python",
+   "code": "log = dftracer.initialize_log(logfile=None, data_dir=None, process_id=-1)\nlog.add_metadata(\"bs\", 4)\n"
+  },
+  "expect": {
+   "json": {
+    "status": "fail"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_api_check",
+  "args": {
+   "language": "rust",
+   "code": ""
+  },
+  "expect": {
+   "contains": "unsupported language"
+  }
+ },
+ {
+  "tool": "dftracer_get_init_fini",
+  "args": {
+   "language": "c"
+  },
+  "expect": {
+   "contains": "DFTRACER_C_INIT(log_file, data_dirs, process_id)"
+  }
+ },
+ {
+  "tool": "dftracer_get_function_annotations",
+  "args": {
+   "language": "cpp"
+  },
+  "expect": {
+   "contains": "DFTRACER_CPP_FUNCTION"
+  }
+ },
+ {
+  "tool": "dftracer_get_metadata_api",
+  "args": {
+   "language": "python"
+  },
+  "expect": {
+   "contains": "log_metadata_event"
+  }
+ },
+ {
+  "tool": "dftracer_get_function_update_api",
+  "args": {
+   "language": "c"
+  },
+  "expect": {
+   "contains": "DFTRACER_C_FUNCTION_UPDATE_STR"
+  }
+ }
+]

@@ -1,0 +1,31 @@
+{
+ "name": "dftracer_optimize_communication",
+ "description": "Communication component of the dftracer optimizer: the 9-dimension communication checklist (overlap, message aggregation, collective algorithm, eager/rendezvous, transport, rank placement, network tuning, collective buffering, compute overlap) and built-in strategies for comm_wait (opt_communication_checklist); dftracer_optimize_communication_check validates the findings table. Load for comm_wait/mpi_wait/collective/allreduce bottlenecks, 'zero communication events', RCCL/NCCL time hidden in KERNEL_DISPATCH, or Cray MPICH ignoring cb_nodes.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "optimize"
+ ],
+ "tools": [
+  "opt_communication_checklist",
+  "dftracer_optimize_communication_check"
+ ],
+ "pvc": {
+  "predictor": [
+   "opt_communication_checklist"
+  ],
+  "validator": [
+   "dftracer_optimize_communication_check"
+  ]
+ },
+ "topic": "dftracer",
+ "review": [],
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607564.387476,
+   "by": "conversion",
+   "why": "converted from the dftracer-communication-optimization skill and the dftracer-optimizer-communication agent"
+  }
+ ]
+}

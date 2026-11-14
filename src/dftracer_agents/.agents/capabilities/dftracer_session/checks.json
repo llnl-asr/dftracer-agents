@@ -1,0 +1,9 @@
+[
+ {"tool": "dftracer_session_selftest", "args": {}, "expect": {"json": {"status": "pass"}}},
+ {"tool": "dftracer_session_check", "args": {"run_id": "nope/19700101_000000"}, "expect": {"contains": "unknown run"}},
+ {"tool": "dftracer_session_check", "args": {}, "expect": {"json": {"status": "inconclusive"}}},
+ {"tool": "session_status", "args": {"run_id": "nope/19700101_000000"}, "expect": {"contains": "not found"}},
+ {"tool": "session_get_run_paths", "args": {"run_id": "nope/19700101_000000", "run_name": "baseline"}, "expect": {"contains": "baseline"}},
+ {"tool": "session_init_structure", "args": {"run_id": "app/19700101_000000"}, "expect": {"contains": "Session structure ready"}},
+ {"tool": "session_read_file", "args": {"run_id": "nope/19700101_000000", "filepath": "x.txt"}, "expect": {"contains": "not found"}}
+]

@@ -1,0 +1,8 @@
+{
+ "description": "Checks whether the dftracer MCP server serves the current code and content, and refreshes it (rolling reload under the supervisor, content re-link) when it does not.",
+ "level": "level_1",
+ "tools": ["Read"],
+ "skills": ["dftracer_admin"],
+ "permission_mode": "default",
+ "instructions": "server_status(), then dftracer_admin_check(<its output>). code_current failing: under the supervisor call server_reload() and poll server_status until the generation changes; a single-process server cannot swap itself, so tell the user to reconnect the MCP server (or start it with --ha). content_current failing: server_refresh_content(). Never fall back to manual work when what is needed is a restart: say so."
+}

@@ -1,0 +1,45 @@
+{
+ "name": "dftracer_opt_kb",
+ "description": "Cross-session optimization knowledge base and per-session strategy memory: opt_kb_lookup (step 1: what was already tried on this system/workload/software), opt_kb_record (one measured result, cited), opt_kb_render, opt_proposal_table (citation-backed, impact-ranked table), session_memory_*; dftracer_opt_kb_check validates entries. Load before proposing any optimization and after measuring one, or on 'citation is required', 'metric_scope=\"system\" requires the paired app_metric', 'workload-scoped entries require workload', or rejected uncited proposals.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "optimize"
+ ],
+ "tools": [
+  "opt_kb_lookup",
+  "opt_kb_record",
+  "opt_kb_render",
+  "opt_proposal_table",
+  "session_memory_retrieve",
+  "session_memory_write",
+  "session_memory_reflect",
+  "session_memory_stats",
+  "dftracer_opt_kb_check"
+ ],
+ "pvc": {
+  "predictor": [
+   "opt_kb_lookup",
+   "opt_kb_record",
+   "opt_kb_render",
+   "opt_proposal_table",
+   "session_memory_retrieve",
+   "session_memory_write",
+   "session_memory_reflect",
+   "session_memory_stats"
+  ],
+  "validator": [
+   "dftracer_opt_kb_check"
+  ]
+ },
+ "topic": "dftracer",
+ "review": [],
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607564.387476,
+   "by": "conversion",
+   "why": "converted from dftracer-agents optimizations/knowledge_base.py and memory.py and the dftracer-optimization-kb skill (system, software, workload findings)"
+  }
+ ]
+}

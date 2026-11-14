@@ -1,0 +1,8 @@
+[
+ {"tool": "dftracer_install_selftest", "args": {}, "expect": {"json": {"status": "pass"}}},
+ {"tool": "dftracer_install_check", "args": {"run_id": "nope/19700101_000000"}, "expect": {"contains": "unknown run"}},
+ {"tool": "dftracer_install_check", "args": {}, "expect": {"json": {"status": "inconclusive"}}},
+ {"tool": "session_install_dftracer", "args": {"run_id": "nope/19700101_000000"}, "expect": {"contains": "Build the original app first"}},
+ {"tool": "dftracer_wheelhouse", "args": {"action": "bogus"}, "expect": {"contains": "action must be search or retire"}},
+ {"tool": "dftracer_wheelhouse", "args": {"action": "retire"}, "expect": {"contains": "retire needs the wheel's key"}}
+]

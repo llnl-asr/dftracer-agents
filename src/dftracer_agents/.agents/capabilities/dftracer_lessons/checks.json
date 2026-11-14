@@ -1,0 +1,8 @@
+[
+ {"tool": "dftracer_lessons_selftest", "args": {}, "expect": {"contains": "\"status\": \"pass\""}},
+ {"tool": "dftracer_lessons_check", "args": {"entry": "- [L-0123abcd] empty trace -> DFTRACER_INIT=1 with explicit DFTRACER_C_INIT -> set DFTRACER_INIT=FUNCTION (2026-07-30)"}, "expect": {"contains": "\"status\": \"pass\""}},
+ {"tool": "dftracer_lessons_check", "args": {"entry": "- something went wrong"}, "expect": {"contains": "\"status\": \"fail\""}},
+ {"tool": "dftracer_lessons_check", "args": {"entry": ""}, "expect": {"contains": "inconclusive"}},
+ {"tool": "session_lessons_sync_pr", "args": {}, "expect": {"contains": "confirm must be explicitly set to True"}},
+ {"tool": "session_lessons_sync_preview", "args": {}, "expect": {"contains": "nothing to sync"}}
+]

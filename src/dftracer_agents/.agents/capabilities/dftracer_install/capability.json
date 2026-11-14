@@ -1,0 +1,38 @@
+{
+ "name": "dftracer_install",
+ "description": "Install dftracer into a session after the app built: the pre-release with dftracer-modules composed (dftracer-compose) against the app's MPI/HDF5/ROCm, or a pip/source build; prebuilt wheel search/retire, dftracer-utils install, dftracer.pc generation; validator dftracer_install_check (one core, layers linked, header, pkg-config, import). Load on 'Build the original app first', 'dftracer-compose did not link', 'CMake 3.24 or higher is required', 'GLIBCXX_3.4.30 not found', 'DFTracer was enabled but not available', NoOpProfiler, 'double free or corruption (!prev)', 'libmodules.so.1: cannot open shared object file', 'zlib_name_mangling.h file not found', two libdftracer_core copies, or an empty trace after a clean install.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "install"
+ ],
+ "tools": [
+  "session_install_dftracer",
+  "dftracer_wheelhouse",
+  "session_install_dftracer_utils",
+  "session_generate_dftracer_pc",
+  "dftracer_install_check",
+  "dftracer_install_selftest"
+ ],
+ "pvc": {
+  "predictor": [
+   "session_install_dftracer",
+   "dftracer_wheelhouse",
+   "session_install_dftracer_utils",
+   "session_generate_dftracer_pc"
+  ],
+  "validator": [
+   "dftracer_install_check",
+   "dftracer_install_selftest"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607856.6791358,
+   "by": "conversion",
+   "why": "converted from dftracer-agents session_install_dftracer, dftracer_wheelhouse, session_install_dftracer_utils (register_session_tools) and session_generate_dftracer_pc (register_install_session_tools), skills dftracer-install and dftracer-build-dftracer, agent dftracer-build-dftracer"
+  }
+ ]
+}

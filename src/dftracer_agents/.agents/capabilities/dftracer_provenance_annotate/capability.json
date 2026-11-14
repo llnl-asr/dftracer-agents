@@ -1,0 +1,11 @@
+{
+ "name": "dftracer_provenance_annotate",
+ "description": "dftracer provenance mode, annotation stage: from the user-approved provenance/spec.yaml, install the dftracer_prov helper (dftracer_prov.h / dftracer_prov.py) and entity-type registry, insert idempotent dft-prov entity/activity calls (C, C++, Python) into <WS>/provenance/source, make main() initialize/finalize dftracer, and gate statically on the spec. Load when annotating for provenance, or on 'no dftracer_prov helper in tree', 'type registry is stale', 'entity type ... from spec is never recorded in code', 'activity ... is never opened in code', 'uses dft_prov but does not #include', 'dftracer is never initialized', a 0-byte provenance trace, or a run that exits 0 with an empty graph.",
+ "version": 1,
+ "enabled": true,
+ "stages": ["annotate"],
+ "tools": ["provenance_install_helpers", "provenance_insert", "provenance_ensure_lifecycle", "provenance_validate", "dftracer_provenance_annotate_check", "dftracer_provenance_annotate_selftest"],
+ "pvc": {"predictor": ["provenance_install_helpers", "provenance_insert", "provenance_ensure_lifecycle"], "validator": ["provenance_validate", "dftracer_provenance_annotate_check", "dftracer_provenance_annotate_selftest"]},
+ "topic": "dftracer",
+ "history": [{"version": 1, "ts": 1794607030, "by": "conversion", "why": "converted from dftracer-agents provenance.py (install_helpers/insert/ensure_lifecycle/validate tools), skill dftracer-provenance (runtime API, run configuration, lessons) and agent dftracer-provenance-annotate"}]
+}

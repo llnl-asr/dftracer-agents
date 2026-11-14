@@ -1,0 +1,78 @@
+{
+ "name": "dftracer_papers",
+ "description": "Literature search for citation-backed optimizations: arXiv, Semantic Scholar, OpenAlex, Crossref, CORE, DBLP and web search, webpage article extraction, relevance ranking, the local paper/article library with RAG retrieval (save_paper, rag_search, ...), and the optimization paper/context search for a run's bottlenecks; dftracer_papers_check validates citations offline. Load when a proposal needs a citation, or on HTTP 429 from Semantic Scholar, SSL certificate errors behind a corporate CA, an empty search result, or an uncited/malformed reference.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "optimize"
+ ],
+ "tools": [
+  "search_arxiv",
+  "get_arxiv_paper",
+  "search_semantic_scholar",
+  "get_semantic_scholar_paper",
+  "get_author_papers",
+  "search_openalex",
+  "get_openalex_paper",
+  "search_crossref",
+  "search_core",
+  "search_dblp",
+  "search_web",
+  "search_papers_combined",
+  "fetch_webpage_article",
+  "rank_papers_by_relevance",
+  "save_paper",
+  "save_article",
+  "search_local_resources",
+  "rag_search",
+  "list_local_resources",
+  "session_search_optimization_papers",
+  "session_search_optimization_context",
+  "dftracer_papers_check"
+ ],
+ "pvc": {
+  "predictor": [
+   "search_arxiv",
+   "get_arxiv_paper",
+   "search_semantic_scholar",
+   "get_semantic_scholar_paper",
+   "get_author_papers",
+   "search_openalex",
+   "get_openalex_paper",
+   "search_crossref",
+   "search_core",
+   "search_dblp",
+   "search_web",
+   "search_papers_combined",
+   "fetch_webpage_article",
+   "rank_papers_by_relevance",
+   "save_paper",
+   "save_article",
+   "search_local_resources",
+   "rag_search",
+   "list_local_resources",
+   "session_search_optimization_papers",
+   "session_search_optimization_context"
+  ],
+  "validator": [
+   "dftracer_papers_check"
+  ]
+ },
+ "topic": "dftracer",
+ "review": [
+  "imports urllib: makes HTTP requests",
+  "line 1507: writes or deletes files (write_text)",
+  "line 1642: writes or deletes files (write_text)",
+  "line 681: writes or deletes files (write_bytes)",
+  "line 687: writes or deletes files (write_text)",
+  "line 765: writes or deletes files (write_text)"
+ ],
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607564.387476,
+   "by": "conversion",
+   "why": "converted from dftracer-agents mcp_tools/tools/papers (academic, local library, RAG), optimizations/diagnose.py and context_search.py, and the dftracer-references skill"
+  }
+ ]
+}

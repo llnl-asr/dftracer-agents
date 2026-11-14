@@ -1,0 +1,35 @@
+{
+ "name": "dftracer_pipeline_run",
+ "description": "Create, recall and list dftracer pipeline runs (run_id <app_name>/<YYYYMMDD_HHMMSS>, workspace with session.json, active run pointer .current_run) and validate the result. Load when a stage needs a run_id, 'No runs found for app', 'No active run pointer for app', a run_id that does not match its app, or a run that vanished after the workspaces root changed (DFTRACER_WORKSPACES).",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "plan",
+  "pipeline"
+ ],
+ "tools": [
+  "pipeline_create_run",
+  "pipeline_get_run_id",
+  "pipeline_list_runs",
+  "dftracer_pipeline_run_check"
+ ],
+ "pvc": {
+  "predictor": [
+   "pipeline_create_run",
+   "pipeline_get_run_id",
+   "pipeline_list_runs"
+  ],
+  "validator": [
+   "dftracer_pipeline_run_check"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607383.4357579,
+   "by": "conversion",
+   "why": "converted from dftracer-agents register_run_tools (pipeline_create_run, pipeline_get_run_id, pipeline_list_runs, moved unchanged) and the run-ID rules of the dftracer-pipeline skill; new validator dftracer_pipeline_run_check"
+  }
+ ]
+}

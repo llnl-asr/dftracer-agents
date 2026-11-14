@@ -1,0 +1,11 @@
+{
+ "name": "dftracer_skills",
+ "description": "The dftracer-agents knowledge surface for any harness: skill_list / skill_search / skill_load (whole skill, one '## ' section, or a sibling file such as a lessons log, with related [[skills]]), agents_sync / permissions_sync / hooks_sync (re-render harness copies from the canonical YAML templates, permissions.yaml and hooks.py), memory_list / memory_recall / memory_read (git-tracked project memory), and a validator for a skill or memory file (dftracer_skills_check). Load at session start, before acting on anything a skill may cover, after editing an agent template, permissions.yaml or hooks.py, or on 'No .agents/skills directory found', 'No section matching', 'not_found', or agents_sync conflicts.",
+ "version": 1,
+ "enabled": true,
+ "stages": ["knowledge"],
+ "tools": ["skill_list", "skill_search", "skill_load", "agents_sync", "permissions_sync", "hooks_sync", "memory_list", "memory_recall", "memory_read", "dftracer_skills_check", "dftracer_skills_selftest"],
+ "pvc": {"predictor": ["skill_search", "skill_load", "agents_sync", "permissions_sync", "hooks_sync", "memory_recall"], "validator": ["dftracer_skills_check", "dftracer_skills_selftest"]},
+ "topic": "dftracer",
+ "history": [{"version": 1, "ts": 1794607030, "by": "conversion", "why": "converted from dftracer-agents dftracer/skills_service.py (all tools except memory_write, whose name the store's knowledge capability already provides) and the skills-first / agents_sync rules of skill dftracer-lessons and agent dftracer-report"}]
+}

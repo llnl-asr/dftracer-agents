@@ -1,0 +1,11 @@
+{
+ "name": "dftracer_privacy",
+ "description": "Privacy guard for dftracer-agents: scan the git-tracked trees (skills, agents, workspace/memory, good-runs, scripts, package source) and every final_report/ for identifying content (usernames, absolute user paths, emails, flux job ids, session UUIDs, node hostnames), redact deterministically (patches keep their structure), hunt uncovered corner cases, and add validated redaction rules. Load before persisting any skill, lesson, memory, agent file or package, as the last step of every session, or when privacy_scan reports 'file(s) contain identifying content', privacy_suspects reports candidates, or privacy_add_pattern says 'rolled back'.",
+ "version": 1,
+ "enabled": true,
+ "stages": ["privacy"],
+ "tools": ["privacy_scan", "privacy_redact", "privacy_suspects", "privacy_add_pattern", "dftracer_privacy_check", "dftracer_privacy_selftest"],
+ "pvc": {"predictor": ["privacy_redact", "privacy_add_pattern", "privacy_suspects"], "validator": ["privacy_scan", "dftracer_privacy_check", "dftracer_privacy_selftest"]},
+ "topic": "dftracer",
+ "history": [{"version": 1, "ts": 1794607030, "by": "conversion", "why": "converted from dftracer-agents privacy_tools.py (privacy_scan/redact/suspects/add_pattern), skill dftracer-privacy-guard and agent dftracer-privacy-guard"}]
+}

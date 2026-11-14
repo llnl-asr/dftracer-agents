@@ -1,0 +1,11 @@
+{
+ "name": "dftracer_graph",
+ "description": "Context economy for dftracer agents: locate code and docs through the graphify knowledge graph (this package's code, skills, agents, memory; or a session's application) with graph_query (query/docs/explain/affected), fetch only the section a node owns with graph_get_node, keep it fresh with graph_ensure, and validate a graph (dftracer_graph_check). Load before reading source files or a whole skill, before editing a shared function (blast radius), or on 'No unique node match', 'no document node matches', 'stale graph - run graph_ensure(force=True)', 'graphify CLI is not installed', 'No code files found'.",
+ "version": 1,
+ "enabled": true,
+ "stages": ["context"],
+ "tools": ["graph_ensure", "graph_query", "graph_get_node", "dftracer_graph_check", "dftracer_graph_selftest"],
+ "pvc": {"predictor": ["graph_ensure", "graph_query", "graph_get_node"], "validator": ["dftracer_graph_check", "dftracer_graph_selftest"]},
+ "topic": "dftracer",
+ "history": [{"version": 1, "ts": 1794607030, "by": "conversion", "why": "converted from dftracer-agents code_graph.py (graph_ensure/query/get_node), skill dftracer-context-economy and the context-economy common sections"}]
+}

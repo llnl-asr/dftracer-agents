@@ -1,0 +1,8 @@
+[
+ {"tool": "dftracer_docs_selftest", "args": {}, "expect": {"contains": "\"status\": \"pass\""}},
+ {"tool": "dftracer_docs_check", "args": {"source": "py,utils"}, "expect": {"contains": "\"status\": \"pass\""}},
+ {"tool": "dftracer_docs_check", "args": {"source": "nonsense"}, "expect": {"contains": "\"status\": \"fail\""}},
+ {"tool": "dftracer_docs_check", "args": {}, "expect": {"contains": "inconclusive"}},
+ {"tool": "docs_list_sources", "args": {}, "expect": {"contains": "dftracer-utils"}},
+ {"tool": "docs_search_key_pages", "args": {"source": "nonsense"}, "expect": {"contains": "Unknown source"}}
+]

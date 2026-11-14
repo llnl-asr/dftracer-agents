@@ -1,0 +1,55 @@
+{
+ "name": "dftracer_optimize",
+ "description": "Optimization stage orchestrator of the dftracer pipeline: plan and apply trials, the L1 (application) / L2 (software) / L3 (filesystem/system) level tools, the measured optimization iteration loop and citation-backed proposal generation; dftracer_optimize_check validates proposals (level L1/L2/L3, citation, impact, status, never 'doing less') and before/after comparisons (both runs). Load to optimize a diagnosed run, or on 'No optimization iterations', 'diagnosis.json not found', an uncited or unmeasured proposal, or an iteration that re-analyzed the wrong traces.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "optimize"
+ ],
+ "tools": [
+  "session_optimization_plan",
+  "session_optimization_apply_trial",
+  "session_optimization_iteration",
+  "session_generate_optimization_proposals",
+  "session_optimize_l1_app",
+  "session_optimize_l2_software",
+  "session_optimize_l3_filesystem",
+  "session_snapshot_l1_source",
+  "session_run_l1_iteration",
+  "dftracer_optimize_check"
+ ],
+ "pvc": {
+  "predictor": [
+   "session_optimization_plan",
+   "session_optimization_apply_trial",
+   "session_optimization_iteration",
+   "session_generate_optimization_proposals",
+   "session_optimize_l1_app",
+   "session_optimize_l2_software",
+   "session_optimize_l3_filesystem",
+   "session_snapshot_l1_source",
+   "session_run_l1_iteration"
+  ],
+  "validator": [
+   "dftracer_optimize_check"
+  ]
+ },
+ "topic": "dftracer",
+ "review": [
+  "imports shutil: copies/removes files",
+  "line 1520: writes or deletes files (write_text)",
+  "line 559: writes or deletes files (write_text)",
+  "line 624: writes or deletes files (write_text)",
+  "line 635: writes or deletes files (rmtree)",
+  "line 954: writes or deletes files (write_text)",
+  "line 956: writes or deletes files (write_text)"
+ ],
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607564.387476,
+   "by": "conversion",
+   "why": "converted from dftracer-agents mcp_tools/tools/optimizations (orchestrator, iteration, levels), the dftracer-optimizer agent, and the optimization entries of dftracer-lessons and dftracer-pitfalls"
+  }
+ ]
+}

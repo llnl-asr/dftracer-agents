@@ -1,0 +1,6 @@
+[
+ {"tool": "dftracer_admin_selftest", "args": {}, "expect": {"contains": "\"status\": \"pass\""}},
+ {"tool": "dftracer_admin_check", "args": {"status_json": "not json"}, "expect": {"contains": "inconclusive"}},
+ {"tool": "dftracer_admin_check", "args": {"status_json": "{\"pid\": 1, \"mode\": \"single process (stdio or plain http)\", \"uptime_s\": 3, \"code_changed_since_start\": true, \"content_changed_since_start\": false, \"advice\": \"restart\"}"}, "expect": {"contains": "/mcp reconnect"}},
+ {"tool": "server_reload", "args": {}, "expect": {"contains": "not running under the zero-downtime supervisor"}}
+]

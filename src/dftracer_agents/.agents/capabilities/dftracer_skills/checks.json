@@ -1,0 +1,8 @@
+[
+ {"tool": "dftracer_skills_selftest", "args": {}, "expect": {"contains": "\"status\": \"pass\""}},
+ {"tool": "dftracer_skills_check", "args": {"path": "/nonexistent/skill/SKILL.md"}, "expect": {"contains": "inconclusive"}},
+ {"tool": "dftracer_skills_check", "args": {"text": "no frontmatter here\n"}, "expect": {"contains": "\"status\": \"fail\""}},
+ {"tool": "skill_list", "args": {}, "expect": {"contains": "\"count\""}},
+ {"tool": "skill_load", "args": {"name": "no-such-skill-xyz"}, "expect": {"contains": "not_found"}},
+ {"tool": "memory_read", "args": {"name": "no-such-memory-xyz"}, "expect": {"contains": "not_found"}}
+]

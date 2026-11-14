@@ -1,0 +1,6 @@
+[
+ {"tool": "dftracer_provenance_graph_selftest", "args": {}, "expect": {"contains": "\"status\": \"pass\""}},
+ {"tool": "dftracer_provenance_graph_check", "args": {"run_id": "no_such_app/20000101_000000"}, "expect": {"contains": "unknown run"}},
+ {"tool": "dftracer_provenance_graph_check", "args": {}, "expect": {"contains": "inconclusive"}},
+ {"tool": "provenance_extract_graph", "args": {"run_id": "no_such_app/20000101_000000"}, "expect": {"contains": "does not exist"}}
+]

@@ -1,0 +1,14 @@
+{
+ "description": "Detects the target system and records site-specific assumptions (launcher, scheduler, modules, env, filesystem, allocation, PAPI budget, power) for downstream dftracer agents.",
+ "level": "level_1",
+ "tools": [
+  "Read",
+  "Grep",
+  "Glob"
+ ],
+ "skills": [
+  "dftracer_system"
+ ],
+ "permission_mode": "default",
+ "instructions": "Call system_detect() before any manual inspection, then dftracer_system_check(detect_output=<result>) and repair per the skill's Corrector. Read the application's own scripts (scripts/install-<system>.sh, scripts/<app>-<system>.job, pyproject.toml) and report ONE env block reused for install and run: python version, modules, LD_PRELOAD, LD_LIBRARY_PATH, patchelf steps, pip extra + index; the app's python pin wins over the site default. Return only the facts later agents need. Bracket the step with profile_step_begin/profile_step_end using the plan's '## STEP N: dftracer-system-detect' heading; never profile_bind. To register a new system validate the config with dftracer_system_check(config=..., name=...) first, then system_save. Propose (never write) new site pitfalls to the main thread, redacted."
+}

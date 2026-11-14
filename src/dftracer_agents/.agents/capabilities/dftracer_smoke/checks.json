@@ -1,0 +1,6 @@
+[
+ {"tool": "dftracer_smoke_selftest", "args": {}, "expect": {"json": {"status": "pass"}}},
+ {"tool": "dftracer_smoke_check", "args": {"run_id": "nope/19700101_000000"}, "expect": {"contains": "unknown run"}},
+ {"tool": "dftracer_smoke_check", "args": {}, "expect": {"json": {"status": "inconclusive"}}},
+ {"tool": "session_run_smoke_test", "args": {"run_id": "nope/19700101_000000", "command": "mpirun -np 4 true"}, "expect": {"raises": "no workspace"}}
+]

@@ -1,0 +1,36 @@
+{
+ "name": "dftracer_annotate_api",
+ "description": "dftracer annotation API reference per language (c, cpp, python): init/fini, function annotations, metadata and function-update calls with their signatures and doc URLs; and a check that a snippet uses them correctly. Load when unsure of a dftracer macro name or signature, for 'implicit declaration of DFTRACER_*', 'incompatible integer to pointer conversion' on DFTRACER_C_INIT, mixed C/C++ macros, or Python initialize_log/finalize/log_metadata_event usage.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "annotate"
+ ],
+ "tools": [
+  "dftracer_annotate_api_check",
+  "dftracer_get_function_annotations",
+  "dftracer_get_function_update_api",
+  "dftracer_get_init_fini",
+  "dftracer_get_metadata_api"
+ ],
+ "pvc": {
+  "predictor": [
+   "dftracer_get_init_fini",
+   "dftracer_get_function_annotations",
+   "dftracer_get_metadata_api",
+   "dftracer_get_function_update_api"
+  ],
+  "validator": [
+   "dftracer_annotate_api_check"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794608050.918299,
+   "by": "conversion",
+   "why": "converted from dftracer-agents register_annotation_api_tools (dftracer/dftracer_service.py); closure constants _DOCS_BASE and _PYDOCS_BASE hoisted to module level"
+  }
+ ]
+}

@@ -1,0 +1,122 @@
+[
+ {
+  "tool": "dftracer_pipeline_check",
+  "args": {
+   "plan_md": "# DFTracer Pipeline Plan \u2014 ior/20261113_100000\n\n## Overview\n\nSystem tuolumne (flux run), app ior @ main, smoke `ior -t 1m -b 4m`, paths from session_get_run_paths.\n\n## STEP 0: dftracer-system-detect\n\nCall system_detect(); record launcher, modules, filesystem.\n\n## STEP 1: dftracer-session-setup\n\nsession_detect + session_configure for run_id ior/20261113_100000.\n\n## STEP 2: dftracer-build-app\n\nsession_build_install(run_id).\n\n## STEP 3: dftracer-build-dftracer\n\nsession_install_dftracer(run_id) with the app's MPI.\n\n## STEP 4: dftracer-annotator\n\nclang_annotate_project(run_id, language='c'); validate_annotations.\n\n## STEP 5: dftracer-build-smoke\n\nsession_build_annotated; session_run_smoke_test.\n\n## STEP 6: dftracer-tracer\n\nsession_run_with_dftracer(data_dir='all'); session_split_traces.\n\n## STEP 7: dftracer-analyzer\n\nanalyze with preset posix.\n\n## STEP 8: dftracer-report\n\nsession_final_report; all three gates true.\n\n## STEP 9: dftracer-privacy-guard\n\nprivacy_scan including final_report/; redact until clean.\n\n## DISPATCH ORDER\n\ndftracer-system-detect, dftracer-session-setup, dftracer-build-app, dftracer-build-dftracer, dftracer-annotator, dftracer-build-smoke, dftracer-tracer, dftracer-analyzer, dftracer-report, dftracer-privacy-guard\n",
+   "run_id": "ior/20261113_100000"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_check",
+  "args": {
+   "plan_md": "# DFTracer Pipeline Plan \u2014 ior/20261113_100000\n\n## Overview\n\nSystem tuolumne (flux run), app ior @ main, smoke `ior -t 1m -b 4m`, paths from session_get_run_paths.\n\n## STEP 0: dftracer-system-detect\n\nCall system_detect(); record launcher, modules, filesystem.\n\n## STEP 1: dftracer-session-setup\n\nsession_detect + session_configure for run_id ior/20261113_100000.\n\n## STEP 2: dftracer-build-dftracer\n\nsession_build_install(run_id).\n\n## STEP 3: dftracer-build-app\n\nsession_install_dftracer(run_id) with the app's MPI.\n\n## STEP 4: dftracer-annotator\n\nclang_annotate_project(run_id, language='c'); validate_annotations.\n\n## STEP 5: dftracer-build-smoke\n\nsession_build_annotated; session_run_smoke_test.\n\n## STEP 6: dftracer-tracer\n\nsession_run_with_dftracer(data_dir='all'); session_split_traces.\n\n## STEP 7: dftracer-analyzer\n\nanalyze with preset posix.\n\n## STEP 8: dftracer-report\n\nsession_final_report; all three gates true.\n\n## STEP 9: dftracer-privacy-guard\n\nprivacy_scan including final_report/; redact until clean.\n\n## DISPATCH ORDER\n\ndftracer-system-detect, dftracer-session-setup, dftracer-build-app, dftracer-build-dftracer, dftracer-annotator, dftracer-build-smoke, dftracer-tracer, dftracer-analyzer, dftracer-report, dftracer-privacy-guard\n"
+  },
+  "expect": {
+   "contains": "out of stage order"
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_check",
+  "args": {
+   "plan_md": "# DFTracer Pipeline Plan \u2014 ior/20261113_100000\n\n## Overview\n\nSystem tuolumne (flux run), app ior @ main, smoke `ior -t 1m -b 4m`, paths from session_get_run_paths.\n\n## STEP 0: dftracer-system-detect\n\nCall system_detect(); record launcher, modules, filesystem.\n\n## STEP 1: dftracer-session-setup\n\nsession_detect + session_configure for run_id ior/20261113_100000.\n\n## STEP 2: dftracer-build-app\n\nsession_build_install(run_id).\n\n## STEP 3: dftracer-build-dftracer\n\nsession_install_dftracer(run_id) with the app's MPI.\n\n## STEP 4: dftracer-annotator\n\nclang_annotate_project(run_id, language='c'); validate_annotations.\n\n## STEP 5: dftracer-build-smoke\n\nsession_build_annotated; session_run_smoke_test.\n\n## STEP 6: dftracer-tracer\n\nsession_run_with_dftracer(data_dir='all'); session_split_traces.\n\n## STEP 7: dftracer-analyzer\n\nanalyze with preset posix.\n\n## DISPATCH ORDER\n\ndftracer-system-detect, dftracer-session-setup, dftracer-build-app, dftracer-build-dftracer, dftracer-annotator, dftracer-build-smoke, dftracer-tracer, dftracer-analyzer\n"
+  },
+  "expect": {
+   "contains": "\"check\": \"report_then_privacy_last\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_check",
+  "args": {
+   "plan_md": "# DFTracer Pipeline Plan \u2014 ior/20261113_100000\n\n## Overview\n\nSystem tuolumne (flux run), app ior @ main, smoke `ior -t 1m -b 4m`, paths from session_get_run_paths.\n\n## STEP 0: dftracer-system-detect\n\nCall system_detect(); record launcher, modules, filesystem.\n\n## STEP 1: dftracer-session-setup\n\nsession_detect + session_configure for run_id ior/20261113_100000.\n\n## STEP 2: dftracer-build-app\n\nsession_build_install(run_id).\n\n## STEP 3: dftracer-build-dftracer\n\nsession_install_dftracer(run_id) with the app's MPI.\n\n## STEP 4: dftracer-annotator\n\nclang_annotate_project(run_id, language='c'); validate_annotations.\n\n## STEP 5: dftracer-build-smoke\n\nsession_build_annotated; session_run_smoke_test.\n\n## STEP 6: dftracer-tracer\n\nsession_run_with_dftracer(data_dir='all'); session_split_traces.\n\n## STEP 7: dftracer-analyzer\n\nanalyze with preset posix.\n\n## STEP 8: dftracer-report\n\nsession_final_report; all three gates true.\n\n## STEP 9: dftracer-privacy-guard\n\nprivacy_scan including final_report/; redact until clean.\n\n## DISPATCH ORDER\n\ndftracer-system-detect, dftracer-session-setup, dftracer-build-app, dftracer-build-dftracer, dftracer-annotator, dftracer-build-smoke, dftracer-tracer, dftracer-report, dftracer-privacy-guard\n"
+  },
+  "expect": {
+   "contains": "\"check\": \"dispatch_order\", \"ok\": false"
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_check",
+  "args": {
+   "result": "{\"status\": \"error\", \"message\": \"Step 4 failed: make\", \"step\": 4}"
+  },
+  "expect": {
+   "contains": "FIRST 'error:'"
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_check",
+  "args": {
+   "result": "NameError: name 'smoke_cmd' is not defined"
+  },
+  "expect": {
+   "contains": "resume_path"
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_check",
+  "args": {
+   "result": "{\"status\": \"ok\", \"run_id\": \"ior/1\", \"awaiting_confirmation\": true, \"annotation_report\": {\"summary\": {}}, \"step_timings\": [{\"step_label\": \"step_1_clone\", \"duration_s\": 1.0}, {\"step_label\": \"step_2_detect\", \"duration_s\": 0.1}]}"
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_check",
+  "args": {},
+  "expect": {
+   "json": {
+    "status": "inconclusive"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_plan_template",
+  "args": {
+   "run_id": "ior/20261113_100000"
+  },
+  "expect": {
+   "contains": "## STEP 11: dftracer-privacy-guard"
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_plan_template",
+  "args": {
+   "run_id": "x/1",
+   "mode": "provenance",
+   "skip": [
+    "dftracer-report"
+   ]
+  },
+  "expect": {
+   "contains": "provenance_write_spec"
+  }
+ },
+ {
+  "tool": "dftracer_pipeline_plan_template",
+  "args": {
+   "run_id": "x/1",
+   "mode": "bogus"
+  },
+  "expect": {
+   "contains": "unknown mode"
+  }
+ },
+ {
+  "tool": "session_run_pipeline",
+  "args": {
+   "url": "https://example.invalid/ior.git",
+   "run_id": "ior/no_such_run",
+   "annotation_confirmed": true
+  },
+  "expect": {
+   "contains": "Workspace not found for run_id: ior/no_such_run"
+  }
+ }
+]

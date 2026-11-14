@@ -1,0 +1,7 @@
+[
+ {"tool": "dftracer_trace_selftest", "args": {}, "expect": {"json": {"status": "pass"}}},
+ {"tool": "dftracer_trace_check", "args": {"run_id": "nope/19700101_000000"}, "expect": {"contains": "unknown run"}},
+ {"tool": "dftracer_trace_check", "args": {}, "expect": {"json": {"status": "inconclusive"}}},
+ {"tool": "session_service_stop", "args": {"run_id": "nope/19700101_000000"}, "expect": {"contains": "was session_service_start called?"}},
+ {"tool": "session_init_run", "args": {"run_id": "app/19700101_000000", "run_name": "opt1"}, "expect": {"contains": "Run directory initialised"}}
+]

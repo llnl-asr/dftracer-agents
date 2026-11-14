@@ -1,0 +1,11 @@
+{
+ "name": "dftracer_profiling",
+ "description": "dftracer pipeline self-profiling via MLflow: bind the profile to a session right after session_create, bracket every step and retry with profile_step_begin/profile_step_end, read running totals, write <workspace>/performance/performance_report.md, summary.json and steps/*.json with profile_report, and verify them (every step closed, nothing superseded, no failure laundered into ok). Load before executing any pipeline step, or on 'profiling: disabled', 'no open step to end', steps force-closed as superseded, events_seen 0 / $0.0000 token cost, or an empty performance/otlp/events-*.jsonl.",
+ "version": 1,
+ "enabled": true,
+ "stages": ["profiling"],
+ "tools": ["profile_bind", "profile_step_begin", "profile_step_end", "profile_status", "profile_report", "dftracer_profiling_check", "dftracer_profiling_selftest"],
+ "pvc": {"predictor": ["profile_bind", "profile_step_begin", "profile_step_end", "profile_report"], "validator": ["dftracer_profiling_check", "dftracer_profiling_selftest"]},
+ "topic": "dftracer",
+ "history": [{"version": 1, "ts": 1794607030, "by": "conversion", "why": "converted from dftracer-agents profiling.py (profile_* tools), skill dftracer-profiling and the pipeline-profiling common section"}]
+}

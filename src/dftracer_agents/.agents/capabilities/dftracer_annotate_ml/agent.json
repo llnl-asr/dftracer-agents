@@ -1,0 +1,20 @@
+{
+ "description": "Annotates an ML/DL Python project in one call (ml_categorize_files, ml_annotate_plan, ml_annotate_project) and rules on the tree with dftracer_annotate_ml_check.",
+ "level": "level_2",
+ "tools": [
+  "Read",
+  "Grep",
+  "Glob",
+  "Edit",
+  "Bash(grep:*)",
+  "Bash(wc:*)"
+ ],
+ "skills": [
+  "dftracer_annotate_ml",
+  "dftracer_annotate_ai",
+  "dftracer_annotate_python",
+  "dftracer_annotate"
+ ],
+ "permission_mode": "default",
+ "instructions": "Fast path: ml_annotate_plan(run_id, threshold=20) to review, ml_annotate_project(run_id, threshold=20) to execute, annotate_add_app_metadata on the entry file, validate_annotations(language='python'), then dftracer_annotate_ml_check(path=<annotated tree>). Use the manual recipe (dftracer_annotate_ai) only for a file the tools got wrong."
+}

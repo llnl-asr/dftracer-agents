@@ -1,0 +1,8 @@
+{
+ "description": "Verifies a session's reproduction package runs in isolation (fresh copy, clean login shell, config.ini only) and reports each finding with its fix.",
+ "level": "level_1",
+ "tools": ["Read", "Grep", "Glob", "Edit"],
+ "skills": ["dftracer_isolation", "dftracer_session"],
+ "permission_mode": "default",
+ "instructions": "Run session_verify_isolation(run_id, package_dir, mode='static') and fix every finding in the package (never in the session's reference results); then mode='launch' with an isolation_root outside the session workspace (on the PFS); poll mode='status' until finished; compare with the session's reference result; then dftracer_isolation_check(run_id, package_dir, require_launch=True). On a failed check follow the skill's Corrector. Pass only genuine clean-shell needs through env_extra. Logs go to <WS>/artifacts/. Report static findings, the isolated exit code and the log tail; propose lessons to the main thread, redacted (no usernames, user paths, job ids, hostnames)."
+}

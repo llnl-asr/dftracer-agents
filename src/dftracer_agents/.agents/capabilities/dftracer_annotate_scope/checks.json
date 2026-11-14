@@ -1,0 +1,91 @@
+[
+ {
+  "tool": "dftracer_annotate_scope_check",
+  "args": {
+   "files": [
+    "src/io.c",
+    "src/main.c"
+   ],
+   "skip_functions": [
+    "helper_min"
+   ]
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_scope_check",
+  "args": {
+   "files": [
+    "src/io.c",
+    "include/io.h"
+   ]
+  },
+  "expect": {
+   "contains": "include/io.h"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_scope_check",
+  "args": {
+   "skip_functions": [
+    "POSIX_init",
+    "gpfs_fsync",
+    "tiny"
+   ]
+  },
+  "expect": {
+   "contains": "POSIX_init, gpfs_fsync"
+  }
+ },
+ {
+  "tool": "dftracer_annotate_scope_check",
+  "args": {
+   "source": "def get_name(self):\n    return self.name\n\n\ndef save(path, data):\n    with open(path, \"w\") as f:\n        f.write(data)\n",
+   "annotate_functions": [
+    "save"
+   ]
+  },
+  "expect": {
+   "json": {
+    "status": "pass"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_scope_check",
+  "args": {
+   "source": "def get_name(self):\n    return self.name\n\n\ndef save(path, data):\n    with open(path, \"w\") as f:\n        f.write(data)\n",
+   "annotate_functions": [
+    "get_name"
+   ]
+  },
+  "expect": {
+   "json": {
+    "status": "fail"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_annotate_scope_check",
+  "args": {},
+  "expect": {
+   "json": {
+    "status": "inconclusive"
+   }
+  }
+ },
+ {
+  "tool": "python_estimate_file_costs",
+  "args": {
+   "run_id": "nope/0",
+   "filepath": "a.py"
+  },
+  "expect": {
+   "contains": "File not found"
+  }
+ }
+]

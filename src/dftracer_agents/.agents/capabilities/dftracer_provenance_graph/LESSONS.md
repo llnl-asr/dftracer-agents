@@ -1,0 +1,10 @@
+# Lessons: dftracer_provenance_graph
+
+- [L-47535a70] Graph had activities and edges but zero entities, every hash dangling -> entity declarations (EH/ET/ER) and the FH/SH/HH hash tables carry cat "dftracer" and are not ph=M, so newer viewers do not pass them through a PROV-only query -> query `cat == "PROV" or cat == "PROV_CONT" or cat == "dftracer"` with `--phase any`; the tool falls back to the PROV-only query for older viewers that reject --phase (2026-10-01)
+- [L-391712cd] Hand-rolled gzip scan of a 29-file trace was slow -> full decompress-and-scan of every event -> extraction goes through dftracer-utils `dftracer_view --query` (bloom-filter index, chunk skipping): 29 files / 718k events -> 930 rows in 1.6 s (2026-10-01)
+- [L-022a4664] dangling_hashes from a worker that ran one or two activities -> dftracer deletes traces with fewer than 5 data events -> log >= 3 activities in smoke tests; for real runs make sure the worker initializes and finalizes (2026-10-01)
+- [L-0e8f2c33] Isolated run of the reproduction package failed with "FPATH: unbound variable" -> Lmod's init/bash and `module` are not `set -u` clean -> wrap them in the loader: `set +u; module ...; set -u` (2026-10-01)
+- [L-8be09202] Isolated run found no modules -> a non-login `env -i` shell has no MODULEPATH -> verify from `bash -l`, which is what a new user gets (2026-10-01)
+- [L-e1be377f] Package fetch failed: "git checkout --detach <unknown> does not take a path argument" -> feature branches were merged and deleted, and GitHub/GitLab refuse a short-SHA fetch -> pin repos by FULL 40-char SHA (still served by full SHA after deletion) (2026-10-01)
+- [L-4c8abbdd] Group could not read a published package -> parents created without group read -> `chmod g+rX` every parent you create when publishing to a shared group dir (2026-10-01)
+- [L-a73dde60] Reinstall of dftracer behaved like the old one -> `pip uninstall dftracer` leaves the cmake/brahma tree -> remove `<site-packages>/dftracer` before reinstalling (2026-10-01)

@@ -1,0 +1,106 @@
+[
+ {
+  "tool": "opt_compute_checklist",
+  "args": {},
+  "expect": {
+   "contains": "algorithmic/vectorization"
+  }
+ },
+ {
+  "tool": "opt_compute_checklist",
+  "args": {
+   "bottlenecks_json": "{\"bottlenecks\": [{\"metric\": \"compute_time\", \"score\": 5}, {\"metric\": \"unrelated_metric_xyz\", \"score\": 4}]}"
+  },
+  "expect": {
+   "contains": "\"other_component_bottlenecks\": 1"
+  }
+ },
+ {
+  "tool": "opt_compute_checklist",
+  "args": {
+   "bottlenecks_json": "{oops"
+  },
+  "expect": {
+   "json": {
+    "status": "error"
+   }
+  }
+ },
+ {
+  "tool": "dftracer_optimize_compute_check",
+  "args": {
+   "findings_json": "[{\"dimension\": 1, \"verdict\": \"applied\", \"level\": \"L1\", \"change\": \"Pool and reuse the per-step buffers\", \"citation\": \"https://arxiv.org/abs/2401.12345\", \"app_impact_pct\": 12, \"system_impact_pct\": 3}, {\"dimension\": 2, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 3, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 4, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 5, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 6, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 7, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 8, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 9, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 10, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}]"
+  },
+  "expect": {
+   "json": {
+    "status": "pass",
+    "dimensions": 10
+   }
+  }
+ },
+ {
+  "tool": "dftracer_optimize_compute_check",
+  "args": {
+   "findings_json": "[{\"dimension\": 1, \"verdict\": \"applied\", \"level\": \"L1\", \"change\": \"Pool and reuse the per-step buffers\", \"citation\": \"https://arxiv.org/abs/2401.12345\", \"app_impact_pct\": 12, \"system_impact_pct\": 3}, {\"dimension\": 2, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 3, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 4, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 5, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 6, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 7, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 8, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 9, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}]"
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "every_dimension_has_a_verdict"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "dftracer_optimize_compute_check",
+  "args": {
+   "findings_json": "[{\"dimension\": 1, \"verdict\": \"applied\", \"level\": \"L3\", \"change\": \"Pool and reuse the per-step buffers\", \"citation\": \"https://arxiv.org/abs/2401.12345\", \"app_impact_pct\": 12, \"system_impact_pct\": 3}, {\"dimension\": 2, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 3, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 4, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 5, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 6, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 7, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 8, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 9, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 10, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}]"
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "level_matches_dimension"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "dftracer_optimize_compute_check",
+  "args": {
+   "findings_json": "[{\"dimension\": 1, \"verdict\": \"applied\", \"level\": \"L1\", \"change\": \"Replace the solver kernel with rocBLAS gemm\", \"citation\": \"https://arxiv.org/abs/2401.12345\", \"app_impact_pct\": 12, \"system_impact_pct\": 3}, {\"dimension\": 2, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 3, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 4, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 5, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 6, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 7, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 8, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 9, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 10, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}]"
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "component_rules"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "dftracer_optimize_compute_check",
+  "args": {
+   "findings_json": "[{\"dimension\": 1, \"verdict\": \"applied\", \"level\": \"L1\", \"change\": \"Reduce the number of epochs to 2\", \"citation\": \"https://arxiv.org/abs/2401.12345\", \"app_impact_pct\": 12, \"system_impact_pct\": 3}, {\"dimension\": 2, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 3, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 4, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 5, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 6, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 7, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 8, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 9, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}, {\"dimension\": 10, \"verdict\": \"not_applicable\", \"reason\": \"structurally inert for this app after the literature search\"}]"
+  },
+  "expect": {
+   "json": {
+    "status": "fail",
+    "failed": [
+     "never_do_less"
+    ]
+   }
+  }
+ },
+ {
+  "tool": "dftracer_optimize_compute_check",
+  "args": {
+   "findings_json": "[{\"dimension\": 1, \"verdict\": \"applied\", \"level\": \"L1\", \"change\": \"x\", \"citation\": \"maybe\"}]"
+  },
+  "expect": {
+   "contains": "\"check\": \"citation_backed\", \"ok\": false"
+  }
+ }
+]

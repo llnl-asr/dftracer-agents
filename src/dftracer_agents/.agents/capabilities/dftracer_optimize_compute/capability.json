@@ -1,0 +1,31 @@
+{
+ "name": "dftracer_optimize_compute",
+ "description": "Compute component of the dftracer optimizer: the 10-dimension compute checklist (vectorization, kernel/library selection, overlap, compiler flags, threading, auto-tuning, frequency, NUMA, hardware capability) and built-in L1/L2/L3 strategies for compute_time (opt_compute_checklist); dftracer_optimize_compute_check validates the findings table. Load for compute_time/cpu_bound/gpu_util bottlenecks, MI300A/ROCm kernels, a Layer Breakdown that hides compute, or sizing compute against the app's own timer.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "optimize"
+ ],
+ "tools": [
+  "opt_compute_checklist",
+  "dftracer_optimize_compute_check"
+ ],
+ "pvc": {
+  "predictor": [
+   "opt_compute_checklist"
+  ],
+  "validator": [
+   "dftracer_optimize_compute_check"
+  ]
+ },
+ "topic": "dftracer",
+ "review": [],
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607564.387476,
+   "by": "conversion",
+   "why": "converted from the dftracer-compute-optimization skill and the dftracer-optimizer-compute agent"
+  }
+ ]
+}

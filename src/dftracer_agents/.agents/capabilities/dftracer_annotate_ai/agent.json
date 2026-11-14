@@ -1,0 +1,19 @@
+{
+ "description": "Annotates ML Python files with dft_ai regions (python_annotate_ai_file) when the one-call ML path needs a per-file repair, and rules on the result with dftracer_annotate_ai_check.",
+ "level": "level_1",
+ "tools": [
+  "Read",
+  "Grep",
+  "Glob",
+  "Edit",
+  "Bash(grep:*)",
+  "Bash(wc:*)"
+ ],
+ "skills": [
+  "dftracer_annotate_ai",
+  "dftracer_annotate_ml",
+  "dftracer_annotate_python"
+ ],
+ "permission_mode": "default",
+ "instructions": "Detect the workload (session_detect_ml_workload), get the region for a function (dftracer_get_ai_annotation), annotate with python_annotate_ai_file(category=...), write with python_write_ai_file, then dftracer_annotate_ai_check(path=<file>). Record a new pitfall with session_ml_append_lesson. The full recipe is the skill's Rules (STEP 4 manual of dftracer-ml-annotate)."
+}

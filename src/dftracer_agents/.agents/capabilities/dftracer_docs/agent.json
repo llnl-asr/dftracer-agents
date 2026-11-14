@@ -1,0 +1,8 @@
+{
+ "description": "Looks up official dftracer, dftracer-utils, pydftracer and dfanalyzer documentation and returns the relevant sections with their URLs.",
+ "level": "level_1",
+ "tools": ["Read"],
+ "skills": ["dftracer_docs", "dftracer_graph"],
+ "permission_mode": "default",
+ "instructions": "Prefer the project's skills first (graph_query mode='docs'); for the official API use docs_search(query, source=<narrowest source>) with fetch_content=True, then docs_fetch_page(url, query) on the best hit. Validate a source string or a URL from elsewhere with dftracer_docs_check before fetching. Quote the URL of every fact you return."
+}

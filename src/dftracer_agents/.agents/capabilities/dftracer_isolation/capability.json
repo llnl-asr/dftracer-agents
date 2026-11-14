@@ -1,0 +1,32 @@
+{
+ "name": "dftracer_isolation",
+ "description": "Verify a reproduction package runs in isolation (fresh copy, env -i bash -l, config.ini only) with session_verify_isolation static/launch/status; validator dftracer_isolation_check (static lint clean, launched outside the session, finished, exit 0). Load before handing a package on, or on hardcoded workspace/home paths or flux job ids in scripts, 'does not source lib_load_config.sh', 'required key ... missing', 'references missing ...sh', or an isolated run that exits non-zero.",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "package"
+ ],
+ "tools": [
+  "session_verify_isolation",
+  "dftracer_isolation_check",
+  "dftracer_isolation_selftest"
+ ],
+ "pvc": {
+  "predictor": [
+   "session_verify_isolation"
+  ],
+  "validator": [
+   "dftracer_isolation_check",
+   "dftracer_isolation_selftest"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794607856.7036903,
+   "by": "conversion",
+   "why": "converted from dftracer-agents session_verify_isolation (mcp_tools/tools/session/isolation.py, register_isolation_tools)"
+  }
+ ]
+}

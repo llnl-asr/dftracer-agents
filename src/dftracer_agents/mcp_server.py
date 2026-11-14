@@ -665,7 +665,22 @@ def build_server(service: str) -> FastMCP:
     ):
         for tool in asyncio.run(srv.list_tools()):
             combined.add_tool(tool)
+    _with_capabilities(combined)
     return _with_context_injection(combined)
+
+
+def _with_capabilities(server: FastMCP) -> FastMCP:
+    """Serve the shared capabilities (dftracer_agents.capabilities): each capability's tools are added, replacing the
+    built-in tool of the same name. DFTRACER_AGENTS_CAPABILITIES=0 serves the built-in tools only."""
+    if os.environ.get("DFTRACER_AGENTS_CAPABILITIES", "1") in ("0", "false", "no"):
+        return server
+    try:
+        from dftracer_agents.capabilities import load_into, register_contrib_tools
+        load_into(server)
+        register_contrib_tools(server)
+    except Exception as e:  # the built-in tools still serve
+        print(f"[capabilities] not loaded: {type(e).__name__}: {e}", file=sys.stderr)
+    return server
 
 
 # ---------------------------------------------------------------------------

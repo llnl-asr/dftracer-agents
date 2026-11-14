@@ -17,11 +17,25 @@ The server speaks the MCP stdio transport and works with any MCP-compatible agen
 ```bash
 git clone <this-repo>
 cd dftracer-agents
+scripts/setup_env.sh          # .venv with dftracer-agents (editable) + the shared capabilities
+source .venv/bin/activate
+```
 
-python -m venv venv
-source venv/bin/activate
+`scripts/setup_env.sh` also installs phronix, editable from a clone in `vendor/phronix`. phronix is the
+capability engine and holds the general capabilities (workloads, software, systems, tooling, process);
+dftracer-agents owns the performance-engineering ones, `dftracer_*`, in
+`src/dftracer_agents/.agents/capabilities` (committed with this repo). The MCP server serves both, its own over
+phronix's; a capability's tool replaces the built-in tool of the same name, and `DFTRACER_AGENTS_CAPABILITIES=0`
+serves the built-ins only. moirai-agents and rabbit-agent build on dftracer-agents the same way.
 
-pip install -e .
+A change to a phronix capability (a lesson, a new version, a new `workload_` capability) is committed on
+`contrib/dftracer-agents` in a worktree of the phronix clone, `vendor/contrib/phronix`, and used at once. Nothing is
+pushed for you: `capabilities_contributions` shows what is waiting, and `capabilities_update` (or the command
+below) brings the clone up to date, rebases the branch and gives the push command and the pull-request link.
+
+```bash
+python -m phronix.engine status --bootstrap dftracer_agents.capabilities:engine   # what is waiting upstream
+python -m phronix.engine update --bootstrap dftracer_agents.capabilities:engine   # update, rebase, how to open the PR
 ```
 
 This installs console scripts including:
@@ -609,8 +623,7 @@ It covers every MCP tool call in order, which sub-service owns each one, the wor
 Tests call the real MCP tool functions and compare output against direct subprocess calls — no mocking.
 
 ```bash
-source venv/bin/activate
-cd dftracer-agents
+source .venv/bin/activate        # scripts/setup_env.sh installs pytest (the dev extra)
 
 # Run everything
 python -m pytest test/ -v

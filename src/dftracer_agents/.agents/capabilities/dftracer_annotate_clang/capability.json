@@ -1,0 +1,50 @@
+{
+ "name": "dftracer_annotate_clang",
+ "description": "libclang-based C/C++ annotation tools shared by the C and C++ paths: clang_extract_functions, clang_annotate_file/project, clang_insert_line, clang_add_braces, clang_write_annotated_file, clang_syntax_check, clang_lint_annotations, clang_estimate_function_cost, clang_fix_header_tentative_defs, clang_regression_test. Load when clang tools report functions: 0, already_annotated: true on an un-annotated file, 'fatal error: ... file not found' during annotation, braceless if/else bodies, END after return, FINI on only one exit of main, C/C++ annotation pitfalls (macro in #define/comment/string, forward declarations, header annotation, duplicate START/END).",
+ "version": 1,
+ "enabled": true,
+ "stages": [
+  "annotate"
+ ],
+ "tools": [
+  "clang_add_braces",
+  "clang_annotate_file",
+  "clang_annotate_project",
+  "clang_estimate_function_cost",
+  "clang_extract_functions",
+  "clang_fix_header_tentative_defs",
+  "clang_insert_line",
+  "clang_lint_annotations",
+  "clang_regression_test",
+  "clang_syntax_check",
+  "clang_write_annotated_file",
+  "dftracer_annotate_clang_check"
+ ],
+ "pvc": {
+  "predictor": [
+   "clang_extract_functions",
+   "clang_annotate_file",
+   "clang_annotate_project",
+   "clang_insert_line",
+   "clang_add_braces",
+   "clang_write_annotated_file",
+   "clang_estimate_function_cost",
+   "clang_fix_header_tentative_defs"
+  ],
+  "validator": [
+   "dftracer_annotate_clang_check",
+   "clang_syntax_check",
+   "clang_lint_annotations",
+   "clang_regression_test"
+  ]
+ },
+ "topic": "dftracer",
+ "history": [
+  {
+   "version": 1,
+   "ts": 1794608050.918299,
+   "by": "conversion",
+   "why": "converted from dftracer-agents register_clang_tools (session/annotation_clang.py), skill dftracer-pitfalls (C/C++ placement pitfalls), the clang-annotator sections of dftracer-annotation-lessons"
+  }
+ ]
+}

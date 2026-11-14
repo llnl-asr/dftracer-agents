@@ -1,0 +1,11 @@
+{
+ "name": "dftracer_provenance_graph",
+ "description": "dftracer provenance mode, graph stage: build the provenance graph from <WS>/provenance/traces with provenance_extract_graph (dftracer-utils dftracer_view, indexed), write graph.json/graph.dot, apply the health gate (no dangling hashes, every type described, every artifact produced and rooted in a spec input) and map any gap back to a concrete annotation fix; then the reproduction package final_provenance/ and isolated-run verification. Load after the provenance traced run, or on 'healthy: false', prov_events 0, dangling_hashes, types_undescribed, artifact_types_missing, artifacts_without_producer, truncated_activities, 'dftracer_view failed', or a graph with activities but zero entities.",
+ "version": 1,
+ "enabled": true,
+ "stages": ["graph"],
+ "tools": ["provenance_extract_graph", "dftracer_provenance_graph_check", "dftracer_provenance_graph_selftest"],
+ "pvc": {"predictor": ["provenance_extract_graph"], "validator": ["dftracer_provenance_graph_check", "dftracer_provenance_graph_selftest"]},
+ "topic": "dftracer",
+ "history": [{"version": 1, "ts": 1794607030, "by": "conversion", "why": "converted from dftracer-agents provenance.py (extract_graph tool), skill dftracer-provenance (graph health gate, viewing, reproduction package + isolation) and agent dftracer-provenance-graph"}]
+}
