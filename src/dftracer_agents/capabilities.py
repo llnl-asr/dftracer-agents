@@ -131,8 +131,8 @@ def load_into(server, quiet: bool = False) -> dict:
 
 
 def register_contrib_tools(server) -> None:
-    """capabilities_contributions / capabilities_update: what dftracer-agents contributed to phronix, and keeping it
-    rebased (dftracer-agents has no web UI; these are its Update button)."""
+    """capabilities_contributions / capabilities_update / capabilities_push: what dftracer-agents contributed to phronix,
+    rebasing it (conflicts merged), and pushing it (dftracer-agents has no web UI; these are its Rebase and Push buttons)."""
 
     @server.tool(name="capabilities_contributions")
     def capabilities_contributions() -> dict:
@@ -148,10 +148,22 @@ def register_contrib_tools(server) -> None:
     def capabilities_update() -> dict:
         """Update the upstream clones (fast-forward) and rebase this install's contribution branches on them.
 
-        Use when the user asks to update, or before asking them to open a pull request. Returns per upstream project:
-        ``clone_updated``, ``rebase`` (ok / conflict, with ``rebase_error``), ``contribution`` (ahead, commits) and
-        ``to_do`` with the ``push`` command and the ``pull_request`` link: give both to the user, who pushes and
-        opens the pull request (nothing is pushed for them)."""
+        Use when the user asks to update or rebase. Only the contribution commits are replayed; conflicts in lessons,
+        worked entries and capability.json merge by themselves, anything else is merged by the agent (or the rebase is
+        aborted and the branch left as it was). Returns per upstream project ``clone_updated``, ``rebase`` (ok,
+        up_to_date, conflict, error), ``rebase_resolved``, ``rebase_merged_by_agent``, ``conflicts``,
+        ``contribution`` (ahead, commits) and ``to_do`` (push command, pull_request link); capabilities_push pushes."""
         engine()
         from phronix.engine import upstream
-        return upstream.update()
+        return upstream.update(resolve=True)
+
+    @server.tool(name="capabilities_push")
+    def capabilities_push() -> dict:
+        """Rebase this install's contribution branches (as capabilities_update, conflicts merged) and push the ones
+        with commits, for a pull request. Use when the user asks to push or contribute back.
+
+        Returns per upstream project ``rebase``, ``pushed``, ``push_error`` and ``pull_request`` (give the link to the
+        user)."""
+        engine()
+        from phronix.engine import upstream
+        return upstream.push()
