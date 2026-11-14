@@ -172,14 +172,18 @@ class TestHooks:
         reset_sessions()
 
     def test_sync_hooks_writes_all_supported_harnesses(self, tmp_path):
-        from dftracer_agents.hooks import (HOOK_SCRIPT_NAME, OPENCODE_PLUGIN_NAME,
-                                           sync_hooks)
+        """The inject_context prompt hook is no longer registered for claude/codex (its relative command failed,
+        blocking every prompt, wherever the script was missing): sync renders the OpenCode plugin and removes any
+        claude/codex registration it wrote before. The scripts themselves still ship via install_hook_scripts."""
+        from dftracer_agents.hooks import OPENCODE_PLUGIN_NAME, sync_hooks
+        codex = tmp_path / ".codex" / "hooks.json"
+        codex.parent.mkdir(parents=True)
+        codex.write_text("{}")
         result = sync_hooks(base=tmp_path)
         assert result["copilot"] == "not_applicable"  # no hook mechanism exists
-        assert (tmp_path / ".claude" / "hooks" / HOOK_SCRIPT_NAME).is_file()
-        assert (tmp_path / ".codex" / "hooks" / HOOK_SCRIPT_NAME).is_file()
-        assert (tmp_path / ".codex" / "hooks.json").is_file()
         assert (tmp_path / ".opencode" / "plugin" / OPENCODE_PLUGIN_NAME).is_file()
+        assert not codex.exists(), "the stale codex registration must be removed"
+        assert not (tmp_path / ".claude" / "settings.json").exists(), "nothing to register for claude"
 
     def test_sync_hooks_is_idempotent(self, tmp_path):
         from dftracer_agents.hooks import sync_hooks
@@ -193,33 +197,43 @@ class TestHooks:
         from dftracer_agents.hooks import sync_hooks
         settings = tmp_path / ".claude" / "settings.json"
         settings.parent.mkdir(parents=True)
+        from dftracer_agents.hooks import render_claude_hook
+        other_prompt_hook = {"matcher": "", "hooks": [
+            {"type": "command", "command": "python3 .claude/hooks/phronix_context_hook.py"}]}
         settings.write_text(json.dumps({
             "permissions": {"allow": ["Bash(ls)"]},
             "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [
-                {"type": "command", "command": "bash .claude/hooks/guard_rm_drm.sh"}]}]},
+                {"type": "command", "command": "bash .claude/hooks/guard_rm_drm.sh"}]}],
+                      "UserPromptSubmit": [render_claude_hook(), other_prompt_hook]},
         }))
         sync_hooks(base=tmp_path)
         data = json.loads(settings.read_text())
         assert data["permissions"] == {"allow": ["Bash(ls)"]}
         assert data["hooks"]["PreToolUse"], "the rm/drm guard must survive"
-        assert data["hooks"]["UserPromptSubmit"]
+        # ours (inject_context) is removed, any other prompt hook stays
+        assert data["hooks"]["UserPromptSubmit"] == [other_prompt_hook]
 
     def test_claude_hook_does_not_duplicate_on_resync(self, tmp_path):
-        from dftracer_agents.hooks import sync_hooks
-        sync_hooks(base=tmp_path)
-        sync_hooks(base=tmp_path)
-        data = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-        assert len(data["hooks"]["UserPromptSubmit"]) == 1
+        """A resync never re-adds the inject_context entry (it removes it once, then reports current)."""
+        from dftracer_agents.hooks import HOOK_SCRIPT_NAME, render_claude_hook, sync_claude_hooks
+        settings = tmp_path / ".claude" / "settings.json"
+        settings.parent.mkdir(parents=True)
+        settings.write_text(json.dumps({"hooks": {"UserPromptSubmit": [render_claude_hook()]}}))
+        assert sync_claude_hooks(base=tmp_path) == "updated"
+        assert sync_claude_hooks(base=tmp_path) == "already_current"
+        data = json.loads(settings.read_text())
+        assert HOOK_SCRIPT_NAME not in json.dumps(data.get("hooks", {}))
 
     def test_settings_never_reference_a_missing_script(self, tmp_path):
         """The failure this guards: a UserPromptSubmit entry was written while
         the script existed only in the packaged workspace, so every prompt ran a
         nonexistent file and failed."""
-        from dftracer_agents.hooks import HOOK_SCRIPT_NAME, sync_claude_hooks
-        status = sync_claude_hooks(base=tmp_path)
-        script = tmp_path / ".claude" / "hooks" / HOOK_SCRIPT_NAME
+        from dftracer_agents.hooks import render_claude_hook, sync_claude_hooks
         settings = tmp_path / ".claude" / "settings.json"
-        assert script.is_file(), "script must be written before the settings entry"
+        settings.parent.mkdir(parents=True)
+        # an entry written earlier whose script is missing from this project
+        settings.write_text(json.dumps({"hooks": {"UserPromptSubmit": [render_claude_hook()]}}))
+        status = sync_claude_hooks(base=tmp_path)
         if settings.exists():
             data = json.loads(settings.read_text())
             for entry in data.get("hooks", {}).get("UserPromptSubmit", []):
@@ -265,22 +279,28 @@ class TestHooks:
         ensure_hooks_setup(target_root=tmp_path)
         ensure_workspace_setup(target_root=tmp_path, force=True)
 
+        def _script(command: str) -> str:
+            # commands are `python3 "$CLAUDE_PROJECT_DIR"/.claude/hooks/x.py` (or a path relative to the project)
+            return command.split()[-1].replace('"$CLAUDE_PROJECT_DIR"/', "").replace("$CLAUDE_PROJECT_DIR/", "")
+
         settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
         for event, entries in settings.get("hooks", {}).items():
             for entry in entries:
                 for hook in entry.get("hooks", []):
-                    ref = hook["command"].split()[-1]
+                    ref = _script(hook["command"])
                     assert (tmp_path / ref).is_file(), \
                         f"claude {event} references unresolvable {ref}"
 
+        # codex's inject_context registration is no longer written (see hooks.sync_codex_hooks); if a codex
+        # hooks.json reached the target anyway, everything it references must resolve
         codex = tmp_path / ".codex" / "hooks.json"
-        assert codex.is_file(), "codex hook wiring never reached the target root"
-        for entries in json.loads(codex.read_text())["hooks"].values():
-            for entry in entries:
-                for hook in entry.get("hooks", []):
-                    ref = hook["command"].split()[-1]
-                    assert (tmp_path / ref).is_file(), \
-                        f"codex references unresolvable {ref}"
+        if codex.is_file():
+            for entries in json.loads(codex.read_text())["hooks"].values():
+                for entry in entries:
+                    for hook in entry.get("hooks", []):
+                        ref = _script(hook["command"])
+                        assert (tmp_path / ref).is_file(), \
+                            f"codex references unresolvable {ref}"
 
     def test_generated_script_is_syntactically_valid(self):
         """The script is a string constant; a syntax error there breaks every
@@ -319,17 +339,18 @@ class TestOpencodeTimeouts:
         assert cfg["experimental"]["mcp_timeout"] >= 3600000
 
     def test_provider_step_timeout_overrides_the_120s_ceiling(self):
-        """stepMs defaults to 120000 in the AI SDK and is the OUTER bound: left
-        alone, every tool call dies at ~2 min regardless of mcp_timeout."""
-        timeout = self._config()["provider"]["livai"]["options"]["timeout"]
-        assert timeout["stepMs"] > 120000
-        assert timeout["totalMs"] >= timeout["stepMs"]
+        """The provider request timeout defaults to ~120000 and is the OUTER bound: left
+        alone, every tool call dies at ~2 min regardless of mcp_timeout. OpenCode takes flat
+        numbers (timeout / headerTimeout / chunkTimeout), not the AI SDK's {totalMs, stepMs, chunkMs}."""
+        options = self._config()["provider"]["livai"]["options"]
+        assert options["timeout"] > 120000
+        assert options["headerTimeout"] > 120000
 
     def test_chunk_timeout_stays_finite(self):
         """chunkMs is the only guard against a genuinely dead stream; infinite
         would turn a hung call into a permanently stuck session."""
-        timeout = self._config()["provider"]["livai"]["options"]["timeout"]
-        assert 0 < timeout["chunkMs"] <= 3600000
+        options = self._config()["provider"]["livai"]["options"]
+        assert 0 < options["chunkTimeout"] <= 3600000
 
     def test_settings_survive_a_permissions_resync(self, tmp_path):
         import json

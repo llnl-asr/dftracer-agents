@@ -1,0 +1,210 @@
+systems:
+  tuolumne:
+    description: AMD MI300A APU cluster at LLNL (Cray PE / ROCm)
+    sudo: false
+    modules:
+    - craype-x86-trento
+    - libfabric/match_SHS
+    - craype-network-ofi
+    - perftools-base/25.09.0
+    - craype/2.7.35
+    - PrgEnv-cray/8.7.0
+    - flux_wrappers/0.1
+    - xpmem/2.6.5
+    - cce/20.0.0
+    - cray-libsci/25.09.0
+    - cray-mpich/9.0.1
+    - python/3.13.2
+    env:
+      LD_LIBRARY_PATH: /opt/cray/pe/cce/20.0.0/cce/x86_64/lib:/opt/cray/pe/cce/20.0.0/cce/x86_64/lib/default64:/usr/lib64:${LD_LIBRARY_PATH}
+    mpi_launcher: flux run
+    tracing:
+      papi_module: papi/7.2.0.2
+      papi_module_note: 7.3.0.1 ships a rocp_sdk component that is ABI-incompatible
+        with the installed ROCm and SIGSEGVs inside PAPI_library_init, killing both
+        dftracer's build-time counter probe and the traced app. 7.2.0.2 also exposes
+        the most presets (30).
+      power: auto
+    notes: 'APU architecture: CPU and GPU share memory — no explicit device data transfer.
+
+      StdEnv (S) is loaded by default; do not reload it.
+
+      Use ''flux run -n <N>'' for MPI job submission.
+
+      If module commands fail, check: module list | grep StdEnv
+
+      LD_LIBRARY_PATH must include /usr/lib64 (for libdl) in addition to the CCE
+
+      lib dirs, or linking any binary/shared-lib that references dlopen (e.g.
+
+      dftracer_core''s test_cpp, or any brahma/dftracer build) fails with
+
+      "ld.lld: error: undefined reference: dlopen (disallowed by
+
+      --no-allow-shlib-undefined)". This must be set BEFORE calling
+
+      session_install_dftracer / session_build_annotated, since those run in a
+
+      separate process that does not inherit exports made in a Bash tool call.
+
+      '
+  matrix:
+    description: NVIDIA H100 + Intel Sapphire Rapids cluster at LLNL (TOSS 4 / Slurm)
+    sudo: false
+    modules:
+    - gcc/12.1.1-magic
+    - mvapich2/2.3.7
+    - cuda/12.6.0
+    env:
+      CUDA_HOME: /usr/tce/packages/cuda/cuda-12.6.0
+      CUDA_PATH: /usr/tce/packages/cuda/cuda-12.6.0
+      PATH: /usr/tce/packages/cuda/cuda-12.6.0/bin:${PATH}
+      LD_LIBRARY_PATH: /usr/tce/packages/cuda/cuda-12.6.0/lib64:${LD_LIBRARY_PATH}
+      PIP_INDEX_URL: https://wci-repo.llnl.gov/repository/pypi-group/simple
+      PIP_TRUSTED_HOST: wci-repo.llnl.gov
+      PIP_EXTRA_INDEX_URL: ''
+    mpi_launcher: srun
+    tracing:
+      papi_module: ''
+      papi_module_note: 'Use the SYSTEM PAPI (/usr/lib64/libpapi.so.5, 5.6.0.0) —
+        an LLNL-patched build that is the only one seeing the Sapphire Rapids PMU
+        (19 counters, 17 presets, 10 fitting at once). Do NOT load papi/6.0.0.1: it
+        predates SPR and reports 0 hardware counters and 0 presets on this CPU.'
+      power: false
+    notes: "Scheduler is SLURM, not Flux — see the slurm-alloc skill before allocating.\n\
+      4x NVIDIA H100 80GB (sm_90) + 2x Xeon Platinum 8480+ per node, 112 cores,\n\
+      8 NUMA regions. Login nodes have NO GPU and no driver: probe GPU/CUPTI/PAPI\n\
+      facts from a compute node via srun, never from the login node.\n\nPARTITIONS\
+      \ differ enormously and MaxNodes is invisible in default sinfo:\n  pdebug  MaxNodes=1\
+      \  (2 nodes, 1h)  — schedules at once, single-node only.\n          A multi-node\
+      \ scaling ladder CANNOT run here; -N2 is rejected with\n          a misleading\
+      \ \"Invalid generic resource (gres) specification\".\n  pci     MaxNodes=10\
+      \ (20 nodes, 24h) — preferred for multi-node work.\n  pbatch  MaxNodes=10 (35\
+      \ nodes, 24h) — largest pool, worst queue.\npci's nodes are a SUBSET of pbatch's\
+      \ and pbatch outranks it, so a pending\npci job saying \"reserved for jobs in\
+      \ higher priority partitions\" is being\noutranked on shared hardware, not hitting\
+      \ broken nodes. Backfill depends on\nNODE COUNT and is insensitive to walltime\
+      \ — ask for exactly the nodes needed\nand confirm with `sbatch --test-only`.\n\
+      \nCUDA/CUPTI: the site-default /usr/local/cuda-12.0 has NO CUPTI (no extras/,\n\
+      no cupti.h) — a build that auto-detects it silently disables GPU tracing.\n\
+      Always pin DFTRACER_CUDA_PATH at a module toolkit (cuda/11.8.0, 12.2.2,\n12.6.0,\
+      \ 12.9.1, 13.1.1 all ship CUPTI in the merged layout). Non-root\nprofiling IS\
+      \ permitted here (NVreg_RestrictProfilingToAdminUsers=0).\n\nPOWER IS OFF ON\
+      \ PURPOSE. variorum cannot read power on this system:\n/dev/cpu/*/msr is root-only,\
+      \ the msr_safe module is not loaded, and RAPL\nenergy_uj is mode 0400. Worse,\
+      \ a variorum-enabled dftracer_service pinned to\nONE core on this TWO-socket\
+      \ node makes variorum's init see\n\"cores(1) mod sockets(2) != 0\" and call\
+      \ exit(), killing the whole daemon\nwhile its pid file still looks healthy.\
+      \ Set\nDFTRACER_DISABLE_VARIORUM_POWER=1 for the service. GPU power is available\n\
+      to ordinary users via NVML (nvidia-smi --query-gpu=power.draw).\n\npip cannot\
+      \ reach pypi.org from here (resolves, no route). /etc/pip.conf\npoints at the\
+      \ reachable site Nexus mirror, but a user-level\n~/.config/pip/pip.conf written\
+      \ by \"NVIDIA PyIndex\" overrides it — hence the\nPIP_INDEX_URL/PIP_TRUSTED_HOST\
+      \ env pins above, which beat every config file\nwithout editing the user's global\
+      \ pip.conf.\n\nModule loads inside `bash -lc` can silently ROLL BACK (the login\
+      \ profile\nreloads site defaults). Put module loads in a sourced script and\
+      \ verify with\n`which`, never assume.\n"
+  container:
+    description: Docker/Podman container environment
+    sudo: true
+    modules: []
+    env: {}
+    mpi_launcher: mpirun
+    tracing:
+      power: auto
+    notes: 'sudo is permitted in containers.
+
+      No Cray module system — use apt/yum for package installation.
+
+      MPI: use ''mpirun -n <N>'' directly.
+
+      '
+  dane:
+    description: Intel Sapphire Rapids CPU-only CTS-2 cluster at LLNL (TOSS 4 / Slurm)
+      — no GPU
+    sudo: false
+    modules:
+    - gcc/12.1.1-magic
+    - mvapich2/2.3.7
+    env:
+      PIP_INDEX_URL: https://wci-repo.llnl.gov/repository/pypi-group/simple
+      PIP_TRUSTED_HOST: wci-repo.llnl.gov
+    mpi_launcher: srun
+    notes: "CPU-ONLY. There is no GPU on any dane node — no CUDA, no ROCm, no HIP,\
+      \ no\nCUPTI, no ROCProfiler. Never enable DFTRACER_ENABLE_HIP_TRACING or\nDFTRACER_ENABLE_CUDA_TRACING\
+      \ here. Two false positives will tell you\notherwise: /usr/bin/nvidia-smi exists\
+      \ (and fails: \"couldn't communicate with\nthe NVIDIA driver\") and EIGHT /opt/rocm-*\
+      \ trees exist (5.4.3-5.7.1, 6.4.3, 7.2.0) -- the 5.x ones\nare llvm-only stubs\
+      \ but 6.4.3 and 7.2.0 are COMPLETE ROCm userspaces\n(bin/lib/include/amdgcn)\
+      \ on a machine with no AMD device. Both signals are\nTOSS image artifacts, not\
+      \ hardware; system_detect's power probe reports\ngpu: rocm_smi (/opt/rocm-7.2.0)\
+      \ here for exactly this reason, which is why\ntracing.power is pinned off below.\n\
+      \nScheduler is SLURM, not Flux — see the slurm-alloc skill before allocating.\n\
+      Node: 2x Intel Xeon Platinum 8480+ (Sapphire Rapids), 112 online cores\n(56/socket,\
+      \ SMT off), 8 NUMA regions (SNC-4 per socket), ~251 GB RAM, 107 MB L3.\nlscpu\
+      \ reports \"CPU(s): 224\" but \"On-line CPU(s) list: 0-111\" — nproc = 112 is\n\
+      the real number. PAPI misreports \"Sockets: 4\"; it is counting SNC domains.\n\
+      \nPARTITIONS (MaxNodes is invisible in default sinfo — always scontrol it):\n\
+      \  pbatch  1440 nodes, MaxNodes=520, MaxTime=24h — DEFAULT, heavily backlogged\n\
+      \          (observed ~5285 queued jobs).\n  pci     same 1440-node pool, MaxNodes=520,\
+      \ MaxTime=24h, QoS=ci_dane —\n          near-empty (observed 7 queued). Prefer\
+      \ this for real work.\n  pdebug  38 nodes, MaxNodes=20, MaxTime=1h — multi-node\
+      \ capable here, unlike\n          matrix's MaxNodes=1 pdebug. Good for the low\
+      \ end of a node ladder.\n  pserial 16 nodes, MaxNodes=1, MaxTime=7 DAYS — the\
+      \ only long-walltime option.\n  pjupyter 2 nodes, MaxNodes=1.  pall is State=DOWN;\
+      \ never target it.\npci and pbatch draw from the SAME nodelist, so a pending\
+      \ pci job reporting\n\"reserved for jobs in higher priority partitions\" is\
+      \ contention, not breakage.\n\nPAPI: use the SYSTEM PAPI (/usr/lib64/libpapi.so.5\
+      \ -> 5.6.0.0, LLNL-patched).\n19 hardware counters, 17 presets (8 native, 9\
+      \ derived), perf_event component\nwith the \"spr\" PMU. The papi/6.0.0.1 module\
+      \ reports 0 counters and 0 presets on\nthis CPU — do not load it. rapl component\
+      \ is disabled (\"CPU model not\nsupported\"); perf_event_uncore is disabled\
+      \ (perf_event_paranoid=1). Same CPU as\nmatrix, so the matrix PAPI partition\
+      \ transfers here; nothing from an MI300A/Cray\nplan does.\n\nPOWER IS OFF. No\
+      \ power source is readable by an ordinary user: /dev/cpu/*/msr is\nroot:root\
+      \ 0600, msr_safe is NOT loaded, RAPL energy_uj is mode 0400, the PAPI\nrapl\
+      \ component is disabled, and there is no GPU so no NVML/rocm-smi fallback\n\
+      either. Set DFTRACER_DISABLE_VARIORUM_POWER=1 and expect zero power events.\n\
+      \nFILESYSTEMS: /p/lustre1, /p/lustre2, /p/lustre3 (Lustre) and /p/vast1 (VAST/NFS)\n\
+      for application data; /usr/workspace/<user> (NFS) for source, builds, venvs\
+      \ and\ndftracer traces. THERE IS NO /p/lustre5 HERE — a session dataset/ symlink\n\
+      inherited from tuolumne or matrix DANGLES on dane, and the app then silently\n\
+      fails to write output while its traces read perfectly. Re-point it at\n/p/lustre1..3\
+      \ before running anything.\n\npip: /etc/pip.conf already points at the reachable\
+      \ wci-repo Nexus mirror and\nthere is no user-level override, so pip works out\
+      \ of the box (unlike matrix,\nwhere an \"NVIDIA PyIndex\" ~/.config/pip/pip.conf\
+      \ shadows it). pypi.org also\nresolves and routes from the login node. czgitlab.llnl.gov:7999\
+      \ (SSH) is open.\n\nModule loads do NOT roll back inside `bash -lc` here — verified:\
+      \ purge+load\nsurvives, and `module load gcc/12.1.1-magic` auto-swaps mvapich2\
+      \ to its\ngcc-12.1.1 build. Do not copy matrix's rollback warning to this machine.\n\
+      Site default if you load nothing: intel-classic/2021.6.0-magic + mvapich2/2.3.7.\n\
+      Available: gcc 10.3.1-13.3.1, clang 14-22, intel/intel-classic 19.0-2025.3,\n\
+      mvapich2 2.3.6/2.3.7, openmpi/4.1.2.\n\nACCOUNTING: a Slurm bank association\
+      \ for cluster `dane` is required and is NOT\nimplied by having one on tuolumne/matrix/tioga.\
+      \ Without one every submission —\nincluding `sbatch --test-only` — fails with\
+      \ \"allocation failure: Invalid account\nor account/partition combination specified\"\
+      , for every partition and every\nexplicit -A. Verify with `sacctmgr show assoc\
+      \ user=$USER cluster=dane` before\nplanning any sweep."
+    tracing:
+      papi_module: ''
+      papi_module_note: 'Use the SYSTEM PAPI (/usr/lib64/libpapi.so.5 -> 5.6.0.0),
+        the LLNL-patched build that is the only one seeing the Sapphire Rapids PMU
+        here: 19 hardware counters, 17 presets (8 native, 9 derived), perf_event component
+        with the ''spr'' PMU. Do NOT load papi/6.0.0.1: it predates SPR and reports
+        0 hardware counters and 0 presets on this CPU. Same CPU as matrix, so matrix''s
+        counter partition transfers; an MI300A/Cray 30-preset plan does not.'
+      power: 'off'
+  corona:
+    description: Corona HPC system with Intel classic toolchain, MVAPICH2, and Flux
+      wrapper launchers
+    sudo: false
+    modules:
+    - StdEnv
+    - intel-classic/2021.6.0-magic
+    - mvapich2/2.3.7
+    - flux_wrappers/0.1
+    env: {}
+    mpi_launcher: flux run
+    notes: Detected from hostname corona82. Application launch scripts use flux/flux_wrappers
+      rather than bare mpirun. Load Lmod init before module operations; use the app's
+      own scripts as the source of truth for exact module/env setup on this system.

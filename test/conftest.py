@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import asyncio
-import sys
-import types
-from pathlib import Path
 
 import pytest
 
@@ -46,64 +43,8 @@ SUBSERVICE_ATTRS = [
 
 @pytest.fixture(scope="session")
 def service_module():
-    """Load dftracer_utils_service.py with a synthetic package context."""
-    repo_root = Path(__file__).resolve().parents[1]
-    service_path = (
-        repo_root
-        / "dftracer-agents"
-        / "mcp-tools"
-        / "tools"
-        / "dftracer"
-        / "dftracer_utils_service.py"
-    )
-
-    # Build a minimal import graph so relative imports succeed.
-    pkg_root = types.ModuleType("dftracer_agents")
-    pkg_root.__path__ = [str(repo_root / "dftracer-agents")]
-
-    mcp_pkg = types.ModuleType("dftracer_agents.mcp_tools")
-    mcp_pkg.__path__ = [str(repo_root / "dftracer-agents" / "mcp-tools")]
-
-    tools_pkg = types.ModuleType("dftracer_agents.mcp_tools.tools")
-    tools_pkg.__path__ = [str(service_path.parent)]
-
-    factory_mod = types.ModuleType("dftracer_agents.mcp_service_factory")
-
-    class MCPService:  # pragma: no cover - trivial stub
-        pass
-
-    class MCPServiceFactory:
-        _services = {}
-
-        @classmethod
-        def register(cls, name, service):
-            cls._services[name] = service
-
-        @classmethod
-        def get_service(cls, name):
-            return cls._services.get(name)
-
-    factory_mod.MCPService = MCPService
-    factory_mod.MCPServiceFactory = MCPServiceFactory
-
-    sys.modules["dftracer_agents"] = pkg_root
-    sys.modules["dftracer_agents.mcp_tools"] = mcp_pkg
-    sys.modules["dftracer_agents.mcp_tools.tools"] = tools_pkg
-    sys.modules["dftracer_agents.mcp_service_factory"] = factory_mod
-
-    mod_name = "dftracer_agents.mcp_tools.tools.dftracer_utils_service"
-    if mod_name in sys.modules:
-        del sys.modules[mod_name]
-
-    spec = importlib.util.spec_from_file_location(mod_name, service_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec is not None
-    sys.modules[mod_name] = module
-
-    source = service_path.read_text(encoding="utf-8")
-    code = compile(source, str(service_path), "exec")
-    exec(code, module.__dict__)
-    return module
+    """The installed dftracer_utils_service module (src/dftracer_agents/mcp_tools/tools/dftracer/)."""
+    return importlib.import_module("dftracer_agents.mcp_tools.tools.dftracer.dftracer_utils_service")
 
 
 @pytest.fixture()
@@ -133,3 +74,30 @@ def resolve_command_callable(command):
     if callable(command):
         return command
     raise TypeError(f"Cannot resolve callable for command object: {command!r}")
+
+
+SESSION_SUBSERVICES = (
+    "session_subservice", "pipeline_subservice", "daemon_subservice", "clang_subservice",
+    "annotation_api_subservice", "annotation_subservice", "optimization_subservice",
+)
+
+
+def session_tool_map(session_service) -> dict:
+    """Every session-scoped tool the server serves, by name.
+
+    The session tools were one service once; they are now spread over DFTracerSessionService's subservices plus the
+    session-aware wrappers of the utils service (session_split_traces, ...) and of the diagnoser service
+    (session_diagnose_bottlenecks) -- the same set mcp_server's session + utils + diagnoser builders serve.
+    """
+    from dftracer_agents.mcp_tools.tools.dftracer import dfdiagnoser_service, dftracer_utils_service
+
+    tools = {}
+    subs = [getattr(session_service, n, None) for n in SESSION_SUBSERVICES]
+    subs.append(dftracer_utils_service.DftracerUtilsService().session_subservice)
+    subs.append(dfdiagnoser_service.DFDiagnoserService().session_subservice)
+    for sub in subs:
+        if sub is None:
+            continue
+        for tool in asyncio.run(sub.list_tools()):
+            tools.setdefault(tool.name, tool)
+    return tools

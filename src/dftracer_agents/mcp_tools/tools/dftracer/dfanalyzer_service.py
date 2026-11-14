@@ -174,7 +174,7 @@ def _hydra_args(
 
     Args:
         trace_path (Optional[str]): Filesystem path to the trace file or
-            directory to analyse.  Passed as ``--trace-path <value>``.
+            directory to analyse.  Passed as the Hydra override ``trace_path=<value>``.
             If ``None`` or an empty string, the flag is omitted entirely.
         view_types (Optional[List[str]]): Sequence of view-type strings to
             display in the analysis output (e.g. ``["file_name", "proc_name"]``).
@@ -191,7 +191,7 @@ def _hydra_args(
             ``-ahydra/analyzer=<value>`` is inserted; otherwise the flag is
             omitted.
         analyzer_preset (str): Hydra preset for the selected analyzer backend.
-            Appended as ``-ahydra.analyzer/preset=<value>``.  Common values are
+            Appended as ``analyzer/preset=<value>``.  Common values are
             ``"posix"`` (default) and ``"dlio"``.
         analyzer_checkpoint (Optional[bool]): Enable or disable checkpointing
             inside the analyzer.  Mapped to

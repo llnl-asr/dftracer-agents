@@ -181,6 +181,23 @@ def install_hook_scripts(target_root: Path) -> Dict[str, str]:
             out[str(relative)] = _write_if_changed(dest, content, executable=executable)
         except OSError as exc:
             out[str(relative)] = f"error: {exc}"
+    # Every other hook script the packaged settings reference (guard_rm_drm.sh, require_skill.py,
+    # phronix_context_hook.py, ...). Only missing ones are copied: a project's own version is kept.
+    for sub in (Path(".claude") / "hooks", Path(".codex") / "hooks"):
+        src_dir = bundled_workspace_dir() / sub
+        dest_dir = target_root / sub
+        if not src_dir.is_dir() or not dest_dir.is_dir() or src_dir.resolve() == dest_dir.resolve():
+            continue
+        for src in sorted(src_dir.iterdir()):
+            dest = dest_dir / src.name
+            if not src.is_file() or dest.exists() or str(sub / src.name) in out:
+                continue
+            try:
+                dest.write_bytes(src.read_bytes())
+                dest.chmod(0o755)
+                out[str(sub / src.name)] = "updated"
+            except OSError as exc:
+                out[str(sub / src.name)] = f"error: {exc}"
     return out
 
 

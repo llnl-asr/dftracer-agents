@@ -41,15 +41,16 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 # ── paths ──────────────────────────────────────────────────────────────────
 REPO_ROOT = Path(__file__).resolve().parents[1]
-VENV_PYTHON = REPO_ROOT / "venv" / "bin" / "python"
-VENV_BIN    = REPO_ROOT / "venv" / "bin"
+VENV_PYTHON = Path(sys.executable)   # run from the project venv (.venv)
+VENV_BIN    = VENV_PYTHON.parent
 THIS_DIR    = Path(__file__).resolve().parent
 DEFAULT_CONFIG = THIS_DIR / "openai_client_config.json"
 
 
 # ── MCP server params ──────────────────────────────────────────────────────
 
-MCP_SERVER = REPO_ROOT / "dftracer_mcp_server.py"
+# the package server, run as a module by the interpreter below (the dftracer-mcp-server console script)
+MCP_SERVER_ARGS = ["-m", "dftracer_agents.mcp_server"]
 
 
 def _server_params(service: str) -> StdioServerParameters:
@@ -60,7 +61,7 @@ def _server_params(service: str) -> StdioServerParameters:
     }
     return StdioServerParameters(
         command=str(VENV_PYTHON),
-        args=[str(MCP_SERVER), "--service", service],
+        args=[*MCP_SERVER_ARGS, "--service", service],
         cwd=str(REPO_ROOT),
         env=env,
     )

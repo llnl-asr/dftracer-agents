@@ -270,6 +270,7 @@ def _diagnose_via_pandas(
 
     os.makedirs(output_dir, exist_ok=True)
     scored_count = 0
+    read_errors: List[str] = []
 
     for path in flat_views:
         try:
@@ -285,7 +286,16 @@ def _diagnose_via_pandas(
             scored_count += 1
         except Exception as exc:
             # Log but continue — partial scoring is better than none
-            pass
+            read_errors.append(f"{os.path.basename(path)}: {type(exc).__name__}: {exc}")
+
+    if scored_count == 0:
+        # Not one view could be read: report it, rather than "0 issues found" on a checkpoint nobody looked at.
+        return {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": "pandas fallback failed to read every flat view: " + "; ".join(read_errors),
+            "success": False,
+        }
 
     return {
         "returncode": 0,

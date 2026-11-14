@@ -93,8 +93,9 @@ def test_mcp_server_tool_behavior_matches_subprocess_for_info(tmp_path):
     repo_root = Path(__file__).resolve().parents[1]
     sample_dir = _ensure_sample_data(repo_root)
 
-    venv_python = repo_root / "venv" / "bin" / "python"
-    venv_bin = repo_root / "venv" / "bin"
+    # the interpreter running the tests (the project's venv), and its console scripts (dftracer_info, ...)
+    venv_python = Path(sys.executable)
+    venv_bin = venv_python.parent
     server_script = repo_root / "test" / "mcp_integration_server.py"
 
     common_env = {

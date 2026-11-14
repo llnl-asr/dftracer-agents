@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -9,21 +10,13 @@ from types import SimpleNamespace
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-TOOLS_DIR  = REPO_ROOT / "dftracer-agents" / "mcp-tools" / "tools"
 
 # ---------------------------------------------------------------------------
 # Module loader
 # ---------------------------------------------------------------------------
 
 def _load_diagnoser_module():
-    sys.path.insert(0, str(REPO_ROOT))
-    import dftracer_mcp_server as srv
-    srv._bootstrap_package_context()
-    return srv._load_module(
-        "dftracer.dfdiagnoser_service",
-        TOOLS_DIR / "dftracer" / "dfdiagnoser_service.py",
-    )
+    return importlib.import_module("dftracer_agents.mcp_tools.tools.dftracer.dfdiagnoser_service")
 
 
 @pytest.fixture(scope="module")
@@ -176,62 +169,44 @@ class TestDiagnoseErrors:
 # diagnose tool — CLI fallback path
 # ---------------------------------------------------------------------------
 
-class TestDiagnoseCliPath:
-    def test_cli_called_when_api_unavailable(self, service, dmod, monkeypatch, tmp_path):
-        """When dfdiagnoser is not pip-installed, the CLI subprocess is called."""
+def _write_flat_view(cp: Path, **columns) -> None:
+    """A real dfanalyzer-style flat view parquet in checkpoint dir *cp*."""
+    import pandas as pd
+    cp.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(columns).to_parquet(cp / "_flat_view_time_range.parquet")
+
+
+class TestDiagnoseFallbackPath:
+    """Without the DFDiagnoser API the tool scores the checkpoint's flat views with pandas. The dfdiagnoser CLI is
+    not a fallback (it has no checkpoint input), so it must not be called."""
+
+    def test_pandas_fallback_when_api_unavailable(self, service, dmod, monkeypatch, tmp_path):
         cp = tmp_path / "checkpoint"
-        cp.mkdir()
-        # Create a fake flat view parquet file (content doesn't matter for this test)
-        (cp / "_flat_view_time_range.parquet").write_bytes(b"PAR1")
-
+        _write_flat_view(cp, read_time_pct=[1.0, 0.8, 0.1])
         cli_calls = []
-
-        def fake_run_cli(cmd, timeout=300):
-            cli_calls.append(cmd)
-            # Write a scored JSON file so the parse step has something to read
-            out_dir = None
-            for i, arg in enumerate(cmd):
-                if "output.output_dir" in arg:
-                    out_dir = arg.split("=", 1)[1]
-            if out_dir:
-                Path(out_dir).mkdir(parents=True, exist_ok=True)
-                scored = {"rank_0": {"read_time_pct": 0.8, "read_time_pct_score": 4}}
-                (Path(out_dir) / "time_range_scored.json").write_text(json.dumps(scored))
-            return {"returncode": 0, "stdout": "Scored OK", "stderr": "", "success": True}
-
-        # Block Python API import so CLI fallback is used
         monkeypatch.setitem(sys.modules, "dfdiagnoser", None)
         monkeypatch.setitem(sys.modules, "dfdiagnoser.diagnoser", None)
-        monkeypatch.setattr(dmod, "_run_cli", fake_run_cli)
+        monkeypatch.setattr(dmod, "_run_cli", lambda cmd, timeout=300: cli_calls.append(cmd))
 
         tools = _tool_map(service)
         result = _call(tools["diagnose"], checkpoint_dir=str(cp))
 
-        assert cli_calls, "CLI subprocess was never called"
-        assert cli_calls[0][0] == "dfdiagnoser"
-        # Even with score=4 found we should get ok or at least not a hard error
-        # (ok OR the scored views were parsed)
-        assert result.get("status") in ("ok", "error")
-        if result["status"] == "ok":
-            assert "severity_counts" in result
+        assert result["status"] == "ok", result
+        assert "severity_counts" in result
+        assert not cli_calls, "the dfdiagnoser CLI was called for a checkpoint"
 
-    def test_cli_failure_returns_error(self, service, dmod, monkeypatch, tmp_path):
-        """If CLI also fails and no scored files are produced, status is error."""
+    def test_unreadable_flat_views_return_error(self, service, dmod, monkeypatch, tmp_path):
+        """If no flat view can be read, the diagnosis fails instead of reporting 0 issues."""
         cp = tmp_path / "checkpoint2"
         cp.mkdir()
         (cp / "_flat_view_time_range.parquet").write_bytes(b"PAR1")
-
-        def bad_run_cli(cmd, timeout=300):
-            return {"returncode": 1, "stdout": "", "stderr": "command not found", "success": False}
-
         monkeypatch.setitem(sys.modules, "dfdiagnoser", None)
-        monkeypatch.setattr(dmod, "_run_cli", bad_run_cli)
+        monkeypatch.setitem(sys.modules, "dfdiagnoser.diagnoser", None)
 
         tools = _tool_map(service)
         result = _call(tools["diagnose"], checkpoint_dir=str(cp))
         assert result["status"] == "error"
-        assert "dfdiagnoser" in result.get("message", "").lower() or \
-               "failed" in result.get("message", "").lower()
+        assert "failed" in result.get("message", "").lower()
 
 
 # ---------------------------------------------------------------------------
@@ -239,33 +214,21 @@ class TestDiagnoseCliPath:
 # ---------------------------------------------------------------------------
 
 class TestDiagnoseOutputParsing:
-    def test_loads_scored_json_and_returns_bottlenecks(self, service, dmod, monkeypatch, tmp_path):
-        """End-to-end: scored JSON is written, tool parses it into bottlenecks."""
+    def test_scores_flat_view_and_returns_bottlenecks(self, service, dmod, monkeypatch, tmp_path):
+        """End-to-end: the flat view is scored, written, and parsed into ranked bottlenecks."""
         cp  = tmp_path / "checkpoint3"
         out = tmp_path / "scored3"
-        cp.mkdir(); out.mkdir()
-        (cp / "_flat_view_time_range.parquet").write_bytes(b"PAR1")
-
-        # Pre-populate scored JSON
-        scored = {
-            "rank_0": {
-                "read_time_pct": 0.85, "read_time_pct_score": 4,
-                "small_io_pct":  0.95, "small_io_pct_score": 5,
-            }
-        }
-        (out / "_flat_view_time_range_scored.json").write_text(json.dumps(scored))
-
-        def noop_run_cli(cmd, timeout=300):
-            return {"returncode": 0, "stdout": "OK", "stderr": "", "success": True}
-
+        # scores are fractions of the column max: 1.0 -> 5 (critical), 0.8 -> 4 (high), 0.1 -> 1
+        _write_flat_view(cp, read_time_pct=[1.0, 0.8, 0.1], small_io_pct=[0.95, 0.2, 0.1])
         monkeypatch.setitem(sys.modules, "dfdiagnoser", None)
-        monkeypatch.setattr(dmod, "_run_cli", noop_run_cli)
+        monkeypatch.setitem(sys.modules, "dfdiagnoser.diagnoser", None)
 
         tools = _tool_map(service)
         result = _call(tools["diagnose"],
                        checkpoint_dir=str(cp), output_dir=str(out))
 
         assert result["status"] == "ok"
+        assert list(out.glob("*_scored.*")), "no scored view written"
         counts = result["severity_counts"]
         assert counts["high"] >= 1
         assert counts["critical"] >= 1
@@ -276,20 +239,16 @@ class TestDiagnoseOutputParsing:
     def test_raw_stats_included_when_present(self, service, dmod, monkeypatch, tmp_path):
         cp  = tmp_path / "checkpoint4"
         out = tmp_path / "scored4"
-        cp.mkdir(); out.mkdir()
-        (cp / "_flat_view_time_range.parquet").write_bytes(b"PAR1")
+        _write_flat_view(cp, read_time_pct=[1.0, 0.5])
         raw = {"total_ops": 1000, "read_ops": 800, "write_ops": 200}
         (cp / "_raw_stats_session.json").write_text(json.dumps(raw))
-        (out / "scored.json").write_text(json.dumps({}))  # empty but valid
 
         monkeypatch.setitem(sys.modules, "dfdiagnoser", None)
-        monkeypatch.setattr(dmod, "_run_cli",
-                            lambda *a, **k: {"returncode": 0, "success": True,
-                                             "stdout": "", "stderr": ""})
+        monkeypatch.setitem(sys.modules, "dfdiagnoser.diagnoser", None)
         tools = _tool_map(service)
         result = _call(tools["diagnose"], checkpoint_dir=str(cp), output_dir=str(out))
-        if result["status"] == "ok":
-            assert result.get("raw_stats_summary") is not None
+        assert result["status"] == "ok", result
+        assert result.get("raw_stats_summary") is not None
 
 
 # ---------------------------------------------------------------------------

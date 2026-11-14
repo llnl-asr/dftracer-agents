@@ -2,33 +2,20 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import sys
 import textwrap
-from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-TOOLS_DIR  = REPO_ROOT / "dftracer-agents" / "mcp-tools" / "tools"
 
 # ---------------------------------------------------------------------------
 # Module loader
 # ---------------------------------------------------------------------------
 
 def _load_academic_module():
-    sys.path.insert(0, str(REPO_ROOT))
-    import dftracer_mcp_server as srv
-    srv._bootstrap_package_context()
-    # Make the papers sub-package stub visible
-    import types as _types
-    papers_pkg = _types.ModuleType("dftracer_agents.mcp_tools.tools.papers")
-    papers_pkg.__path__ = [str(TOOLS_DIR / "papers")]
-    sys.modules.setdefault("dftracer_agents.mcp_tools.tools.papers", papers_pkg)
-    return srv._load_module(
-        "papers.academic_service",
-        TOOLS_DIR / "papers" / "academic_service.py",
-    )
+    return importlib.import_module("dftracer_agents.mcp_tools.tools.papers.academic_service")
 
 
 @pytest.fixture(scope="module")
@@ -186,9 +173,12 @@ class TestToolRegistration:
         "search_arxiv", "get_arxiv_paper",
         "search_semantic_scholar", "get_semantic_scholar_paper",
         "get_author_papers", "search_papers_combined",
+        # added since: OpenAlex / Crossref / DBLP / CORE search, web search and article fetch, relevance ranking
+        "search_openalex", "get_openalex_paper", "search_crossref", "search_dblp", "search_core",
+        "search_web", "fetch_webpage_article", "rank_papers_by_relevance",
     }
 
-    def test_all_six_tools_registered(self, service):
+    def test_all_tools_registered(self, service):
         assert _tool_map(service).keys() == self.EXPECTED
 
     def test_service_name(self, service):

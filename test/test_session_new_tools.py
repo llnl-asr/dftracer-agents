@@ -3,6 +3,7 @@ search_optimization_papers, session_service_start, session_service_stop."""
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import os
 import sys
@@ -10,26 +11,13 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-TOOLS_DIR  = REPO_ROOT / "dftracer-agents" / "mcp-tools" / "tools"
 
 # ---------------------------------------------------------------------------
-# Module bootstrap (mirrors dftracer_mcp_server._build_session_server)
+# Module loader
 # ---------------------------------------------------------------------------
 
 def _load_session_service():
-    sys.path.insert(0, str(REPO_ROOT))
-    import dftracer_mcp_server as srv
-    srv._bootstrap_package_context()
-    session_dir = TOOLS_DIR / "session"
-    for submod in ("workspace", "detection", "annotation", "build", "install",
-                   "session_tools", "pipeline_tools"):
-        srv._load_module(f"session.{submod}", session_dir / f"{submod}.py")
-    mod = srv._load_module(
-        "dftracer.dftracer_service",
-        TOOLS_DIR / "dftracer" / "dftracer_service.py",
-    )
-    return mod
+    return importlib.import_module("dftracer_agents.mcp_tools.tools.dftracer.dftracer_service")
 
 
 @pytest.fixture(scope="module")
@@ -43,14 +31,8 @@ def service(svc_mod):
 
 
 def _tool_map(service):
-    tools = {}
-    for sub_name in ("session_subservice", "pipeline_subservice", "daemon_subservice"):
-        sub = getattr(service, sub_name, None)
-        if sub is None:
-            continue
-        for t in asyncio.run(sub.list_tools()):
-            tools[t.name] = t
-    return tools
+    from conftest import session_tool_map
+    return session_tool_map(service)
 
 
 def _fn(tool):
@@ -136,7 +118,6 @@ class TestDiagnoseBottlenecks:
         monkeypatch.setenv("DFTRACER_WORKSPACES", str(tmp_path))
 
         # Find the workspace module and monkeypatch _run
-        import dftracer_mcp_server as srv
         ws_mod = sys.modules.get("dftracer_agents.mcp_tools.tools.session.workspace")
         if ws_mod:
             monkeypatch.setattr(ws_mod, "_run",
