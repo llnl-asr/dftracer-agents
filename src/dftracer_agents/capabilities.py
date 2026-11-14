@@ -7,9 +7,10 @@ own over phronix's (``phronix.engine``). moirai-agents and rabbit-agent build on
 :func:`chain`.
 
 A change dftracer-agents makes to a capability phronix owns (a lesson, a new version, a new workload_ capability) is
-written to its contribution worktree of phronix (``vendor/contrib/phronix``, branch ``contrib/dftracer-agents``) and
-committed there; ``capabilities_update`` (or ``python -m phronix.engine update --bootstrap
-dftracer_agents.capabilities:engine``) rebases it and says how to open the pull request.
+written in its phronix clone (``vendor/phronix``, which stays on phronix's integration branch) and committed there as a
+local commit. ``capabilities_update`` pulls latest (replaying those commits on origin, conflicts merged);
+``capabilities_push`` pushes them on a new ``contrib/dftracer-agents-<date-time>`` branch and returns the link that
+opens the pull request; ``capabilities_switch`` returns the clone to origin afterwards.
 
 :func:`load_into` adds every enabled capability's tools to a FastMCP server. A capability tool replaces a built-in tool
 of the same name (the capability is where that tool now lives). A capability that needs another project's package is
@@ -37,7 +38,9 @@ def state_dir(*parts: str) -> Path:
 def scope():
     """dftracer-agents' scope: the dftracer_ capabilities, and any capability importing dftracer_agents."""
     from phronix.engine.scopes import Scope
-    return Scope(project=PROJECT, package="dftracer_agents", cap_dir=CAP_DIR, prefixes=("dftracer_",))
+    # contributions to dftracer-agents are rebased on develop and their pull requests go there (its integration
+    # branch; the repository's default branch is main)
+    return Scope(project=PROJECT, package="dftracer_agents", cap_dir=CAP_DIR, prefixes=("dftracer_",), branch="develop")
 
 
 def chain() -> List:
@@ -131,39 +134,71 @@ def load_into(server, quiet: bool = False) -> dict:
 
 
 def register_contrib_tools(server) -> None:
-    """capabilities_contributions / capabilities_update / capabilities_push: what dftracer-agents contributed to phronix,
-    rebasing it (conflicts merged), and pushing it (dftracer-agents has no web UI; these are its Rebase and Push buttons)."""
+    """capabilities_contributions / _update / _refresh / _push / _switch: what dftracer-agents contributed to phronix
+    (local commits in its phronix clone, which stays on phronix's integration branch), pulling latest, pushing on a new
+    branch for a pull request, and switching back (dftracer-agents has no web UI; these are its buttons)."""
 
     @server.tool(name="capabilities_contributions")
     def capabilities_contributions() -> dict:
         """What this install has contributed to the projects upstream of it (phronix) and not yet merged. Reads only.
 
-        Returns ``upstream``: per project, ``contribution`` with ``branch`` (contrib/dftracer-agents), ``worktree``,
-        ``ahead`` (commits not yet in the upstream), ``commits`` and ``pull_request`` (the link to open one)."""
+        Returns ``upstream``: per project, ``contribution`` with ``branch`` (the integration branch the clone stays on),
+        ``ahead`` (local commits), ``unpushed``, ``commits``, ``push_state``, ``pushed_branch`` and ``pull_request``."""
         engine()
         from phronix.engine import upstream
         return upstream.status()
 
     @server.tool(name="capabilities_update")
     def capabilities_update() -> dict:
-        """Update the upstream clones (fast-forward) and rebase this install's contribution branches on them.
+        """Pull latest into the upstream clones: their local contribution commits are replayed on origin.
 
-        Use when the user asks to update or rebase. Only the contribution commits are replayed; conflicts in lessons,
-        worked entries and capability.json merge by themselves, anything else is merged by the agent (or the rebase is
-        aborted and the branch left as it was). Returns per upstream project ``clone_updated``, ``rebase`` (ok,
-        up_to_date, conflict, error), ``rebase_resolved``, ``rebase_merged_by_agent``, ``conflicts``,
-        ``contribution`` (ahead, commits) and ``to_do`` (push command, pull_request link); capabilities_push pushes."""
+        Use when the user asks to update, pull or rebase. Conflicts in lessons, worked entries and capability.json merge
+        by themselves, anything else is merged by the agent (or the rebase is aborted and the clone left as it was).
+        Returns per upstream project ``rebase`` (ok, up_to_date, conflict, dirty, not_on_branch, error),
+        ``rebase_resolved``, ``rebase_merged_by_agent``, ``conflicts`` and ``contribution``."""
         engine()
         from phronix.engine import upstream
         return upstream.update(resolve=True)
 
+    @server.tool(name="capabilities_refresh")
+    def capabilities_refresh() -> dict:
+        """Fetch and report where each upstream clone stands; changes nothing else.
+
+        Returns per upstream project ``on`` (branch), ``push_state`` (nothing, not_pushed, needs_push, pushed),
+        ``contribution``, ``pull_request`` and ``next`` (switch, pull latest, push, open the pull request, nothing)."""
+        engine()
+        from phronix.engine import upstream
+        return upstream.refresh()
+
     @server.tool(name="capabilities_push")
     def capabilities_push() -> dict:
-        """Rebase this install's contribution branches (as capabilities_update, conflicts merged) and push the ones
-        with commits, for a pull request. Use when the user asks to push or contribute back.
+        """Pull latest (as capabilities_update), then push the unpushed contribution commits on a new branch
+        contrib/dftracer-agents-<date-time>; the clone stays on its integration branch. Use when the user asks to push or
+        contribute back.
 
-        Returns per upstream project ``rebase``, ``pushed``, ``push_error`` and ``pull_request`` (give the link to the
-        user)."""
+        Returns per upstream project ``rebase``, ``pushed``, ``pushed_branch``, ``push_error``, ``pull_request`` (the
+        link that creates the pull request: give it to the user) and ``switch_to``."""
         engine()
         from phronix.engine import upstream
         return upstream.push()
+
+    @server.tool(name="capabilities_switch")
+    def capabilities_switch(project: str = "phronix") -> dict:
+        """Return an upstream clone to origin's integration branch once its contribution commits are pushed (refused
+        while one is on no pushed branch). Use after capabilities_push, once the user has the pull-request link."""
+        engine()
+        from phronix.engine import upstream
+        return upstream.switch_to_branch(project)
+
+
+def start_auto_pull() -> bool:
+    """Keep the code current while the server runs: pull this checkout and the phronix clone (fast-forward only, clean
+    checkouts only) at start and every DFTRACER_AGENTS_AUTO_PULL_MINUTES (10); DFTRACER_AGENTS_AUTO_PULL=0 turns it
+    off. Capability changes are served from the next server start."""
+    try:
+        engine()
+        from phronix.engine import upstream
+        return upstream.start_auto_pull()
+    except Exception as e:                      # never keep the server from starting
+        print(f"[auto-pull] not started: {type(e).__name__}: {e}", file=sys.stderr)
+        return False
