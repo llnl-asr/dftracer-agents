@@ -1141,6 +1141,60 @@ def _compile_markers_in(log: str) -> List[str]:
     return [m for m in _COMPILE_MARKERS if m in (log or "")]
 
 
+# The dftracer wheel's CMake package is written at wheel-build time and still names that machine: its libraries at
+# the build path (/project/build/lib.<plat>/dftracer/lib64/...), their link interfaces at /opt/dftracer-deps/..., and
+# a config that stops unless brahma / yaml-cpp / gotcha are found there. Every library it needs is bundled in the
+# wheel's lib64 (and brahma is linked into the core), so the package is made to point inside the wheel. Without this,
+# an application's find_package(dftracer) fails and the run falls back to building dftracer from source.
+_WHEEL_CMAKE_DIR = ("lib64", "cmake", "dftracer")
+
+
+def _repair_wheel_cmake_package(pkg_dir: Path) -> Dict[str, Any]:
+    """Make an installed dftracer wheel's CMake package relocatable. Idempotent; returns what it changed."""
+    cdir = pkg_dir.joinpath(*_WHEEL_CMAKE_DIR)
+    lib64 = pkg_dir / "lib64"
+    out: Dict[str, Any] = {"dir": str(cdir), "changed": []}
+    if not cdir.is_dir() or not lib64.is_dir():
+        out["skipped"] = "no CMake package in this dftracer install"
+        return out
+    bundled = {f.name for f in lib64.iterdir()}
+
+    def inside(m: "re.Match") -> str:            # an absolute path -> the wheel's copy of that file, if it has one
+        name = m.group(2)
+        return f"${{_IMPORT_PREFIX}}/lib64/{name}" if name in bundled else m.group(0)
+
+    for f in sorted(cdir.glob("dftracer-targets*.cmake")):
+        text = f.read_text()
+        new = re.sub(r'(/[^";\s]*?)/dftracer/lib64/([^";\s/]+)', lambda m: f"${{_IMPORT_PREFIX}}/lib64/{m.group(2)}", text)
+        new = re.sub(r'(/opt/[^";\s]*?)/([^";\s/]+\.so[^";\s/]*)', inside, new)
+        new = new.replace("-L/opt/dftracer-deps/lib64", "-L${_IMPORT_PREFIX}/lib64")
+        # link-interface entries naming targets the wheel does not define: its bundled library instead
+        for target, lib in (("yaml-cpp", "libyaml-cpp.so"), ("cpp-logger", "libcpp-logger.so"), ("gotcha", "libgotcha.so")):
+            if lib in bundled:
+                new = re.sub(rf'(?<=[";]){re.escape(target)}(?=[";])', f"${{_IMPORT_PREFIX}}/lib64/{lib}", new)
+        if new != text:
+            f.write_text(new)
+            out["changed"].append(f.name)
+    cfg = cdir / "dftracer-config.cmake"
+    if cfg.is_file():
+        text = cfg.read_text()
+        new = re.sub(r'message\(FATAL_ERROR "\[DFTRACER\] (brahma|yaml-cpp|gotcha) is required but not found[^"]*"\)',
+                     lambda m: f'message(STATUS "[DFTRACER] {m.group(1)}: bundled in this dftracer install, not needed separately")',
+                     text)
+        if new != text:
+            cfg.write_text(new)
+            out["changed"].append(cfg.name)
+    return out
+
+
+def _installed_dftracer_dir(py: str, env: Dict[str, str]) -> Optional[Path]:
+    r = _run([py, "-c", "import importlib.util as u, os; s = u.find_spec('dftracer'); "
+                        "print(os.path.dirname(s.origin) if s and s.origin else (list(s.submodule_search_locations)[0] if s else ''))"],
+             env=env, timeout=120)
+    d = (r.get("stdout") or "").strip().splitlines()
+    return Path(d[-1]) if d and d[-1] else None
+
+
 def _install_dftracer_prerelease_wheel(
     python_exe: str,
     ws: Optional[Path] = None,
@@ -1243,6 +1297,9 @@ def _install_dftracer_prerelease_wheel(
         info["message"] = f"pip install of prebuilt wheel {whl} failed: {(r.get('stderr') or '')[-800:]}"
         return {"success": False, "steps": steps, "prerelease": info, "error": info["message"]}
     info["compiled"] = False
+    pkg = _installed_dftracer_dir(py, env)
+    if pkg is not None:
+        info["cmake_repair"] = _repair_wheel_cmake_package(pkg)
     if with_modules:
         info["message"] = (f"installed the PREBUILT dftracer prerelease {version} ({info['tags']}) with dftracer-modules "
                            f"from the package index in {info['seconds']}s; dftracer-compose links the modules next")
