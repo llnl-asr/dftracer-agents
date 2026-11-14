@@ -675,9 +675,10 @@ def _with_capabilities(server: FastMCP) -> FastMCP:
     if os.environ.get("DFTRACER_AGENTS_CAPABILITIES", "1") in ("0", "false", "no"):
         return server
     try:
-        from dftracer_agents.capabilities import load_into, register_contrib_tools
+        from dftracer_agents.capabilities import load_into, register_contrib_tools, start_auto_pull
         load_into(server)
         register_contrib_tools(server)
+        start_auto_pull()
     except Exception as e:  # the built-in tools still serve
         print(f"[capabilities] not loaded: {type(e).__name__}: {e}", file=sys.stderr)
     return server

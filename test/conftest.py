@@ -3,7 +3,11 @@ from __future__ import annotations
 import importlib
 import asyncio
 
+import os
+
 import pytest
+
+os.environ.setdefault("DFTRACER_AGENTS_AUTO_PULL", "0")   # tests never pull the real checkouts
 
 
 def pytest_addoption(parser):
