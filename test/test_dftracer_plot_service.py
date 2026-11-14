@@ -8,9 +8,7 @@ expected file path.
 from __future__ import annotations
 
 import asyncio
-import importlib.util
-import sys
-import types
+import importlib
 from pathlib import Path
 
 import pytest
@@ -24,35 +22,7 @@ SAMPLE_DIR = str(Path(__file__).resolve().parent / "data" / "cm1_1_48_20240926")
 # ---------------------------------------------------------------------------
 
 def _load_plot_module():
-    tools_dir = REPO_ROOT / "dftracer-agents" / "mcp-tools" / "tools"
-
-    pkg = types.ModuleType("dftracer_agents")
-    pkg.__path__ = [str(REPO_ROOT / "dftracer-agents")]
-    mcp_pkg = types.ModuleType("dftracer_agents.mcp_tools")
-    mcp_pkg.__path__ = [str(REPO_ROOT / "dftracer-agents" / "mcp-tools")]
-    tools_pkg = types.ModuleType("dftracer_agents.mcp_tools.tools")
-    tools_pkg.__path__ = [str(tools_dir)]
-
-    factory_path = REPO_ROOT / "dftracer-agents" / "mcp-tools" / "mcp_service_factory.py"
-    fmod = importlib.util.module_from_spec(
-        s := importlib.util.spec_from_file_location("dftracer_agents.mcp_service_factory", factory_path)
-    )
-    sys.modules.update({
-        "dftracer_agents": pkg,
-        "dftracer_agents.mcp_tools": mcp_pkg,
-        "dftracer_agents.mcp_tools.tools": tools_pkg,
-        "dftracer_agents.mcp_service_factory": fmod,
-    })
-    s.loader.exec_module(fmod)
-
-    mn = "dftracer_agents.mcp_tools.tools.dftracer_plot_service"
-    sys.modules.pop(mn, None)
-    mod = importlib.util.module_from_spec(
-        s2 := importlib.util.spec_from_file_location(mn, tools_dir / "dftracer" / "dftracer_plot_service.py")
-    )
-    sys.modules[mn] = mod
-    s2.loader.exec_module(mod)
-    return mod
+    return importlib.import_module("dftracer_agents.mcp_tools.tools.dftracer.dftracer_plot_service")
 
 
 @pytest.fixture(scope="session")

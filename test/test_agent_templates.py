@@ -195,6 +195,9 @@ class TestRenderClaude:
         """Claude frontmatter should include effort, isolation, skills when present."""
         from dftracer_agents.agent_templates import load_template, render_claude, templates_dir
         tmpl = load_template(templates_dir() / "dftracer-analyzer.yaml")
+        # no shipped template sets isolation any more (dftracer-analyzer dropped `isolation: worktree`); the
+        # renderer must still carry it through when a template has it
+        tmpl = {**tmpl, "isolation": "worktree"}
         models = {"level_1": "haiku", "level_2": "sonnet", "level_3": "sonnet", "level_4": "opus"}
         out = render_claude(tmpl, models)
         fm = _extract_frontmatter(out)
@@ -897,4 +900,7 @@ class TestBootstrapRelativeSymlinks:
         assert mcp.exists(), f".mcp.json symlink is broken: {os.readlink(mcp)}"
         content = mcp.read_text()
         assert "dftracer" in content
-        assert "20000" in content  # workspace .mcp.json port (see fd2058d)
+        # it resolves to the packaged workspace .mcp.json (whose port is configuration: 20000 in fd2058d, 10000 now)
+        import dftracer_agents
+        packaged = Path(dftracer_agents.__file__).resolve().parent / ".agents" / "workspace" / ".mcp.json"
+        assert content == packaged.read_text()

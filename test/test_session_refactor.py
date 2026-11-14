@@ -1,8 +1,8 @@
 """
 Smoke-tests for DFTracerSessionService after the tools/session/ refactor.
 
-Uses the same bootstrap as dftracer_mcp_server.py — no mocking.
-Run with:  python test/test_session_refactor.py
+Calls the real tools of the installed package — no mocking.
+Run with:  pytest test/test_session_refactor.py   (or python test/test_session_refactor.py)
 """
 from __future__ import annotations
 
@@ -15,30 +15,26 @@ import sys
 import tempfile
 from pathlib import Path
 
-# ── Bootstrap (mirrors dftracer_mcp_server._build_session_server) ─────────────
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+import pytest
 
-import dftracer_mcp_server as srv_mod  # noqa: E402
+# ── Services under test (the installed package) ───────────────────────────────
+from dftracer_agents.mcp_tools.tools.dftracer import dftracer_service as _svc_mod  # noqa: E402
+from dftracer_agents.mcp_tools.tools.dftracer import docs_service as _docs_mod  # noqa: E402
 
-srv_mod._bootstrap_package_context()
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from conftest import session_tool_map  # noqa: E402
 
-session_dir = REPO / "dftracer-agents" / "mcp-tools" / "tools" / "session"
-for _submod in ("workspace", "detection", "annotation", "build", "install",
-                "session_tools", "pipeline_tools"):
-    srv_mod._load_module(f"session.{_submod}", session_dir / f"{_submod}.py")
-
-_svc_path = REPO / "dftracer-agents" / "mcp-tools" / "tools" / "dftracer" / "dftracer_service.py"
-_svc_mod = srv_mod._load_module("dftracer.dftracer_service", _svc_path)
 _svc = _svc_mod.DFTracerSessionService()
-S = _svc.session_subservice
-P = _svc.pipeline_subservice
+# every session-scoped tool (they are spread over several subservices now); S and P name the same map
+S = P = session_tool_map(_svc)
 
 # ── Call helper ───────────────────────────────────────────────────────────────
 
 def call(subservice, name: str, **kwargs):
-    tools = asyncio.run(subservice.list_tools())
-    tool = next((t for t in tools if t.name == name), None)
+    if isinstance(subservice, dict):
+        tool = subservice.get(name)
+    else:
+        tool = next((t for t in asyncio.run(subservice.list_tools()) if t.name == name), None)
     if tool is None:
         raise AssertionError(f"Tool not found: {name}")
     fn = None
@@ -76,7 +72,7 @@ def check(label: str, result: dict, *, expect: str | None = None, keys: tuple = 
 
 # ── Test cases ────────────────────────────────────────────────────────────────
 
-def run_tests(tmpdir: Path):
+def run_tests(tmpdir: Path, with_installs: bool = False):
     os.environ["DFTRACER_WORKSPACES"] = str(tmpdir)
 
     # 1. Pipeline run-ID tools
@@ -137,10 +133,11 @@ def run_tests(tmpdir: Path):
     check("session_patch_build[no annotated]", r, expect="error")
 
     # 5. session_annotate_source
-    r = call(S, "session_annotate_source", run_id=RID)
-    check("session_annotate_source", r, keys=["c_files", "py_files"])
-    r = call(S, "session_annotate_source", run_id="bad_run_xyz")
-    check("session_annotate_source[no dir]", r, expect="error")
+    # session_annotate_source was replaced by clang_annotate_project (C/C++) / python_annotate_project
+    r = call(S, "clang_annotate_project", run_id=RID, language="c")
+    check("clang_annotate_project", r, expect="ok")
+    r = call(S, "clang_annotate_project", run_id="bad_run_xyz", language="c")
+    check("clang_annotate_project[no dir]", r, expect="error")
 
     # 6. session_run_smoke_test
     INST = WS / "install" / "bin"
@@ -182,27 +179,31 @@ def run_tests(tmpdir: Path):
     r = call(S, "session_build_annotated", run_id=RID)
     check("session_build_annotated", r)
 
-    # 10. Install tools
-    r = call(S, "session_install_dftracer", run_id=RID)
-    check("session_install_dftracer", r, expect="error")  # no dftracer source
-    r = call(S, "session_install_dftracer_utils", run_id=RID)
-    check("session_install_dftracer_utils", r)  # ok if repo file exists; error otherwise
-    r = call(S, "session_autobuild_dftracer", run_id=RID, jobs=1)
-    check("session_autobuild_dftracer", r, expect="error")  # no cmake build tree
+    # 10. Install tools: network and a from-source build of dftracer-utils (minutes), so only with_installs.
+    # session_install_dftracer installs the dftracer prerelease wheel (it used to need a dftracer source tree and
+    # errored without one), so either status is a valid answer here.
+    if with_installs:
+        r = call(S, "session_install_dftracer", run_id=RID)
+        check("session_install_dftracer", r)
+        r = call(S, "session_install_dftracer_utils", run_id=RID)
+        check("session_install_dftracer_utils", r)  # ok if repo file exists; error otherwise
 
     # 11. Network tools (graceful error expected)
+    # a run_id is a resume handle (it must name an existing session); a new session is created without one
+    r = call(S, "session_create", url="https://invalid.example.invalid/no-repo.git")
+    check("session_create[bad url]", r, expect="error")
     r = call(S, "session_create",
              url="https://invalid.example.invalid/no-repo.git", run_id="test_bad_xyz")
-    check("session_create[bad url]", r, expect="error")
+    check("session_create[unknown run_id]", r, expect="error")
+    r = call(P, "session_run_pipeline", url="https://invalid.example.invalid/no-repo.git")
+    check("session_run_pipeline[bad url]", r, expect="error")
     r = call(P, "session_run_pipeline",
              url="https://invalid.example.invalid/no-repo.git", run_id="test_pipeline_bad_xyz")
-    check("session_run_pipeline[bad url]", r, expect="error")
+    check("session_run_pipeline[unknown run_id]", r, expect="error")
 
 
-# ── Docs service bootstrap ────────────────────────────────────────────────────
+# ── Docs service ──────────────────────────────────────────────────────────────
 
-_docs_path = REPO / "dftracer-agents" / "mcp-tools" / "tools" / "dftracer" / "docs_service.py"
-_docs_mod = srv_mod._load_module("dftracer.docs_service", _docs_path)
 _docs_svc = _docs_mod.DFTracerDocsService()
 D = _docs_svc.docs_subservice
 
@@ -240,6 +241,38 @@ def run_docs_tests():
     # 16. docs_search_key_pages — unknown source returns error
     r = call(D, "docs_search_key_pages", source="not_a_source")
     check("docs_search_key_pages[bad-src]", r, expect="error")
+
+
+# ── pytest entry points ───────────────────────────────────────────────────────
+
+def _failures_since(n: int) -> list:
+    return FAIL[n:]
+
+
+def test_session_and_pipeline_tools(tmp_path, monkeypatch):
+    if shutil.which("gcc") is None:
+        pytest.skip("needs gcc to build the smoke-test binary")
+    monkeypatch.setenv("DFTRACER_WORKSPACES", str(tmp_path))
+    n = len(FAIL)
+    run_tests(tmp_path)
+    assert not _failures_since(n), _failures_since(n)
+
+
+@pytest.mark.slow
+def test_session_install_tools(tmp_path, monkeypatch):
+    """The whole sequence including the install tools (network: PyPI and a dftracer-utils source build)."""
+    if shutil.which("gcc") is None:
+        pytest.skip("needs gcc to build the smoke-test binary")
+    monkeypatch.setenv("DFTRACER_WORKSPACES", str(tmp_path))
+    n = len(FAIL)
+    run_tests(tmp_path, with_installs=True)
+    assert not _failures_since(n), _failures_since(n)
+
+
+def test_docs_tools():
+    n = len(FAIL)
+    run_docs_tests()
+    assert not _failures_since(n), _failures_since(n)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

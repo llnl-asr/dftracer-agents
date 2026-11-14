@@ -77,11 +77,18 @@ def _call_tool(tool_map, name, **kwargs):
         return fn(**kwargs), None
     except subprocess.CalledProcessError as exc:
         return None, exc
+    except FileNotFoundError as exc:
+        # the binary is not installed: the tool fails the way a shell would (127, command not found)
+        return None, subprocess.CalledProcessError(127, exc.filename or name, stderr=str(exc))
 
 
 def _direct(cmd):
-    """Run cmd as a real subprocess. Returns CompletedProcess (check=False)."""
-    return subprocess.run(cmd, capture_output=True, text=True, check=False)
+    """Run cmd as a real subprocess. Returns CompletedProcess (check=False); a binary that is not installed exits 127
+    as it would from a shell (some dftracer-utils releases do not ship every dftracer_* tool)."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except FileNotFoundError as exc:
+        return subprocess.CompletedProcess(cmd, 127, "", str(exc))
 
 
 # ---------------------------------------------------------------------------

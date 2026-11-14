@@ -39,7 +39,11 @@ from ...mcp_service_factory import MCPService, MCPServiceFactory
 # __file__ = <root>/src/dftracer_agents/mcp_tools/tools/system/system_service.py
 # parents[0]=system/ [1]=tools/ [2]=mcp_tools/ [3]=dftracer_agents/ [4]=src/ [5]=repo root
 _REPO_ROOT = Path(__file__).resolve().parents[5]
+# This checkout's systems config: system_save writes here (.dftracer_agents/ is git-ignored, local state).
 _SYSTEMS_YAML = _REPO_ROOT / ".dftracer_agents" / "resources" / "systems.yaml"
+# The known systems shipped with the package: read when the checkout has no systems.yaml of its own yet, so a
+# fresh install knows tuolumne/dane/matrix/... and the first system_save keeps them alongside the new entry.
+_DEFAULT_SYSTEMS_YAML = Path(__file__).resolve().parents[3] / "resources" / "systems.yaml"
 
 
 def _load_yaml_simple(path: Path) -> Dict[str, Any]:
@@ -48,7 +52,13 @@ def _load_yaml_simple(path: Path) -> Dict[str, Any]:
     Only handles the specific structure of systems.yaml: top-level keys,
     nested dicts, lists of strings, and string values (including multiline
     block scalars with |). Env var values with ${VAR} are preserved as-is.
+
+    The checkout's systems.yaml falls back to the packaged default when it does not exist yet.
     """
+    if not path.exists() and path == _SYSTEMS_YAML and _DEFAULT_SYSTEMS_YAML.exists():
+        path = _DEFAULT_SYSTEMS_YAML
+    if not path.exists():
+        return {"systems": {}}
     try:
         import yaml  # type: ignore
         with path.open() as f:

@@ -17,12 +17,11 @@ and are gated behind --run-slow.
 from __future__ import annotations
 
 import asyncio
-import importlib.util
+import importlib
 import json
 import os
 import subprocess
 import sys
-import types
 from pathlib import Path
 from typing import Any, Dict
 
@@ -33,7 +32,6 @@ import pytest
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-TOOLS_DIR = REPO_ROOT / "dftracer-agents" / "mcp-tools" / "tools"
 SAMPLE_TRACE_DIR = REPO_ROOT / "test" / "data" / "cm1_1_48_20240926"
 
 IOR_URL = "https://github.com/hpc/ior"
@@ -194,40 +192,32 @@ from .main import run, main
 # Module loader
 # ---------------------------------------------------------------------------
 
+class _SessionModules:
+    """The session service and its helpers as one namespace.
+
+    DFTracerSessionService lives in tools/dftracer/dftracer_service.py (it was tools/dftracer_session_service.py);
+    the helpers it used to define (_detect_info, _annotate_*_source, _patch_*, ...) moved to tools/session/.
+    """
+
+    _MODULES = (
+        "dftracer_agents.mcp_tools.tools.dftracer.dftracer_service",
+        "dftracer_agents.mcp_tools.tools.session.detection",
+        "dftracer_agents.mcp_tools.tools.session.annotation",
+        "dftracer_agents.mcp_tools.tools.session.build",
+    )
+
+    def __init__(self):
+        self._mods = [importlib.import_module(m) for m in self._MODULES]
+
+    def __getattr__(self, name):
+        for m in self._mods:
+            if hasattr(m, name):
+                return getattr(m, name)
+        raise AttributeError(name)
+
+
 def _load_session_module():
-    pkg = types.ModuleType("dftracer_agents")
-    pkg.__path__ = [str(REPO_ROOT / "dftracer-agents")]
-
-    mcp_pkg = types.ModuleType("dftracer_agents.mcp_tools")
-    mcp_pkg.__path__ = [str(REPO_ROOT / "dftracer-agents" / "mcp-tools")]
-
-    tools_pkg = types.ModuleType("dftracer_agents.mcp_tools.tools")
-    tools_pkg.__path__ = [str(TOOLS_DIR)]
-
-    factory_path = REPO_ROOT / "dftracer-agents" / "mcp-tools" / "mcp_service_factory.py"
-    fmod = importlib.util.module_from_spec(
-        sf := importlib.util.spec_from_file_location(
-            "dftracer_agents.mcp_service_factory", factory_path
-        )
-    )
-    sys.modules.update({
-        "dftracer_agents": pkg,
-        "dftracer_agents.mcp_tools": mcp_pkg,
-        "dftracer_agents.mcp_tools.tools": tools_pkg,
-        "dftracer_agents.mcp_service_factory": fmod,
-    })
-    sf.loader.exec_module(fmod)
-
-    mod_name = "dftracer_agents.mcp_tools.tools.dftracer_session_service"
-    sys.modules.pop(mod_name, None)
-    mod = importlib.util.module_from_spec(
-        sm := importlib.util.spec_from_file_location(
-            mod_name, TOOLS_DIR / "dftracer_session_service.py"
-        )
-    )
-    sys.modules[mod_name] = mod
-    sm.loader.exec_module(mod)
-    return mod
+    return _SessionModules()
 
 
 @pytest.fixture(scope="session")
@@ -302,11 +292,8 @@ def local_python_repo(tmp_path_factory):
 # ---------------------------------------------------------------------------
 
 def _tool_map(service):
-    tools = {}
-    for sub in ("session_subservice", "pipeline_subservice"):
-        for t in asyncio.run(getattr(service, sub).list_tools()):
-            tools[t.name] = t
-    return tools
+    from conftest import session_tool_map
+    return session_tool_map(service)
 
 
 def _result(raw) -> Dict[str, Any]:
@@ -653,10 +640,11 @@ class TestSessionAnnotationTools:
         (ws / "session.json").write_text(json.dumps(state))
         monkeypatch.setenv("DFTRACER_WORKSPACES", str(tmp_path))
 
+        # session_annotate_source was replaced by clang_annotate_project (C/C++) and python_annotate_project
         tools = _tool_map(session_service)
-        out = _result(tools["session_annotate_source"].fn(run_id=run_id))
-        assert out["status"] == "ok"
-        assert out["annotated"]
+        out = _result(tools["clang_annotate_project"].fn(run_id=run_id, language="c"))
+        assert out["status"] == "ok", out
+        assert out.get("annotated") or out.get("files_annotated") or out.get("results"), out
         ior_c = (ws / "annotated" / "src" / "ior.c").read_text()
         assert "#include <dftracer/dftracer.h>" in ior_c
 
@@ -673,10 +661,12 @@ class TestSessionAnnotationTools:
         monkeypatch.setenv("DFTRACER_WORKSPACES", str(tmp_path))
 
         tools = _tool_map(session_service)
-        out = _result(tools["session_annotate_source"].fn(run_id=run_id))
-        assert out["status"] == "ok"
+        out = _result(tools["python_annotate_project"].fn(run_id=run_id))
+        assert out["status"] == "ok", out
         py_content = (ws / "annotated" / "main.py").read_text()
-        assert "@dft_fn" in py_content
+        # the annotator binds dft_fn once per module and decorates with it: `_dft = DFTracerFn(...)` / `@_dft.log`
+        assert "dft_fn as DFTracerFn" in py_content
+        assert "@_dft.log" in py_content
 
 
 class TestSessionDetectTool:
@@ -716,9 +706,8 @@ class TestSessionCreateReal:
     def test_create_from_local_c_repo(self, session_service, local_c_repo, monkeypatch, tmp_path):
         monkeypatch.setenv("DFTRACER_WORKSPACES", str(tmp_path))
         tools = _tool_map(session_service)
-        out = _result(tools["session_create"].fn(
-            url=str(local_c_repo), ref="main", run_id="realcreate_c"
-        ))
+        # run_id is a resume handle now (it must name an existing session): a new session gets its id back
+        out = _result(tools["session_create"].fn(url=str(local_c_repo), ref="main"))
         assert out["status"] == "ok"
         src = Path(out["source"])
         assert src.exists()
@@ -729,9 +718,8 @@ class TestSessionCreateReal:
                                             monkeypatch, tmp_path):
         monkeypatch.setenv("DFTRACER_WORKSPACES", str(tmp_path))
         tools = _tool_map(session_service)
-        out = _result(tools["session_create"].fn(
-            url=str(local_python_repo), ref="main", run_id="realcreate_py"
-        ))
+        # run_id is a resume handle now (it must name an existing session): a new session gets its id back
+        out = _result(tools["session_create"].fn(url=str(local_python_repo), ref="main"))
         assert out["status"] == "ok"
         src = Path(out["source"])
         assert (src / "setup.py").exists()
@@ -741,13 +729,12 @@ class TestSessionCreateReal:
                                          monkeypatch, tmp_path):
         monkeypatch.setenv("DFTRACER_WORKSPACES", str(tmp_path))
         tools = _tool_map(session_service)
-        out = _result(tools["session_create"].fn(
-            url=str(local_c_repo), ref="main", run_id="statecheck"
-        ))
+        # run_id is a resume handle now (it must name an existing session): a new session gets its id back
+        out = _result(tools["session_create"].fn(url=str(local_c_repo), ref="main"))
         assert out["status"] == "ok"
         ws = Path(out["workspace"])
         state = json.loads((ws / "session.json").read_text())
-        assert state["run_id"] == "statecheck"
+        assert state["run_id"] == out["run_id"]
         assert state["step"] == "cloned"
 
     def test_create_bad_url_returns_error(self, session_service, monkeypatch, tmp_path):
@@ -756,7 +743,6 @@ class TestSessionCreateReal:
         out = _result(tools["session_create"].fn(
             url="/tmp/this_does_not_exist_as_a_git_repo",
             ref="main",
-            run_id="badurl",
         ))
         assert out["status"] == "error"
 
@@ -828,19 +814,17 @@ class TestSessionBuildPythonReal:
         tools = _tool_map(session_service)
 
         # Clone
-        out = _result(tools["session_create"].fn(
-            url=str(local_python_repo), ref="main", run_id="pybuild_cfg"
-        ))
+        out = _result(tools["session_create"].fn(url=str(local_python_repo), ref="main"))
         assert out["status"] == "ok"
+        rid, ws = out["run_id"], Path(out["workspace"])
 
         # Detect (sets build_tool in state)
-        tools["session_detect"].fn(run_id="pybuild_cfg")
+        tools["session_detect"].fn(run_id=rid)
 
         # Configure
-        out = _result(tools["session_configure"].fn(run_id="pybuild_cfg"))
+        out = _result(tools["session_configure"].fn(run_id=rid))
         assert out["status"] == "ok"
 
-        ws = tmp_path / "pybuild_cfg"
         assert (ws / "install" / "bin" / "python3").exists()
         assert (ws / "install" / "bin" / "pip").exists()
 
@@ -849,13 +833,14 @@ class TestSessionBuildPythonReal:
         monkeypatch.setenv("DFTRACER_WORKSPACES", str(tmp_path))
         tools = _tool_map(session_service)
 
-        tools["session_create"].fn(url=str(local_python_repo), ref="main", run_id="pybuild_pkg")
-        tools["session_detect"].fn(run_id="pybuild_pkg")
-        out = _result(tools["session_configure"].fn(run_id="pybuild_pkg"))
+        created = _result(tools["session_create"].fn(url=str(local_python_repo), ref="main"))
+        rid, ws = created["run_id"], Path(created["workspace"])
+        tools["session_detect"].fn(run_id=rid)
+        out = _result(tools["session_configure"].fn(run_id=rid))
         assert out["status"] == "ok"
 
         # The package should be importable in the venv
-        venv_python = str(tmp_path / "pybuild_pkg" / "install" / "bin" / "python3")
+        venv_python = str(ws / "install" / "bin" / "python3")
         r = subprocess.run(
             [venv_python, "-c", "import examplelib; print(examplelib.run([]))"],
             capture_output=True, text=True, timeout=30,
@@ -868,15 +853,15 @@ class TestSessionBuildPythonReal:
         monkeypatch.setenv("DFTRACER_WORKSPACES", str(tmp_path))
         tools = _tool_map(session_service)
 
-        tools["session_create"].fn(url=str(local_python_repo), ref="main", run_id="pybuild_smoke")
-        tools["session_detect"].fn(run_id="pybuild_smoke")
-        tools["session_configure"].fn(run_id="pybuild_smoke")
+        created = _result(tools["session_create"].fn(url=str(local_python_repo), ref="main"))
+        rid, ws = created["run_id"], Path(created["workspace"])
+        tools["session_detect"].fn(run_id=rid)
+        tools["session_configure"].fn(run_id=rid)
 
-        ws = tmp_path / "pybuild_smoke"
         venv_python = str(ws / "install" / "bin" / "python3")
 
         out = _result(tools["session_run_smoke_test"].fn(
-            run_id="pybuild_smoke",
+            run_id=rid,
             command=f'{venv_python} -c "import examplelib; print(\'smoke ok\')"',
             subfolder="source",
         ))
@@ -914,7 +899,8 @@ class TestSessionRunWithDftracerReal:
         tools["session_run_with_dftracer"].fn(
             run_id=run_id, command="true", subfolder="build_ann"
         )
-        assert (ws / "traces").is_dir()
+        # traces go to <workspace>/<run_name>/traces/raw/ (run_name defaults to "baseline")
+        assert (ws / "baseline" / "traces" / "raw").is_dir()
 
     def test_failed_command_reported(self, session_service, monkeypatch, tmp_path):
         run_id = "dftfail"
@@ -941,14 +927,14 @@ class TestSessionTraceToolsReal:
 
     @pytest.fixture()
     def ws_with_sample_traces(self, monkeypatch, tmp_path):
-        """Workspace with sample .pfw.gz files copied into traces/."""
+        """Workspace with sample .pfw.gz files copied into baseline/traces/raw/ (where runs write them)."""
         import shutil
         if not SAMPLE_TRACE_DIR.exists() or not list(SAMPLE_TRACE_DIR.glob("*.pfw.gz")):
             pytest.skip("Sample trace data not available")
         run_id = "tracetest"
         ws = tmp_path / run_id
         ws.mkdir()
-        traces = ws / "traces"
+        traces = ws / "baseline" / "traces" / "raw"
         shutil.copytree(SAMPLE_TRACE_DIR, traces)
         state = {"run_id": run_id, "workspace": str(ws), "step": "ran_with_dftracer"}
         (ws / "session.json").write_text(json.dumps(state))
@@ -959,7 +945,7 @@ class TestSessionTraceToolsReal:
         """Empty traces dir → error before any binary is called."""
         run_id = "splitnofiles"
         ws = _make_workspace(tmp_path, run_id)
-        (ws / "traces").mkdir()
+        (ws / "baseline" / "traces" / "raw").mkdir(parents=True)
         monkeypatch.setenv("DFTRACER_WORKSPACES", str(tmp_path))
 
         tools = _tool_map(session_service)
@@ -971,7 +957,7 @@ class TestSessionTraceToolsReal:
                                                   ws_with_sample_traces):
         """Tool and direct binary fail consistently on this container."""
         run_id, tmp_path = ws_with_sample_traces
-        traces_dir = tmp_path / run_id / "traces"
+        traces_dir = tmp_path / run_id / "baseline" / "traces" / "raw"
         output_dir = tmp_path / "split_out"
         output_dir.mkdir()
 
@@ -995,7 +981,8 @@ class TestSessionTraceToolsReal:
         """Tool and direct binary fail consistently on this container."""
         import shutil
         run_id, ws_root = ws_with_sample_traces
-        traces_split_dir = ws_root / run_id / "traces_split"
+        # session_analyze_traces reads the compacted traces, <workspace>/<run_name>/traces/compact/
+        traces_split_dir = ws_root / run_id / "baseline" / "traces" / "compact"
         shutil.copytree(SAMPLE_TRACE_DIR, traces_split_dir)
 
         idx_dir = tmp_path / "direct_idx"
@@ -1009,9 +996,7 @@ class TestSessionTraceToolsReal:
         ])
 
         tools = _tool_map(session_service)
-        out = _result(tools["session_analyze_traces"].fn(
-            run_id=run_id, trace_subdir="traces_split"
-        ))
+        out = _result(tools["session_analyze_traces"].fn(run_id=run_id))
 
         if direct_rc == 0:
             assert out["status"] == "ok"
@@ -1042,17 +1027,20 @@ class TestServiceRegistration:
 
     def test_all_expected_tools_registered(self, session_service):
         tools = _tool_map(session_service)
+        # The pipeline's session tools. session_annotate_source was replaced by clang_annotate_project /
+        # python_annotate_project; session_autobuild_dftracer is gone (dftracer is installed as the prerelease
+        # wheel and composed by session_install_dftracer). The session service now also serves many more tools
+        # (annotation, provenance, profiling, privacy, ...), so this checks the pipeline's set is all there.
         expected = {
             "session_create", "session_detect", "session_list_files",
             "session_read_file", "session_write_file", "session_configure",
             "session_build_install", "session_run_smoke_test", "session_copy_annotated",
-            "session_patch_build", "session_annotate_source",
-            "session_autobuild_dftracer", "session_install_dftracer",
-            "session_install_dftracer_utils",
+            "session_patch_build", "clang_annotate_project", "python_annotate_project",
+            "session_install_dftracer", "session_install_dftracer_utils",
             "session_build_annotated", "session_run_with_dftracer", "session_split_traces",
             "session_analyze_traces", "session_status", "session_run_pipeline",
         }
-        assert tools.keys() == expected
+        assert expected <= tools.keys(), sorted(expected - tools.keys())
 
 
 # ===========================================================================
@@ -1129,7 +1117,7 @@ class TestIORIntegration:
         monkeypatch.setenv("DFTRACER_WORKSPACES", str(tmp_path))
         tools = _tool_map(session_service)
         out = _result(tools["session_create"].fn(
-            url=IOR_URL, ref=IOR_TAG, run_id="ior_gh_create"
+            url=IOR_URL, ref=IOR_TAG,
         ))
         assert out["status"] == "ok"
         src = Path(out["source"])

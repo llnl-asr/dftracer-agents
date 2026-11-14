@@ -10,7 +10,10 @@ license = "MIT"
 # graphifyy (knowledge graph) requires >=3.10; the pipeline depends on it.
 requires-python = ">=3.10"
 dependencies = [
-    "fastmcp>=0.1.0",
+    # FastMCP 3.x: the API the server uses (FastMCP.list_tools/add_tool, local_provider, middleware) on mcp 1.x.
+    # fastmcp 4 moves to mcp 2.x, which drops mcp.server.fastmcp and changes the low-level types.
+    "fastmcp>=3.0,<4",
+    "mcp>=1.24,<2",
     "dftracer-utils @ git+https://github.com/llnl-asr/dftracer-utils.git@develop",
     "dftracer-analyzer @ git+https://github.com/llnl-asr/dfanalyzer.git@develop",
     "dfdiagnoser @ git+https://github.com/llnl-asr/dfdiagnoser.git@main",
@@ -31,6 +34,8 @@ dependencies = [
     # PDF text extraction for the local paper library (resources/papers/) so
     # search_local_resources can fuzzy-search full paper bodies, not just titles.
     "pypdf>=4.0",
+    # the plot tools' html format (dftracer_plot_service) renders with bokeh
+    "bokeh>=3.0",
 ]
 
 [project.optional-dependencies]
@@ -47,7 +52,8 @@ embeddings = [
     "sentence-transformers>=2.2",
 ]
 # Pipeline profiling: MLflow tracking + UI for per-step AI cost, tokens, timing
-# and retries. The OTLP collector itself is stdlib-only, so a session's
+# and retries. mlflow is a core dependency now; the extra stays so `.[profile]` still resolves.
+profile = []
 
 
 [project.scripts]
@@ -85,7 +91,15 @@ where = ["src"]
     # Claude Code's project MCP config. A leading-dot FILE at the workspace root
     # is matched by no glob above, so it must be named outright.
     ".agents/workspace/.mcp.json",
+    # Hook scripts the packaged .claude/settings.json and .codex config reference, and the OpenCode plugins:
+    # bootstrap links or copies them into a project, so a wheel without them leaves every hook command dangling.
+    ".agents/workspace/.claude/hooks/*",
+    ".agents/workspace/.codex/hooks/*",
+    ".agents/workspace/.opencode/plugin/*",
     "*.sh",
+    # The known systems (system_detect / system_list); a checkout's own .dftracer_agents/resources/systems.yaml
+    # overrides it once system_save writes one.
+    "resources/*.yaml",
     # The stack launcher is bash but carries no extension: it is invoked as a
     # command, not sourced as a script. Listed explicitly since "*.sh" misses it.
     "dftracer_agents_stack",

@@ -1,70 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
-import sys
-import types
-from pathlib import Path
+import importlib
 from types import SimpleNamespace
 
 import pytest
 
 
 def _load_dfanalyzer_module():
-    repo_root = Path(__file__).resolve().parents[1]
-    service_path = (
-        repo_root
-        / "dftracer-agents"
-        / "mcp-tools"
-        / "tools"
-        / "dftracer"
-        / "dfanalyzer_service.py"
-    )
-
-    pkg_root = types.ModuleType("dftracer_agents")
-    pkg_root.__path__ = [str(repo_root / "dftracer-agents")]
-
-    mcp_pkg = types.ModuleType("dftracer_agents.mcp_tools")
-    mcp_pkg.__path__ = [str(repo_root / "dftracer-agents" / "mcp-tools")]
-
-    tools_pkg = types.ModuleType("dftracer_agents.mcp_tools.tools")
-    tools_pkg.__path__ = [str(service_path.parent)]
-
-    factory_mod = types.ModuleType("dftracer_agents.mcp_service_factory")
-
-    class MCPService:
-        pass
-
-    class MCPServiceFactory:
-        _services = {}
-
-        @classmethod
-        def register(cls, name, service):
-            cls._services[name] = service
-
-        @classmethod
-        def get_service(cls, name):
-            return cls._services.get(name)
-
-    factory_mod.MCPService = MCPService
-    factory_mod.MCPServiceFactory = MCPServiceFactory
-
-    sys.modules["dftracer_agents"] = pkg_root
-    sys.modules["dftracer_agents.mcp_tools"] = mcp_pkg
-    sys.modules["dftracer_agents.mcp_tools.tools"] = tools_pkg
-    sys.modules["dftracer_agents.mcp_service_factory"] = factory_mod
-
-    mod_name = "dftracer_agents.mcp_tools.tools.dfanalyzer_service"
-    if mod_name in sys.modules:
-        del sys.modules[mod_name]
-
-    spec = importlib.util.spec_from_file_location(mod_name, service_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec is not None
-    sys.modules[mod_name] = module
-
-    spec.loader.exec_module(module)
-    return module
+    return importlib.import_module("dftracer_agents.mcp_tools.tools.dftracer.dfanalyzer_service")
 
 
 @pytest.fixture(scope="session")
@@ -85,13 +29,10 @@ def _tool_map(service):
 
 
 def test_hydra_args_default_shape(dfanalyzer_module):
+    # dfanalyzer takes Hydra overrides (key=value), not --flags
     cmd = dfanalyzer_module._hydra_args(trace_path="/tmp/trace")
-    assert cmd[0] == "dfanalyzer"
-    assert "--trace-path" in cmd
-    assert "/tmp/trace" in cmd
-    assert "-ahydra.analyzer/preset=posix" in cmd
-    assert "--output=console" in cmd
-    assert "--cluster=local" in cmd
+    assert cmd == ["dfanalyzer", "trace_path=/tmp/trace", "analyzer/preset=generic", "output=console",
+                   "cluster=local"]
 
 
 def test_analyze_tool_registered(dfanalyzer_service):
@@ -117,8 +58,7 @@ def test_analyze_tool_invokes_subprocess_success(monkeypatch, dfanalyzer_module,
     assert calls
     cmd, kwargs = calls[-1]
     assert cmd[0] == "dfanalyzer"
-    assert "--trace-path" in cmd
-    assert "/tmp/trace" in cmd
+    assert "trace_path=/tmp/trace" in cmd
     assert kwargs.get("capture_output") is True
     assert kwargs.get("text") is True
 

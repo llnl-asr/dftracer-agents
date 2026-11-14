@@ -181,7 +181,7 @@ def register_python_annotation_tools(mcp: FastMCP) -> None:
             # 2. Import present?
             grep -n "from dftracer" $F
             # 3. initialize_log / finalize_log
-            grep -n "initialize_log\|finalize_log" $F
+            grep -n "initialize_log\\|finalize_log" $F
             # 4. Property methods with decorator (should be zero)
             grep -B2 "@dftracer_fn" $F | grep "@property"
 

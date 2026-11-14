@@ -2,61 +2,13 @@
 from __future__ import annotations
 
 import asyncio
-import sys
-import types
-from pathlib import Path
+import importlib
 
 from fastmcp import FastMCP
 
 
 def _load_service_module():
-    repo_root = Path(__file__).resolve().parents[1]
-    service_path = (
-        repo_root
-        / "dftracer-agents"
-        / "mcp-tools"
-        / "tools"
-        / "dftracer"
-        / "dftracer_utils_service.py"
-    )
-
-    pkg_root = types.ModuleType("dftracer_agents")
-    pkg_root.__path__ = [str(repo_root / "dftracer-agents")]
-
-    mcp_pkg = types.ModuleType("dftracer_agents.mcp_tools")
-    mcp_pkg.__path__ = [str(repo_root / "dftracer-agents" / "mcp-tools")]
-
-    tools_pkg = types.ModuleType("dftracer_agents.mcp_tools.tools")
-    tools_pkg.__path__ = [str(service_path.parent)]
-
-    factory_mod = types.ModuleType("dftracer_agents.mcp_service_factory")
-
-    class MCPService:
-        pass
-
-    class MCPServiceFactory:
-        _services = {}
-
-        @classmethod
-        def register(cls, name, service):
-            cls._services[name] = service
-
-    factory_mod.MCPService = MCPService
-    factory_mod.MCPServiceFactory = MCPServiceFactory
-
-    sys.modules["dftracer_agents"] = pkg_root
-    sys.modules["dftracer_agents.mcp_tools"] = mcp_pkg
-    sys.modules["dftracer_agents.mcp_tools.tools"] = tools_pkg
-    sys.modules["dftracer_agents.mcp_service_factory"] = factory_mod
-
-    mod_name = "dftracer_agents.mcp_tools.tools.dftracer_utils_service"
-    module = types.ModuleType(mod_name)
-    sys.modules[mod_name] = module
-
-    source = service_path.read_text(encoding="utf-8")
-    code = compile(source, str(service_path), "exec")
-    exec(code, module.__dict__)
-    return module
+    return importlib.import_module("dftracer_agents.mcp_tools.tools.dftracer.dftracer_utils_service")
 
 
 def build_server() -> FastMCP:

@@ -120,7 +120,10 @@ def register_pipeline_tools(mcp: FastMCP) -> None:
 
         # ── Normal path (steps 1–8): clone, build, annotate, then PAUSE ───────
         if not (annotation_confirmed and run_id):
-            rid, ws = _create_run(url, run_id)
+            try:
+                rid, ws = _create_run(url, run_id)
+            except FileNotFoundError as e:   # a run_id is a resume handle: it must name an existing session
+                return _err(str(e))
             src = ws / "source"
             src.mkdir(exist_ok=True)
 
@@ -237,7 +240,8 @@ def register_pipeline_tools(mcp: FastMCP) -> None:
             report["step_5_smoke_test"].update({k: v for k, v in _t5.items() if k != "step_label"})
             _write_artifact_log(ws, 5, "session_run_smoke_test",
                                 report["step_5_smoke_test"], rid)
-            _save_state(rid, {"step": "original_build_done", "detection": info})
+            # the resume call (annotation_confirmed=True) reruns this smoke command under dftracer
+            _save_state(rid, {"step": "original_build_done", "detection": info, "smoke_command": smoke_cmd})
 
             if skip_annotation:
                 return _ok(
@@ -370,8 +374,12 @@ def register_pipeline_tools(mcp: FastMCP) -> None:
         rid = run_id
         info = state.get("detection", {})
         bt = info.get("build_tool", "unknown")
+        src = ws / "source"
         ann = ws / "annotated"
         install = ws / "install"
+        # The smoke command the first call ran (saved in its state), unless this call names one.
+        smoke_cmd = (smoke_test_command or state.get("smoke_command")
+                     or (_guess_smoke_test(src, bt, install) if src.exists() else None))
         if not ann.exists():
             return _err(
                 "annotated/ directory not found — complete steps 1–8 first "
